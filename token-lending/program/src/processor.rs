@@ -432,7 +432,7 @@ fn process_deposit_reserve_liquidity(
     program_id: &Pubkey,
     liquidity_amount: u64,
     accounts: &[AccountInfo],
-) -> ProgramResult{
+) -> ProgramResult {
     if liquidity_amount == 0 {
         msg!("Liquidity amount provided cannot be zero");
         return Err(LendingError::InvalidAmount.into());
