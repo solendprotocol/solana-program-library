@@ -27,7 +27,7 @@ use solana_program::{
 };
 use spl_token::solana_program::instruction::AccountMeta;
 use spl_token::state::{Account, Mint};
-use std::{convert::TryInto};
+use std::convert::TryInto;
 
 /// Processes an instruction
 pub fn process_instruction(

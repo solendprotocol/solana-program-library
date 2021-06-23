@@ -47,7 +47,6 @@ const PYTH_PROGRAM_ID: &str = "5mkqGkkWSaSk2NL9p4XptwEQu4d5jFTJiurbbzdqYexF";
 
 fn main() {
     solana_logger::setup_with_default("solana=info");
-    let token_lending_id_string = &format!("{}",spl_token_lending::id());
 
     let default_lending_program_id: &str = &spl_token_lending::id().to_string();
 
