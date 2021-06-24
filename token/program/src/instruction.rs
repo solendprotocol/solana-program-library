@@ -65,7 +65,7 @@ pub enum TokenInstruction {
     ///
     /// Multisignature accounts can used in place of any single owner/delegate
     /// accounts in any token instruction that require an owner/delegate to be
-    /// present.  The variant field represents the number of signers (M)
+    // present.  The variant field represents the number of signers (M)
     /// required to validate this multisignature account.
     ///
     /// The `InitializeMultisig` instruction requires no signers and MUST be
