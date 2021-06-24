@@ -495,12 +495,11 @@ fn process_deposit_reserve_liquidity(
     ];
     let lending_market_authority_pubkey =
         Pubkey::create_program_address(authority_signer_seeds, program_id)?;
-    msg!("*********");
-    msg!(&lending_market_authority_pubkey.to_string());
-    msg!("*********");
     if &lending_market_authority_pubkey != lending_market_authority_info.key {
         msg!(
-            "Derived lending market authority does not match the lending market authority provided"
+            "Derived lending market authority {} does not match the lending market authority provided {}",
+            &lending_market_authority_pubkey.to_string(),
+            &lending_market_authority_info.key.to_string(),
         );
         return Err(LendingError::InvalidMarketAuthority.into());
     }
