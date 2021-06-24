@@ -456,9 +456,15 @@ fn process_deposit_reserve_liquidity(
         liquidity_amount,
         source_liquidity_info,
         destination_collateral_info,
+<<<<<<< HEAD
         reserve_info,
         reserve_liquidity_supply_info,
         reserve_collateral_mint_info,
+=======
+        reserve_info, 
+        reserve_liquidity_supply_info,
+        reserve_collateral_mint_info, 
+>>>>>>> c03deafd860d61cca88957bd6be7f50c4f3f86b0
         lending_market_info,
         lending_market_authority_info,
         user_transfer_authority_info,
@@ -470,6 +476,7 @@ fn process_deposit_reserve_liquidity(
     };
 }
 
+<<<<<<< HEAD
 #[allow(clippy::too_many_arguments)]
 fn _process_deposit_reserve_liquidity<'a>(
     program_id: &Pubkey,
@@ -484,6 +491,21 @@ fn _process_deposit_reserve_liquidity<'a>(
     user_transfer_authority_info: &AccountInfo<'a>,
     clock: &Clock,
     token_program_id: &AccountInfo<'a>,
+=======
+fn _process_deposit_reserve_liquidity <'a>(
+    program_id: &Pubkey,
+    liquidity_amount: u64,
+    source_liquidity_info: &AccountInfo <'a>,
+    destination_collateral_info: &AccountInfo <'a>,
+    reserve_info: &AccountInfo <'a>,
+    reserve_liquidity_supply_info: &AccountInfo <'a>,
+    reserve_collateral_mint_info: &AccountInfo <'a>,
+    lending_market_info: &AccountInfo <'a>,
+    lending_market_authority_info: &AccountInfo <'a>,
+    user_transfer_authority_info: &AccountInfo <'a>,
+    clock: &Clock,
+    token_program_id: &AccountInfo <'a>,
+>>>>>>> c03deafd860d61cca88957bd6be7f50c4f3f86b0
 ) -> Result<u64, ProgramError> {
     let lending_market = LendingMarket::unpack(&lending_market_info.data.borrow())?;
     if lending_market_info.owner != program_id {
@@ -870,8 +892,12 @@ fn process_deposit_obligation_collateral(
     )
 }
 
+<<<<<<< HEAD
 #[allow(clippy::too_many_arguments)]
 fn _deposit_obligation_collateral<'a>(
+=======
+fn _deposit_obligation_collateral <'a> (
+>>>>>>> c03deafd860d61cca88957bd6be7f50c4f3f86b0
     program_id: &Pubkey,
     collateral_amount: u64,
     source_collateral_info: &AccountInfo<'a>,
