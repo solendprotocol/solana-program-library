@@ -470,6 +470,7 @@ fn process_deposit_reserve_liquidity(
     };
 }
 
+#[allow(clippy::too_many_arguments)]
 fn _process_deposit_reserve_liquidity<'a>(
     program_id: &Pubkey,
     liquidity_amount: u64,
@@ -869,6 +870,7 @@ fn process_deposit_obligation_collateral(
     )
 }
 
+#[allow(clippy::too_many_arguments)]
 fn _deposit_obligation_collateral<'a>(
     program_id: &Pubkey,
     collateral_amount: u64,
