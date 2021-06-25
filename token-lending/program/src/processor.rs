@@ -451,7 +451,7 @@ fn process_deposit_reserve_liquidity(
     let token_program_id = next_account_info(account_info_iter)?;
 
     // We don't care about the return value here, so just ignore it.
-    let _ = _process_deposit_reserve_liquidity(
+    _process_deposit_reserve_liquidity(
         program_id,
         liquidity_amount,
         source_liquidity_info,
@@ -465,7 +465,7 @@ fn process_deposit_reserve_liquidity(
         clock,
         token_program_id,
     )?;
-    Ok()
+    Ok(())
 }
 
 #[allow(clippy::too_many_arguments)]
