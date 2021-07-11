@@ -140,6 +140,7 @@ fn process_init_lending_market(
         token_program_id: *token_program_id.key,
         oracle_program_id: *oracle_program_id.key,
     });
+
     LendingMarket::pack(lending_market, &mut lending_market_info.data.borrow_mut())?;
 
     Ok(())

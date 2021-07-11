@@ -717,7 +717,7 @@ impl IsInitialized for Reserve {
     }
 }
 
-const RESERVE_LEN: usize = 603; // 1 + 8 + 1 + 32 + 32 + 1 + 32 + 32 + 32 + 32 + 8 + 16 + 16 + 16 + 32 + 8 + 32 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 8 + 8 + 1 + 248
+const RESERVE_LEN: usize = 604; // 1 + 1 + 8 + 1 + 32 + 32 + 1 + 32 + 32 + 32 + 32 + 8 + 16 + 16 + 16 + 32 + 8 + 32 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 8 + 8 + 1 + 248
 impl Pack for Reserve {
     const LEN: usize = RESERVE_LEN;
 
@@ -726,6 +726,7 @@ impl Pack for Reserve {
         let output = array_mut_ref![output, 0, RESERVE_LEN];
         #[allow(clippy::ptr_offset_with_cast)]
         let (
+            account_type,
             version,
             last_update_slot,
             last_update_stale,
@@ -757,6 +758,7 @@ impl Pack for Reserve {
         ) = mut_array_refs![
             output,
             1,
+            1,
             8,
             1,
             PUBKEY_BYTES,
@@ -787,6 +789,7 @@ impl Pack for Reserve {
         ];
 
         // reserve
+        *account_type = AccountType::Reserve.to_le_bytes();
         *version = self.version.to_le_bytes();
         *last_update_slot = self.last_update.slot.to_le_bytes();
         pack_bool(self.last_update.stale, last_update_stale);
@@ -834,6 +837,7 @@ impl Pack for Reserve {
         let input = array_ref![input, 0, RESERVE_LEN];
         #[allow(clippy::ptr_offset_with_cast)]
         let (
+            account_type,
             version,
             last_update_slot,
             last_update_stale,
@@ -865,6 +869,7 @@ impl Pack for Reserve {
         ) = array_refs![
             input,
             1,
+            1,
             8,
             1,
             PUBKEY_BYTES,
@@ -893,6 +898,12 @@ impl Pack for Reserve {
             1,
             248
         ];
+        if *account_type != AccountType::Reserve.to_le_bytes()
+            && *account_type != AccountType::Unitialized.to_le_bytes()
+        {
+            msg!("Trying to deserialize a non-Reserve Account as an Reserve");
+            return Err(ProgramError::InvalidAccountData);
+        }
 
         let version = u8::from_le_bytes(*version);
         if version > PROGRAM_VERSION {

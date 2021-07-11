@@ -33,6 +33,22 @@ pub const UNINITIALIZED_VERSION: u8 = 0;
 pub const SLOTS_PER_YEAR: u64 =
     DEFAULT_TICKS_PER_SECOND / DEFAULT_TICKS_PER_SLOT * SECONDS_PER_DAY * 365;
 
+/// Enum for account types
+#[derive(Copy, Clone)]
+#[repr(u8)]
+enum AccountType {
+    Unitialized = 0,
+    Obligation,
+    LendingMarket,
+    Reserve,
+}
+
+impl AccountType {
+    fn to_le_bytes(self) -> [u8; 1] {
+        (self as u8).to_le_bytes()
+    }
+}
+
 // Helpers
 fn pack_decimal(decimal: Decimal, dst: &mut [u8; 16]) {
     *dst = decimal

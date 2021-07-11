@@ -326,7 +326,7 @@ impl ObligationLiquidity {
 
 const OBLIGATION_COLLATERAL_LEN: usize = 56; // 32 + 8 + 16
 const OBLIGATION_LIQUIDITY_LEN: usize = 80; // 32 + 16 + 16 + 16
-const OBLIGATION_LEN: usize = 916; // 1 + 8 + 1 + 32 + 32 + 16 + 16 + 16 + 16 + 1 + 1 + (56 * 1) + (80 * 9)
+const OBLIGATION_LEN: usize = 917; // 1 + 1 + 8 + 1 + 32 + 32 + 16 + 16 + 16 + 16 + 1 + 1 + (56 * 1) + (80 * 9)
                                    // @TODO: break this up by obligation / collateral / liquidity https://git.io/JOCca
 impl Pack for Obligation {
     const LEN: usize = OBLIGATION_LEN;
@@ -335,6 +335,7 @@ impl Pack for Obligation {
         let output = array_mut_ref![dst, 0, OBLIGATION_LEN];
         #[allow(clippy::ptr_offset_with_cast)]
         let (
+            account_type,
             version,
             last_update_slot,
             last_update_stale,
@@ -350,6 +351,7 @@ impl Pack for Obligation {
         ) = mut_array_refs![
             output,
             1,
+            1,
             8,
             1,
             PUBKEY_BYTES,
@@ -362,8 +364,8 @@ impl Pack for Obligation {
             1,
             OBLIGATION_COLLATERAL_LEN + (OBLIGATION_LIQUIDITY_LEN * (MAX_OBLIGATION_RESERVES - 1))
         ];
-
         // obligation
+        *account_type = AccountType::Obligation.to_le_bytes();
         *version = self.version.to_le_bytes();
         *last_update_slot = self.last_update.slot.to_le_bytes();
         pack_bool(self.last_update.stale, last_update_stale);
@@ -412,6 +414,7 @@ impl Pack for Obligation {
         let input = array_ref![src, 0, OBLIGATION_LEN];
         #[allow(clippy::ptr_offset_with_cast)]
         let (
+            account_type,
             version,
             last_update_slot,
             last_update_stale,
@@ -427,6 +430,7 @@ impl Pack for Obligation {
         ) = array_refs![
             input,
             1,
+            1,
             8,
             1,
             PUBKEY_BYTES,
@@ -439,6 +443,13 @@ impl Pack for Obligation {
             1,
             OBLIGATION_COLLATERAL_LEN + (OBLIGATION_LIQUIDITY_LEN * (MAX_OBLIGATION_RESERVES - 1))
         ];
+
+        if *account_type != AccountType::Obligation.to_le_bytes()
+            && *account_type != AccountType::Unitialized.to_le_bytes()
+        {
+            msg!("Trying to deserialize a non-Obligation Account as an Obligation");
+            return Err(ProgramError::InvalidAccountData);
+        }
 
         let version = u8::from_le_bytes(*version);
         if version > PROGRAM_VERSION {

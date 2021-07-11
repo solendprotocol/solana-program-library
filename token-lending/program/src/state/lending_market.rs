@@ -66,7 +66,7 @@ impl IsInitialized for LendingMarket {
     }
 }
 
-const LENDING_MARKET_LEN: usize = 258; // 1 + 1 + 32 + 32 + 32 + 32 + 128
+const LENDING_MARKET_LEN: usize = 259; // 1 + 1 + 1 + 32 + 32 + 32 + 32 + 128
 impl Pack for LendingMarket {
     const LEN: usize = LENDING_MARKET_LEN;
 
@@ -74,6 +74,7 @@ impl Pack for LendingMarket {
         let output = array_mut_ref![output, 0, LENDING_MARKET_LEN];
         #[allow(clippy::ptr_offset_with_cast)]
         let (
+            account_type,
             version,
             bump_seed,
             owner,
@@ -85,6 +86,7 @@ impl Pack for LendingMarket {
             output,
             1,
             1,
+            1,
             PUBKEY_BYTES,
             32,
             PUBKEY_BYTES,
@@ -92,6 +94,7 @@ impl Pack for LendingMarket {
             128
         ];
 
+        *account_type = AccountType::LendingMarket.to_le_bytes();
         *version = self.version.to_le_bytes();
         *bump_seed = self.bump_seed.to_le_bytes();
         owner.copy_from_slice(self.owner.as_ref());
@@ -105,6 +108,7 @@ impl Pack for LendingMarket {
         let input = array_ref![input, 0, LENDING_MARKET_LEN];
         #[allow(clippy::ptr_offset_with_cast)]
         let (
+            account_type,
             version,
             bump_seed,
             owner,
@@ -116,12 +120,20 @@ impl Pack for LendingMarket {
             input,
             1,
             1,
+            1,
             PUBKEY_BYTES,
             32,
             PUBKEY_BYTES,
             PUBKEY_BYTES,
             128
         ];
+
+        if *account_type != AccountType::LendingMarket.to_le_bytes()
+            && *account_type != AccountType::Unitialized.to_le_bytes()
+        {
+            msg!("Trying to deserialize a non-LendingMarket Account as an LendingMarket");
+            return Err(ProgramError::InvalidAccountData);
+        }
 
         let version = u8::from_le_bytes(*version);
         if version > PROGRAM_VERSION {
