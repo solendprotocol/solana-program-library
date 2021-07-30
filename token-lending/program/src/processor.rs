@@ -140,7 +140,7 @@ fn process_init_lending_market(
     let token_program_id = next_account_info(account_info_iter)?;
     let oracle_program_id = next_account_info(account_info_iter)?;
     let switchboard_oracle_program_id = next_account_info(account_info_iter)?;
-
+    print!("in comman\n\n");
     assert_rent_exempt(rent, lending_market_info)?;
     let mut lending_market = assert_uninitialized::<LendingMarket>(lending_market_info)?;
     if lending_market_info.owner != program_id {
