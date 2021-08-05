@@ -3,6 +3,8 @@ use {
         crate_description, crate_name, crate_version, value_t, App, AppSettings, Arg, ArgMatches,
         SubCommand,
     },
+    serde_derive::Deserialize,
+    serde_json::{json, json_internal},
     solana_clap_utils::{
         fee_payer::fee_payer_arg,
         input_parsers::{keypair_of, pubkey_of, value_of},
@@ -26,10 +28,12 @@ use {
     spl_token_lending::{
         self,
         instruction::{init_lending_market, init_reserve, update_reserve_config},
-        math::WAD,
+        math::{Decimal, TryDiv, WAD},
         state::{LendingMarket, Reserve, ReserveConfig, ReserveFees},
     },
-    std::{borrow::Borrow, process::exit, str::FromStr},
+    std::{
+        borrow::Borrow, collections::HashMap, fs::File, path::Path, process::exit, str::FromStr,
+    },
     system_instruction::create_account,
 };
 
@@ -536,6 +540,28 @@ fn main() {
                         .help("Fee receiver address"),
                 )
         )
+        .subcommand(
+            SubCommand::with_name("show-reserve")
+                .about("Print out a reserve config")
+                .arg(
+                    Arg::with_name("reserve")
+                        .long("reserve")
+                        .validator(is_pubkey)
+                        .value_name("PUBKEY")
+                        .takes_value(true)
+                        .required(true)
+                        .help("Reserve address"),
+                )
+                .arg(
+                    Arg::with_name("token_list")
+                        .long("token-list")
+                        .value_name("STRING")
+                        .takes_value(true)
+                        .required(true)
+                        .default_value("./token/solana.tokenlist.json")
+                        .help("Filepath to the spl token info json file"),
+                ),
+        )
         .get_matches();
 
     let mut wallet_manager = None;
@@ -713,6 +739,11 @@ fn main() {
                 lending_market_pubkey,
                 lending_market_owner_keypair,
             )
+        }
+        ("show-reserve", Some(arg_matches)) => {
+            let reserve_pubkey = pubkey_of(arg_matches, "reserve").unwrap();
+            let token_list_filepath = value_of(arg_matches, "token_list").unwrap();
+            command_show_reserve_config(&mut config, reserve_pubkey, token_list_filepath)
         }
         _ => unreachable!(),
     }
@@ -1150,6 +1181,33 @@ fn command_update_reserve(
     Ok(())
 }
 
+#[allow(clippy::too_many_arguments)]
+fn command_show_reserve_config(
+    config: &mut Config,
+    reserve_pubkey: Pubkey,
+    token_list_filepath: String,
+) -> CommandResult {
+    let reserve_account = config.rpc_client.get_account(&reserve_pubkey)?;
+    let reserve = Reserve::unpack_from_slice(reserve_account.data.borrow())?;
+    let user_supply_cap = Decimal::from(10000_u64).try_div(reserve.liquidity.market_price)?;
+    let address_to_symbol = get_spl_token_map(token_list_filepath);
+    let symbol = address_to_symbol
+        .get(&reserve.liquidity.mint_pubkey.to_string())
+        .map_or("", String::as_str);
+
+    let serialized_config = json!({
+        "asset": symbol,
+        "address": reserve_pubkey.to_string(),
+        "collateralMintAddress": reserve.collateral.mint_pubkey.to_string(),
+        "collateralSupplyAddress": reserve.collateral.supply_pubkey.to_string(),
+        "liquidityAddress":  reserve.liquidity.supply_pubkey.to_string(),
+        "liquidityFeeReceiverAddress": reserve.config.fee_receiver.to_string(),
+        "userSupplyCap": user_supply_cap.to_string(),
+    });
+    println!("{}", serialized_config);
+    Ok(())
+}
+
 // HELPERS
 
 fn check_fee_payer_balance(config: &Config, required_balance: u64) -> Result<(), Error> {
@@ -1197,4 +1255,26 @@ fn quote_currency_of(matches: &ArgMatches<'_>, name: &str) -> Option<[u8; 32]> {
     } else {
         None
     }
+}
+
+#[derive(Debug, Deserialize)]
+struct TokenListData {
+    tokens: Vec<TokenEntry>,
+}
+
+#[derive(Debug, Deserialize)]
+struct TokenEntry {
+    address: String,
+    symbol: String,
+}
+
+fn get_spl_token_map(filepath: String) -> HashMap<String, String> {
+    let json_file_path = Path::new(&filepath);
+    let file = File::open(json_file_path).expect("file not found");
+    let token_data: TokenListData = serde_json::from_reader(file).expect("error while reading");
+    let mut address_to_symbol = HashMap::new();
+    for token_entry in token_data.tokens {
+        address_to_symbol.insert(token_entry.address, token_entry.symbol);
+    }
+    address_to_symbol
 }

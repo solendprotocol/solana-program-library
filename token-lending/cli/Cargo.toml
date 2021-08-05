@@ -10,6 +10,9 @@ version = "0.1.0"
 
 [dependencies]
 clap = "2.33.3"
+serde = "0.9"
+serde_derive = "0.9"
+serde_json = "0.9"
 solana-clap-utils = "1.7.3"
 solana-cli-config = "1.7.3"
 solana-client = "1.7.3"

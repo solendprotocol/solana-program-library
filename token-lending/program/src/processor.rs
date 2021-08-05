@@ -2116,7 +2116,8 @@ fn get_pyth_product_quote_currency(pyth_product: &pyth::Product) -> Result<[u8; 
     Err(LendingError::InvalidOracleConfig.into())
 }
 
-fn get_price(
+/// Gets the price of a token using pyth or switchboard
+pub fn get_price(
     switchboard_feed_info: &AccountInfo,
     pyth_price_account_info: &AccountInfo,
     clock: &Clock,
