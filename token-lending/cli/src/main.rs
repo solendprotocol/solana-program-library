@@ -25,7 +25,9 @@ use {
     },
     spl_token_lending::{
         self,
-        instruction::{init_lending_market, init_reserve, update_reserve_config},
+        instruction::{
+            init_lending_market, init_reserve, set_lending_market_owner, update_reserve_config,
+        },
         math::WAD,
         state::{LendingMarket, Reserve, ReserveConfig, ReserveFees},
     },
@@ -536,6 +538,37 @@ fn main() {
                         .help("Fee receiver address"),
                 )
         )
+        .subcommand(
+            SubCommand::with_name("update-lending-market-owner")
+                .about("Update a reserve config")
+                .arg(
+                    Arg::with_name("lending_market_owner")
+                        .long("market-owner")
+                        .validator(is_keypair)
+                        .value_name("KEYPAIR")
+                        .takes_value(true)
+                        .required(true)
+                        .help("Owner of the lending market"),
+                )
+                .arg(
+                    Arg::with_name("lending_market")
+                        .long("market")
+                        .validator(is_pubkey)
+                        .value_name("PUBKEY")
+                        .takes_value(true)
+                        .required(true)
+                        .help("Lending market address"),
+                )
+                .arg(
+                    Arg::with_name("new_owner")
+                        .long("new-owner")
+                        .validator(is_keypair)
+                        .value_name("Keypair")
+                        .takes_value(true)
+                        .required(true)
+                        .help("Keypair of new owner"),
+                )
+        )
         .get_matches();
 
     let mut wallet_manager = None;
@@ -712,6 +745,19 @@ fn main() {
                 reserve_pubkey,
                 lending_market_pubkey,
                 lending_market_owner_keypair,
+            )
+        }
+        ("update-lending-market-owner", Some(arg_matches)) => {
+            let lending_market_owner_keypair =
+                keypair_of(arg_matches, "lending_market_owner").unwrap();
+            let lending_market_pubkey = pubkey_of(arg_matches, "lending_market").unwrap();
+            let new_owner = keypair_of(arg_matches, "new_owner").unwrap();
+
+            command_set_lending_market_owner(
+                &mut config,
+                lending_market_pubkey,
+                lending_market_owner_keypair,
+                new_owner.pubkey(),
             )
         }
         _ => unreachable!(),
@@ -1135,6 +1181,33 @@ fn command_update_reserve(
             reserve_pubkey,
             lending_market_pubkey,
             lending_market_owner_keypair.pubkey(),
+        )],
+        Some(&config.fee_payer.pubkey()),
+    );
+
+    let (recent_blockhash, fee_calculator) = config.rpc_client.get_recent_blockhash()?;
+    check_fee_payer_balance(config, fee_calculator.calculate_fee(transaction.message()))?;
+
+    transaction.sign(
+        &vec![config.fee_payer.as_ref(), &lending_market_owner_keypair],
+        recent_blockhash,
+    );
+    send_transaction(config, transaction)?;
+    Ok(())
+}
+
+fn command_set_lending_market_owner(
+    config: &mut Config,
+    lending_market_pubkey: Pubkey,
+    lending_market_owner_keypair: Keypair,
+    new_owner: Pubkey,
+) -> CommandResult {
+    let mut transaction = Transaction::new_with_payer(
+        &[set_lending_market_owner(
+            config.lending_program_id,
+            lending_market_pubkey,
+            lending_market_owner_keypair.pubkey(),
+            new_owner,
         )],
         Some(&config.fee_payer.pubkey()),
     );
