@@ -449,6 +449,8 @@ fn process_deposit_reserve_liquidity(
         clock,
         token_program_id,
     )?;
+    let log_message = format!("[4, {}]", liquidity_amount);
+    msg!(&log_message);
     Ok(())
 }
 
@@ -577,7 +579,7 @@ fn process_redeem_reserve_collateral(
     let user_transfer_authority_info = next_account_info(account_info_iter)?;
     let clock = &Clock::from_account_info(next_account_info(account_info_iter)?)?;
     let token_program_id = next_account_info(account_info_iter)?;
-    _redeem_reserve_collateral(
+    let liquidity_amount = _redeem_reserve_collateral(
         program_id,
         collateral_amount,
         source_collateral_info,
@@ -590,7 +592,10 @@ fn process_redeem_reserve_collateral(
         user_transfer_authority_info,
         clock,
         token_program_id,
-    )
+    )?;
+    let log_message = format!("[5, -{}]", liquidity_amount);
+    msg!(&log_message);
+    Ok(())
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -607,7 +612,7 @@ fn _redeem_reserve_collateral<'a>(
     user_transfer_authority_info: &AccountInfo<'a>,
     clock: &Clock,
     token_program_id: &AccountInfo<'a>,
-) -> ProgramResult {
+) -> Result<u64, ProgramError> {
     let lending_market = LendingMarket::unpack(&lending_market_info.data.borrow())?;
     if lending_market_info.owner != program_id {
         msg!("Lending market provided is not owned by the lending program");
@@ -683,7 +688,7 @@ fn _redeem_reserve_collateral<'a>(
         token_program: token_program_id.clone(),
     })?;
 
-    Ok(())
+    Ok(liquidity_amount)
 }
 
 #[inline(never)] // avoid stack frame limit
@@ -886,7 +891,10 @@ fn process_deposit_obligation_collateral(
         user_transfer_authority_info,
         clock,
         token_program_id,
-    )
+    )?;
+    let log_message = format!("[8, {}]", collateral_amount);
+    msg!(&log_message);
+    Ok(())
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -1039,6 +1047,8 @@ fn process_deposit_reserve_liquidity_and_obligation_collateral(
         clock,
         token_program_id,
     )?;
+    let log_message = format!("[14, {}, {}]", liquidity_amount, collateral_amount);
+    msg!(&log_message);
     Ok(())
 }
 
@@ -1063,7 +1073,7 @@ fn process_withdraw_obligation_collateral(
     let obligation_owner_info = next_account_info(account_info_iter)?;
     let clock = &Clock::from_account_info(next_account_info(account_info_iter)?)?;
     let token_program_id = next_account_info(account_info_iter)?;
-    _withdraw_obligation_collateral(
+    let withdraw_amount = _withdraw_obligation_collateral(
         program_id,
         collateral_amount,
         source_collateral_info,
@@ -1076,6 +1086,8 @@ fn process_withdraw_obligation_collateral(
         clock,
         token_program_id,
     )?;
+    let log_message = format!("[9, -{}]", withdraw_amount);
+    msg!(&log_message);
     Ok(())
 }
 
@@ -1412,7 +1424,8 @@ fn process_borrow_obligation_liquidity(
         authority_signer_seeds,
         token_program: token_program_id.clone(),
     })?;
-
+    let log_message = format!("[10, -{}]", receive_amount);
+    msg!(&log_message);
     Ok(())
 }
 
@@ -1515,7 +1528,8 @@ fn process_repay_obligation_liquidity(
         authority_signer_seeds: &[],
         token_program: token_program_id.clone(),
     })?;
-
+    let log_message = format!("[11, {}]", repay_amount);
+    msg!(&log_message);
     Ok(())
 }
 
@@ -1707,6 +1721,8 @@ fn process_liquidate_obligation(
         authority_signer_seeds,
         token_program: token_program_id.clone(),
     })?;
+    let log_message = format!("[12, {}, -{}]", repay_amount, withdraw_amount);
+    msg!(&log_message);
 
     Ok(())
 }
@@ -1721,7 +1737,6 @@ fn process_flash_loan(
         msg!("Liquidity amount provided cannot be zero");
         return Err(LendingError::InvalidAmount.into());
     }
-
     let account_info_iter = &mut accounts.iter();
     let source_liquidity_info = next_account_info(account_info_iter)?;
     let destination_liquidity_info = next_account_info(account_info_iter)?;
@@ -1911,7 +1926,7 @@ fn process_withdraw_obligation_collateral_and_redeem_reserve_liquidity(
     let clock = &Clock::from_account_info(next_account_info(account_info_iter)?)?;
     let token_program_id = next_account_info(account_info_iter)?;
 
-    let liquidity_amount = _withdraw_obligation_collateral(
+    let withdraw_amount = _withdraw_obligation_collateral(
         program_id,
         collateral_amount,
         reserve_collateral_info,
@@ -1925,9 +1940,9 @@ fn process_withdraw_obligation_collateral_and_redeem_reserve_liquidity(
         token_program_id,
     )?;
 
-    _redeem_reserve_collateral(
+    let liquidity_amount = _redeem_reserve_collateral(
         program_id,
-        liquidity_amount,
+        withdraw_amount,
         user_collateral_info,
         user_liquidity_info,
         reserve_info,
@@ -1938,7 +1953,11 @@ fn process_withdraw_obligation_collateral_and_redeem_reserve_liquidity(
         user_transfer_authority_info,
         clock,
         token_program_id,
-    )
+    )?;
+
+    let log_message = format!("[15, -{}, -{}]", withdraw_amount, liquidity_amount.clone());
+    msg!(&log_message);
+    Ok(())
 }
 
 #[inline(never)] // avoid stack frame limit
