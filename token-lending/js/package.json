@@ -24,7 +24,7 @@
   "scripts": {
     "build": "rollup -c rollup.config.ts",
     "build:program": "cargo build-bpf --manifest-path ../program/Cargo.toml",
-    "start": "ts-node cli/main.ts",
+    "start": "ts-node cli/main_OLD.ts",
     "start-with-test-validator": "start-server-and-test 'solana-test-validator --bpf-program LendZqTs7gn5CTSJU1jWKhKuVpjJGom45nnwPb2AMTi ../../target/deploy/spl_token_lending.so --reset --quiet' http://localhost:8899/health start",
     "lint": "eslint --ext .ts {cli,client}/* && prettier --check \"{cli,client}/**/*.ts\"",
     "lint:fix": "eslint --ext .ts {cli,client}/* --fix && prettier --write \"{cli,client}/**/*.ts\"",
@@ -36,7 +36,10 @@
   "dependencies": {
     "@solana/spl-token": "0.1.6",
     "@solana/web3.js": "^1.20.0",
+    "bigint-buffer": "^1.1.5",
+    "bignumber.js": "^9.0.1",
     "bn.js": "^5.2.0",
+    "buffer-layout": "^1.2.2",
     "mkdirp": "^1.0.4"
   },
   "devDependencies": {
