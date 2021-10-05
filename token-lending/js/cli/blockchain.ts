@@ -475,11 +475,6 @@ export class Blockchain {
       token.pythPricePk,
       this.SWITCHBOARD_FEED,
     );
-    const refreshObligIx = refreshObligationInstruction(
-      this.obligationKp.publicKey,
-      this.obligationDeposits,
-      this.obligationBorrows,
-    );
     const depositLiqIx = depositReserveLiquidityAndObligationCollateralInstruction(
       depositLiquidityAmount,
       token.userPk,
@@ -497,12 +492,12 @@ export class Blockchain {
       this.ownerKp.publicKey,
     );
     await this._prepareAndSendTx(
-      [refreshReserveIx, refreshObligIx, depositLiqIx],
+      [refreshReserveIx, depositLiqIx],
       [this.ownerKp],
     );
   }
 
-  // --------------------------------------- todo withdraw obligation collateral and redeeem reserve collateral
+  // --------------------------------------- withdraw obligation collateral and redeeem reserve collateral
 
   async withdrawObligationCollateralAndRedeemReserveCollateral(token: IToken, withdrawCollateralAmount: number) {
     console.log(`withdraw ${token.currency} collateral from obligatin + redeem liqduity from reserve`);
