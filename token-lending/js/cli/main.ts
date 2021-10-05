@@ -41,7 +41,7 @@ async function main() {
   assert(bc.metrics.tokenBUserBalance.value.uiAmount == 10 - 4 - 2 + 1);
   assert(bc.metrics.tokenBProtocolBalance.value.uiAmount == 4 + 2 - 1);
 
-  // --------------------------------------- depositing / windrawing from obligation\
+  // --------------------------------------- depositing / windrawing from obligation
 
   // check user has all LP tokens and protocol none
   assert(bc.metrics.tokenBLPUserBalance.value.uiAmount == 4 + 2 - 1);

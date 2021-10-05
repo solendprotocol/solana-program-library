@@ -35,6 +35,8 @@ import {
 import {AccountLayout, MintLayout, Token, TOKEN_PROGRAM_ID,} from '@solana/spl-token';
 import {borrowFlashLoanInstruction} from '../src/instructions/borrowFlashLoan';
 import {newAccountWithLamports} from './util';
+import {depositReserveLiquidityAndObligationCollateralInstruction} from "../src/instructions/depositReserveLiquidityAndObligationCollateral";
+import {withdrawObligationCollateralAndRedeemReserveCollateralInstruction} from "../src/instructions/withdrawObligationCollateralAndRedeemReserveCollateral";
 
 // ============================================================================= bc class
 
@@ -460,6 +462,77 @@ export class Blockchain {
     );
     await this._prepareAndSendTx(
       [refreshReserveLiqIx, refreshReserveColIx, refreshObligIx, repayObligLiqIx],
+      [this.ownerKp],
+    );
+  }
+
+  // --------------------------------------- deposit reserve liquidity and obligation collateral
+
+  async depositReserveLiquidityAndObligationCollateral(token: IToken, depositLiquidityAmount: number) {
+    console.log(`deposit liquidity AND collateral for ${token.currency}`);
+    const refreshReserveIx = refreshReserveInstruction(
+      token.reserveKp.publicKey,
+      token.pythPricePk,
+      this.SWITCHBOARD_FEED,
+    );
+    const refreshObligIx = refreshObligationInstruction(
+      this.obligationKp.publicKey,
+      this.obligationDeposits,
+      this.obligationBorrows,
+    );
+    const depositLiqIx = depositReserveLiquidityAndObligationCollateralInstruction(
+      depositLiquidityAmount,
+      token.userPk,
+      token.lpUserKp.publicKey,
+      token.reserveKp.publicKey,
+      token.protocolKp.publicKey,
+      token.lpMintKp.publicKey,
+      this.lendingMarketKp.publicKey,
+      this.lendingMarketAuthority,
+      token.lpProtocolKp.publicKey,
+      this.obligationKp.publicKey,
+      this.ownerKp.publicKey,
+      token.pythPricePk,
+      this.SWITCHBOARD_FEED,
+      this.ownerKp.publicKey,
+    );
+    await this._prepareAndSendTx(
+      [refreshReserveIx, refreshObligIx, depositLiqIx],
+      [this.ownerKp],
+    );
+  }
+
+  // --------------------------------------- todo withdraw obligation collateral and redeeem reserve collateral
+
+  async withdrawObligationCollateralAndRedeemReserveCollateral(token: IToken, withdrawCollateralAmount: number) {
+    console.log(`withdraw ${token.currency} collateral from obligatin + redeem liqduity from reserve`);
+    await this._refreshObligDepositsAndBorrows();
+    const refreshReserveIx = refreshReserveInstruction(
+      token.reserveKp.publicKey,
+      token.pythPricePk,
+      this.SWITCHBOARD_FEED,
+    );
+    const refreshObligIx = refreshObligationInstruction(
+      this.obligationKp.publicKey,
+      this.obligationDeposits,
+      this.obligationBorrows,
+    );
+    const withdrawObligColIx = withdrawObligationCollateralAndRedeemReserveCollateralInstruction(
+      withdrawCollateralAmount,
+      token.lpProtocolKp.publicKey,
+      token.lpUserKp.publicKey,
+      token.reserveKp.publicKey,
+      this.obligationKp.publicKey,
+      this.lendingMarketKp.publicKey,
+      this.lendingMarketAuthority,
+      token.userPk,
+      token.lpMintKp.publicKey,
+      token.protocolKp.publicKey,
+      this.ownerKp.publicKey,
+      this.ownerKp.publicKey,
+    );
+    await this._prepareAndSendTx(
+      [refreshReserveIx, refreshObligIx, withdrawObligColIx],
       [this.ownerKp],
     );
   }
