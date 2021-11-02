@@ -234,7 +234,7 @@ fn process_init_reserve(
     }
 
     if reserve_liquidity_supply_info.key == source_liquidity_info.key {
-        msg!("Reserve liquidity supply cannot be used as the source liquidity provided");
+        msg!("Reserve liquidity supply cannot be used as the source liquidity provided - dummy change to test ci");
         return Err(LendingError::InvalidAccountInput.into());
     }
 
