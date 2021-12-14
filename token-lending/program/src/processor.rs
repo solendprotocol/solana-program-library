@@ -2142,8 +2142,9 @@ fn get_pyth_price(pyth_price_info: &AccountInfo, clock: &Clock) -> Result<Decima
     // confidence_ratio of 10 filters out pyth prices with conf > 10% of price
     if conf.checked_mul(confidence_ratio).unwrap() > price {
         msg!(
-            "Oracle price confidence is too wide: {}",
-            pyth_price.agg.status as u8
+            "Oracle price confidence is too wide. price: {}, conf: {}",
+            price,
+            conf,
         );
         return Err(LendingError::InvalidOracleConfig.into());
     }
