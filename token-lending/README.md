@@ -1,4 +1,4 @@
-# Solend Lending program
+# Solend lending program
 
 The Solend lending protocol is based on the token-lending program authored by (Solana labs)[https://github.com/solana-labs/solana-program-library]. Various upgrades have been made and audits to changes can be found (here)[https://github.com/solendprotocol/solana-program-library/tree/mainnet/token-lending/audit].
 

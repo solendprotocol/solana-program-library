@@ -1,3 +1,8 @@
+# Solana Lending Program
+
+
+The Solend lending protocol is based on the token-lending program authored by (Solana labs)[https://github.com/solana-labs/solana-program-library]. Various upgrades have been made to the token-lending program and the open-source implementation can be found (here)[https://github.com/solendprotocol/solana-program-library/tree/mainnet/token-lending/audit].
+
 [![Build status][travis-image]][travis-url]
 
 [travis-image]:
