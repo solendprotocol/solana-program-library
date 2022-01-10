@@ -1,10 +1,16 @@
-# Solend lending program
+# Solend Lending program
 
-The Solend lending protocol is based on the token-lending program authored by (Solana labs)[https://github.com/solana-labs/solana-program-library]. Various upgrades have been made and audits to changes can be found (here)[https://github.com/solendprotocol/solana-program-library/tree/mainnet/token-lending/audit].
+The Solend lending protocol is based on the token-lending program authored by [Solana labs](https://github.com/solana-labs/solana-program-library).
 
-Partial documentation for Solend's implementation is available at [docs.solend.fi](docs.solend.fi) with more support available at https://spl.solana.com/token-lending
+## Contributing/Building
 
-Web3 bindings are available in the `./js` directory.
+The Solend protocol is open source with a focus on developer friendliness and integrations.
+
+Solend is made for developers to build on top of. Check out our developer portal to understand more and get involved.
+
+[
+<img width="200" alt="Screen Shot 2022-01-09 at 5 54 30 PM" src="https://user-images.githubusercontent.com/89805726/148710356-a6cdb798-934a-459d-b795-d4a1099168db.png">](https://dev.solend.fi/).
+
 
 ### On-chain programs
 
