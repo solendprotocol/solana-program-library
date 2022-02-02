@@ -458,7 +458,7 @@ fn process_deposit_reserve_liquidity(
     let clock = &Clock::from_account_info(next_account_info(account_info_iter)?)?;
     let token_program_id = next_account_info(account_info_iter)?;
 
-    // We don't care about the return value here, so just ignore it.
+    _refresh_reserve_interest(program_id, reserve_info, clock)?;
     _deposit_reserve_liquidity(
         program_id,
         liquidity_amount,
@@ -473,6 +473,10 @@ fn process_deposit_reserve_liquidity(
         clock,
         token_program_id,
     )?;
+    let mut reserve = Reserve::unpack(&reserve_info.data.borrow())?;
+    reserve.last_update.mark_stale();
+    Reserve::pack(reserve, &mut reserve_info.data.borrow_mut())?;
+
     Ok(())
 }
 
@@ -599,6 +603,8 @@ fn process_redeem_reserve_collateral(
     let user_transfer_authority_info = next_account_info(account_info_iter)?;
     let clock = &Clock::from_account_info(next_account_info(account_info_iter)?)?;
     let token_program_id = next_account_info(account_info_iter)?;
+
+    _refresh_reserve_interest(program_id, reserve_info, clock)?;
     _redeem_reserve_collateral(
         program_id,
         collateral_amount,
@@ -612,7 +618,12 @@ fn process_redeem_reserve_collateral(
         user_transfer_authority_info,
         clock,
         token_program_id,
-    )
+    )?;
+    let mut reserve = Reserve::unpack(&reserve_info.data.borrow())?;
+    reserve.last_update.mark_stale();
+    Reserve::pack(reserve, &mut reserve_info.data.borrow_mut())?;
+
+    Ok(())
 }
 
 #[allow(clippy::too_many_arguments)]
