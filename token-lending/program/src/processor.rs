@@ -473,9 +473,6 @@ fn process_deposit_reserve_liquidity(
         clock,
         token_program_id,
     )?;
-    let mut reserve = Reserve::unpack(&reserve_info.data.borrow())?;
-    reserve.last_update.mark_stale();
-    Reserve::pack(reserve, &mut reserve_info.data.borrow_mut())?;
 
     Ok(())
 }
@@ -907,6 +904,7 @@ fn process_deposit_obligation_collateral(
     let user_transfer_authority_info = next_account_info(account_info_iter)?;
     let clock = &Clock::from_account_info(next_account_info(account_info_iter)?)?;
     let token_program_id = next_account_info(account_info_iter)?;
+    _refresh_reserve_interest(program_id, deposit_reserve_info, clock)?;
     _deposit_obligation_collateral(
         program_id,
         collateral_amount,
@@ -919,7 +917,11 @@ fn process_deposit_obligation_collateral(
         user_transfer_authority_info,
         clock,
         token_program_id,
-    )
+    )?;
+    let mut reserve = Reserve::unpack(&deposit_reserve_info.data.borrow())?;
+    reserve.last_update.mark_stale();
+    Reserve::pack(reserve, &mut deposit_reserve_info.data.borrow_mut())?;
+    Ok(())
 }
 
 #[allow(clippy::too_many_arguments)]
