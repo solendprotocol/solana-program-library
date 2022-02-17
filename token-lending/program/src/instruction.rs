@@ -121,7 +121,7 @@ pub enum LendingInstruction {
     ///   0. `[writable]` Source collateral token account.
     ///                     $authority can transfer $collateral_amount.
     ///   1. `[writable]` Destination liquidity token account.
-    ///   2. `[writable]` Reserve account. - refreshed
+    ///   2. `[writable]` Reserve account.
     ///   3. `[writable]` Reserve collateral SPL Token mint.
     ///   4. `[writable]` Reserve liquidity supply SPL Token account.
     ///   5. `[]` Lending market account.
