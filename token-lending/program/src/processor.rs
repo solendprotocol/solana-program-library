@@ -32,6 +32,7 @@ use std::{convert::TryInto, result::Result};
 use switchboard_program::{
     get_aggregator, get_aggregator_result, AggregatorState, RoundResult, SwitchboardAccountType,
 };
+use switchboard_v2::AggregatorAccountData;
 
 /// Processes an instruction
 pub fn process_instruction(
@@ -2353,6 +2354,11 @@ fn get_switchboard_price(
     if *switchboard_feed_info.key == spl_token_lending::NULL_PUBKEY {
         return Err(LendingError::NullOracleConfig.into());
     }
+    if switchboard_feed_info.owner == &spl_token_lending::SWITCHBOARD_V2_MAINNET
+        || switchboard_feed_info.owner == &spl_token_lending::SWITCHBOARD_V2_DEVNET
+    {
+        return get_switchboard_price_v2(switchboard_feed_info, clock);
+    }
 
     let account_buf = switchboard_feed_info.try_borrow_data()?;
     // first byte type discriminator
@@ -2378,6 +2384,32 @@ fn get_switchboard_price(
     }
 
     let price_float = round_result.result.unwrap_or(0.0);
+
+    // we just do this so we can parse coins with low usd value
+    // it might be better to just extract the mantissa and exponent from the float directly
+    let price_quotient = 10u64.pow(9);
+    let price = ((price_quotient as f64) * price_float) as u128;
+
+    Decimal::from(price).try_div(price_quotient)
+}
+
+fn get_switchboard_price_v2(
+    switchboard_feed_info: &AccountInfo,
+    clock: &Clock,
+) -> Result<Decimal, ProgramError> {
+    const STALE_AFTER_SLOTS_ELAPSED: u64 = 240;
+
+    let feed = AggregatorAccountData::new(switchboard_feed_info)?;
+    let slots_elapsed = clock
+        .slot
+        .checked_sub(feed.latest_confirmed_round.round_open_slot)
+        .ok_or(LendingError::MathOverflow)?;
+    if slots_elapsed >= STALE_AFTER_SLOTS_ELAPSED {
+        msg!("Switchboard oracle price is stale");
+        return Err(LendingError::InvalidOracleConfig.into());
+    }
+
+    let price_float: f64 = feed.get_result()?.try_into()?;
 
     // we just do this so we can parse coins with low usd value
     // it might be better to just extract the mantissa and exponent from the float directly
@@ -2624,7 +2656,10 @@ fn validate_switchboard_keys(
     if *switchboard_feed_info.key == spl_token_lending::NULL_PUBKEY {
         return Ok(());
     }
-    if &lending_market.switchboard_oracle_program_id != switchboard_feed_info.owner {
+    if switchboard_feed_info.owner != &lending_market.switchboard_oracle_program_id
+        && switchboard_feed_info.owner != &spl_token_lending::SWITCHBOARD_V2_MAINNET
+        && switchboard_feed_info.owner != &spl_token_lending::SWITCHBOARD_V2_DEVNET
+    {
         msg!("Switchboard account provided is not owned by the switchboard oracle program");
         return Err(LendingError::InvalidOracleConfig.into());
     }
