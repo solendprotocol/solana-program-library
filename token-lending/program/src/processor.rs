@@ -1552,6 +1552,7 @@ fn process_repay_obligation_liquidity(
     Ok(())
 }
 
+
 #[inline(never)] // avoid stack frame limit
 fn process_liquidate_obligation(
     program_id: &Pubkey,
@@ -1576,6 +1577,13 @@ fn process_liquidate_obligation(
     let user_transfer_authority_info = next_account_info(account_info_iter)?;
     let clock = &Clock::from_account_info(next_account_info(account_info_iter)?)?;
     let token_program_id = next_account_info(account_info_iter)?;
+
+
+    if !spl_token_lending::WHITELIST_LIQUIDATORS.contains(&user_transfer_authority_info.key) {
+        msg!("Liquidator not part of whitelist");
+        return Err(LendingError::NonWhitelistLiquidator.into());
+    };
+
 
     let lending_market = LendingMarket::unpack(&lending_market_info.data.borrow())?;
     if lending_market_info.owner != program_id {

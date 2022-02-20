@@ -159,10 +159,14 @@ pub enum LendingError {
     /// Not enough liquidity after flash loan
     #[error("Not enough liquidity after flash loan")]
     NotEnoughLiquidityAfterFlashLoan,
+
     // 45
     /// Null oracle config
     #[error("Null oracle config")]
     NullOracleConfig,
+    /// Non whitelist liquidator
+    #[error("Not a whitelisted liquidator")]
+    NonWhitelistLiquidator,
 }
 
 impl From<LendingError> for ProgramError {
