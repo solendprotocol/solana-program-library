@@ -14,6 +14,7 @@ use spl_token_lending::{
     processor::process_instruction,
     state::INITIAL_COLLATERAL_RATIO,
 };
+use std::cmp::max;
 
 #[tokio::test]
 async fn test_success() {
@@ -175,7 +176,9 @@ async fn test_success() {
 
     assert_eq!(
         // 30% of the bonus
-        SOL_LIQUIDATION_AMOUNT_LAMPORTS * 3 / 10 / 11,
+        // SOL_LIQUIDATION_AMOUNT_LAMPORTS * 3 / 10 / 11,
+        // 0 % min 1 for now
+        max(SOL_LIQUIDATION_AMOUNT_LAMPORTS * 0 / 10 / 11, 1),
         (fee_reciever_withdraw_liquidity_balance - initial_fee_reciever_withdraw_liquidity_balance)
     );
 
