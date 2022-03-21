@@ -22,11 +22,12 @@ use uint::construct_uint;
 
 // U192 with 192 bits consisting of 3 x 64-bit words
 construct_uint! {
+    #[derive(Serialize)]
     pub struct U192(3);
 }
 
 /// Large decimal values, precise to 18 digits
-#[derive(Clone, Copy, Debug, Default, PartialEq, PartialOrd, Eq, Ord)]
+#[derive(Clone, Copy, Debug, Default, PartialEq, PartialOrd, Eq, Ord, Serialize)]
 pub struct Decimal(pub U192);
 
 impl Decimal {

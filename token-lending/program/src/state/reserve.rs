@@ -15,6 +15,7 @@ use solana_program::{
 use std::{
     cmp::Ordering,
     convert::{TryFrom, TryInto},
+    fmt,
 };
 
 /// Percentage of an obligation that can be repaid during each liquidation call
@@ -596,6 +597,12 @@ impl CollateralExchangeRate {
         liquidity_amount: Decimal,
     ) -> Result<Decimal, ProgramError> {
         liquidity_amount.try_mul(self.0)
+    }
+}
+
+impl fmt::Display for CollateralExchangeRate {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str(&self.0.to_string())
     }
 }
 

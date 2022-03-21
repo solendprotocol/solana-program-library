@@ -15,7 +15,7 @@ use spl_token_lending::{
     instruction::{borrow_obligation_liquidity, refresh_obligation, refresh_reserve},
     math::Decimal,
     processor::process_instruction,
-    state::{FeeCalculation, INITIAL_COLLATERAL_RATIO},
+    state::{FeeCalculation, ObligationLiquidity, INITIAL_COLLATERAL_RATIO},
 };
 use std::u64;
 
@@ -28,7 +28,7 @@ async fn test_borrow_usdc_fixed_amount() {
     );
 
     // limit to track compute unit increase
-    test.set_bpf_compute_max_units(45_000);
+    test.set_bpf_compute_max_units(42_000);
 
     const USDC_TOTAL_BORROW_FRACTIONAL: u64 = 1_000 * FRACTIONAL_TO_USDC;
     const FEE_AMOUNT: u64 = 100;
@@ -172,7 +172,7 @@ async fn test_borrow_sol_max_amount() {
     );
 
     // limit to track compute unit increase
-    test.set_bpf_compute_max_units(45_000);
+    test.set_bpf_compute_max_units(43_000);
 
     const FEE_AMOUNT: u64 = 5000;
     const HOST_FEE_AMOUNT: u64 = 1000;
@@ -586,4 +586,148 @@ async fn test_borrow_limit() {
             InstructionError::Custom(LendingError::BorrowTooSmall as u32)
         )
     );
+}
+
+#[tokio::test]
+async fn test_borrow_max_reserves() {
+    // This test is not intended to do much to test for correctness, but rather
+    // make sure to track the compute cost of having 6 reserves and making
+    // a borrow transaction.
+    let mut test = ProgramTest::new(
+        "spl_token_lending",
+        spl_token_lending::id(),
+        processor!(process_instruction),
+    );
+
+    // limit to track compute unit increase
+    test.set_bpf_compute_max_units(85_000);
+
+    const DEPOSIT_AMOUNT_LAMPORTS: u64 = 100_000;
+    const BORROW_AMOUNT: u64 = 10;
+    const LIQUIDITY_AMOUNT: u64 = 100_000;
+    const COLLATERAL_AMOUNT: u64 = 100_000;
+
+    let user_accounts_owner = Keypair::new();
+    let lending_market = add_lending_market(&mut test);
+
+    let reserve_config = test_reserve_config();
+
+    let oracle = add_sol_oracle(&mut test);
+    let mut reserves = Vec::new();
+    for _n in 0..6 {
+        let reserve = add_reserve(
+            &mut test,
+            &lending_market,
+            &oracle,
+            &user_accounts_owner,
+            AddReserveArgs {
+                collateral_amount: COLLATERAL_AMOUNT,
+                liquidity_amount: LIQUIDITY_AMOUNT,
+                liquidity_mint_pubkey: spl_token::native_mint::id(),
+                liquidity_mint_decimals: 9,
+                config: reserve_config,
+                mark_fresh: false,
+                ..AddReserveArgs::default()
+            },
+        );
+        reserves.push(reserve);
+    }
+
+    let test_obligation = add_obligation(
+        &mut test,
+        &lending_market,
+        &user_accounts_owner,
+        AddObligationArgs {
+            deposits: &[
+                (&reserves[0], DEPOSIT_AMOUNT_LAMPORTS),
+                (&reserves[1], DEPOSIT_AMOUNT_LAMPORTS),
+                (&reserves[2], DEPOSIT_AMOUNT_LAMPORTS),
+                (&reserves[3], DEPOSIT_AMOUNT_LAMPORTS),
+                (&reserves[4], DEPOSIT_AMOUNT_LAMPORTS),
+                (&reserves[5], DEPOSIT_AMOUNT_LAMPORTS),
+            ],
+            ..AddObligationArgs::default()
+        },
+    );
+
+    let (mut banks_client, payer, recent_blockhash) = test.start().await;
+    let mut transaction = Transaction::new_with_payer(
+        &[
+            refresh_reserve(
+                spl_token_lending::id(),
+                reserves[0].pubkey,
+                oracle.pyth_price_pubkey,
+                oracle.switchboard_feed_pubkey,
+            ),
+            refresh_reserve(
+                spl_token_lending::id(),
+                reserves[1].pubkey,
+                oracle.pyth_price_pubkey,
+                oracle.switchboard_feed_pubkey,
+            ),
+            refresh_reserve(
+                spl_token_lending::id(),
+                reserves[2].pubkey,
+                oracle.pyth_price_pubkey,
+                oracle.switchboard_feed_pubkey,
+            ),
+            refresh_reserve(
+                spl_token_lending::id(),
+                reserves[3].pubkey,
+                oracle.pyth_price_pubkey,
+                oracle.switchboard_feed_pubkey,
+            ),
+            refresh_reserve(
+                spl_token_lending::id(),
+                reserves[4].pubkey,
+                oracle.pyth_price_pubkey,
+                oracle.switchboard_feed_pubkey,
+            ),
+            refresh_reserve(
+                spl_token_lending::id(),
+                reserves[5].pubkey,
+                oracle.pyth_price_pubkey,
+                oracle.switchboard_feed_pubkey,
+            ),
+            refresh_obligation(
+                spl_token_lending::id(),
+                test_obligation.pubkey,
+                vec![
+                    reserves[0].pubkey,
+                    reserves[1].pubkey,
+                    reserves[2].pubkey,
+                    reserves[3].pubkey,
+                    reserves[4].pubkey,
+                    reserves[5].pubkey,
+                ],
+            ),
+            borrow_obligation_liquidity(
+                spl_token_lending::id(),
+                BORROW_AMOUNT,
+                reserves[0].liquidity_supply_pubkey,
+                reserves[0].user_liquidity_pubkey,
+                reserves[0].pubkey,
+                reserves[0].config.fee_receiver,
+                test_obligation.pubkey,
+                lending_market.pubkey,
+                test_obligation.owner,
+                Some(reserves[0].liquidity_host_pubkey),
+            ),
+        ],
+        Some(&payer.pubkey()),
+    );
+    transaction.sign(&[&payer, &user_accounts_owner], recent_blockhash);
+    assert!(banks_client.process_transaction(transaction).await.is_ok());
+
+    let obligation = test_obligation.get_state(&mut banks_client).await;
+    assert_eq!(obligation.borrows.len(), 1);
+    assert_eq!(
+        obligation.borrows[0],
+        ObligationLiquidity {
+            borrow_reserve: reserves[0].pubkey,
+            cumulative_borrow_rate_wads: Decimal::from_scaled_val(1000000000000000000),
+            borrowed_amount_wads: Decimal::from_scaled_val(12000000000000000000),
+            market_value: Decimal::zero(),
+        }
+    )
 }

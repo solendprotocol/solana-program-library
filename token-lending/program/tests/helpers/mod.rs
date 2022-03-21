@@ -765,7 +765,7 @@ impl TestLendingMarket {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct TestReserve {
     pub name: String,
     pub pubkey: Pubkey,

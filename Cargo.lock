@@ -87,6 +87,12 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "8da52d66c7071e2e3fa2a1e5c6d088fec47b593032b254f5e980de8ea54454d6"
 
 [[package]]
+name = "arrform"
+version = "0.1.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "e7cf566ecc5c9d82b973e81d30babf6583c9b497f86295c952d538c3254ef4e6"
+
+[[package]]
 name = "ascii"
 version = "0.9.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3320,6 +3326,7 @@ name = "spl-token-lending"
 version = "0.1.0"
 dependencies = [
  "arrayref",
+ "arrform",
  "assert_matches",
  "base64 0.13.0",
  "bytemuck",
@@ -3328,6 +3335,8 @@ dependencies = [
  "num-traits",
  "proptest",
  "serde",
+ "serde_derive",
+ "serde_json",
  "serde_yaml",
  "solana-program",
  "solana-program-test",

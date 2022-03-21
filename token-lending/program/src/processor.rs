@@ -1,16 +1,21 @@
 //! Program state processor
 
 use crate::{
-    self as spl_token_lending,
+    self as spl_token_lending, emit_log_event,
     error::LendingError,
     instruction::LendingInstruction,
+    logs::{
+        BorrowLog, DepositLog, LogEventType, ObligationStateUpdate, ProgramVersion, PythError,
+        PythOraclePriceUpdate, ReserveStateUpdate, SwitchboardError,
+        SwitchboardV1OraclePriceUpdate,
+    },
     math::{Decimal, Rate, TryAdd, TryDiv, TryMul, TrySub, WAD},
     pyth,
     state::{
         CalculateBorrowResult, CalculateLiquidationResult, CalculateRepayResult,
         InitLendingMarketParams, InitObligationParams, InitReserveParams, LendingMarket,
         NewReserveCollateralParams, NewReserveLiquidityParams, Obligation, Reserve,
-        ReserveCollateral, ReserveConfig, ReserveLiquidity,
+        ReserveCollateral, ReserveConfig, ReserveLiquidity, PROGRAM_VERSION,
     },
 };
 use num_traits::FromPrimitive;
@@ -39,6 +44,11 @@ pub fn process_instruction(
     accounts: &[AccountInfo],
     input: &[u8],
 ) -> ProgramResult {
+    emit_log_event!(&ProgramVersion {
+        event_type: LogEventType::ProgramVersion,
+        version: PROGRAM_VERSION,
+    });
+
     let instruction = LendingInstruction::unpack(input)?;
     match instruction {
         LendingInstruction::InitLendingMarket {
@@ -439,6 +449,14 @@ fn _refresh_reserve_interest<'a>(
 
     reserve.accrue_interest(clock.slot)?;
     reserve.last_update.update_slot(clock.slot);
+    emit_log_event!(&ReserveStateUpdate {
+        event_type: LogEventType::ReserveStateUpdate,
+        available_amount: reserve.liquidity.available_amount,
+        borrowed_amount_wads: reserve.liquidity.borrowed_amount_wads,
+        cumulative_borrow_rate_wads: reserve.liquidity.cumulative_borrow_rate_wads,
+        collateral_mint_total_supply: reserve.collateral.mint_total_supply,
+        collateral_exchange_rate: reserve.collateral_exchange_rate()?.to_string(),
+    });
     Reserve::pack(reserve, &mut reserve_info.data.borrow_mut())?;
 
     Ok(())
@@ -772,7 +790,7 @@ fn process_refresh_obligation(program_id: &Pubkey, accounts: &[AccountInfo]) -> 
     let account_info_iter = &mut accounts.iter().peekable();
     let obligation_info = next_account_info(account_info_iter)?;
     let clock = &Clock::from_account_info(next_account_info(account_info_iter)?)?;
-
+    let non_reserve_accounts: u8 = 2;
     let mut obligation = Obligation::unpack(&obligation_info.data.borrow())?;
     if obligation_info.owner != program_id {
         msg!("Obligation provided is not owned by the lending program");
@@ -783,6 +801,8 @@ fn process_refresh_obligation(program_id: &Pubkey, accounts: &[AccountInfo]) -> 
     let mut borrowed_value = Decimal::zero();
     let mut allowed_borrow_value = Decimal::zero();
     let mut unhealthy_borrow_value = Decimal::zero();
+    let mut borrow_logs = Vec::new();
+    let mut deposit_logs = Vec::new();
 
     for (index, collateral) in obligation.deposits.iter_mut().enumerate() {
         let deposit_reserve_info = next_account_info(account_info_iter)?;
@@ -814,7 +834,6 @@ fn process_refresh_obligation(program_id: &Pubkey, accounts: &[AccountInfo]) -> 
         let decimals = 10u64
             .checked_pow(deposit_reserve.liquidity.mint_decimals as u32)
             .ok_or(LendingError::MathOverflow)?;
-
         let market_value = deposit_reserve
             .collateral_exchange_rate()?
             .decimal_collateral_to_liquidity(collateral.deposited_amount.into())?
@@ -831,6 +850,11 @@ fn process_refresh_obligation(program_id: &Pubkey, accounts: &[AccountInfo]) -> 
             allowed_borrow_value.try_add(market_value.try_mul(loan_to_value_rate)?)?;
         unhealthy_borrow_value =
             unhealthy_borrow_value.try_add(market_value.try_mul(liquidation_threshold_rate)?)?;
+
+        deposit_logs.push(DepositLog {
+            reserve_id_index: non_reserve_accounts + (index as u8),
+            deposited_amount: collateral.deposited_amount,
+        });
     }
 
     for (index, liquidity) in obligation.borrows.iter_mut().enumerate() {
@@ -873,6 +897,12 @@ fn process_refresh_obligation(program_id: &Pubkey, accounts: &[AccountInfo]) -> 
         liquidity.market_value = market_value;
 
         borrowed_value = borrowed_value.try_add(market_value)?;
+
+        borrow_logs.push(BorrowLog {
+            reserve_id_index: non_reserve_accounts + ((obligation.deposits.len() + index) as u8),
+            borrowed_amount_wads: liquidity.borrowed_amount_wads,
+            cumulative_borrow_rate_wads: liquidity.cumulative_borrow_rate_wads,
+        });
     }
 
     if account_info_iter.peek().is_some() {
@@ -887,6 +917,13 @@ fn process_refresh_obligation(program_id: &Pubkey, accounts: &[AccountInfo]) -> 
 
     obligation.last_update.update_slot(clock.slot);
     Obligation::pack(obligation, &mut obligation_info.data.borrow_mut())?;
+    emit_log_event!(&ObligationStateUpdate {
+        event_type: LogEventType::ObligationStateUpdate,
+        allowed_borrow_value,
+        unhealthy_borrow_value,
+        deposits: deposit_logs,
+        borrows: borrow_logs,
+    });
 
     Ok(())
 }
@@ -2278,15 +2315,24 @@ fn get_pyth_price(pyth_price_info: &AccountInfo, clock: &Clock) -> Result<Decima
         .map_err(|_| ProgramError::InvalidAccountData)?;
 
     if pyth_price.ptype != pyth::PriceType::Price {
-        msg!("Oracle price type is invalid {}", pyth_price.ptype as u8);
+        emit_log_event!(&PythError {
+            event_type: LogEventType::PythError,
+            oracle_pubkey: *pyth_price_info.key,
+            error_message: format!("Oracle price type is invalid: {}", pyth_price.ptype as u8),
+        });
+
         return Err(LendingError::InvalidOracleConfig.into());
     }
 
     if pyth_price.agg.status != pyth::PriceStatus::Trading {
-        msg!(
-            "Oracle price status is invalid: {}",
-            pyth_price.agg.status as u8
-        );
+        emit_log_event!(&PythError {
+            event_type: LogEventType::PythError,
+            oracle_pubkey: *pyth_price_info.key,
+            error_message: format!(
+                "Oracle price status is invalid: {}",
+                pyth_price.agg.status as u8
+            ),
+        });
         return Err(LendingError::InvalidOracleConfig.into());
     }
 
@@ -2295,12 +2341,20 @@ fn get_pyth_price(pyth_price_info: &AccountInfo, clock: &Clock) -> Result<Decima
         .checked_sub(pyth_price.valid_slot)
         .ok_or(LendingError::MathOverflow)?;
     if slots_elapsed >= STALE_AFTER_SLOTS_ELAPSED {
-        msg!("Pyth oracle price is stale");
+        emit_log_event!(&PythError {
+            event_type: LogEventType::PythError,
+            oracle_pubkey: *pyth_price_info.key,
+            error_message: format!("Pyth oracle price is stale: {} slots old.", slots_elapsed),
+        });
         return Err(LendingError::InvalidOracleConfig.into());
     }
 
     let price: u64 = pyth_price.agg.price.try_into().map_err(|_| {
-        msg!("Oracle price cannot be negative");
+        emit_log_event!(&PythError {
+            event_type: LogEventType::PythError,
+            oracle_pubkey: *pyth_price_info.key,
+            error_message: "Oracle price cannot be negative".to_string(),
+        });
         LendingError::InvalidOracleConfig
     })?;
 
@@ -2311,11 +2365,15 @@ fn get_pyth_price(pyth_price_info: &AccountInfo, clock: &Clock) -> Result<Decima
     // 100/confidence_ratio = maximum size of confidence range as a percent of price
     // confidence_ratio of 10 filters out pyth prices with conf > 10% of price
     if conf.checked_mul(confidence_ratio).unwrap() > price {
-        msg!(
-            "Oracle price confidence is too wide. price: {}, conf: {}",
-            price,
-            conf,
-        );
+        emit_log_event!(&PythError {
+            event_type: LogEventType::PythError,
+            oracle_pubkey: *pyth_price_info.key,
+            error_message: format!(
+                "Oracle price confidence is too wide. price: {}, conf: {}",
+                price, conf
+            ),
+        });
+
         return Err(LendingError::InvalidOracleConfig.into());
     }
 
@@ -2340,6 +2398,13 @@ fn get_pyth_price(pyth_price_info: &AccountInfo, clock: &Clock) -> Result<Decima
             .ok_or(LendingError::MathOverflow)?;
         Decimal::from(price).try_div(decimals)?
     };
+    emit_log_event!(&PythOraclePriceUpdate {
+        event_type: LogEventType::PythOraclePriceUpdate,
+        oracle_pubkey: *pyth_price_info.key,
+        price: market_price,
+        confidence: conf,
+        published_slot: pyth_price.valid_slot,
+    });
 
     Ok(market_price)
 }
@@ -2357,7 +2422,11 @@ fn get_switchboard_price(
     let account_buf = switchboard_feed_info.try_borrow_data()?;
     // first byte type discriminator
     if account_buf[0] != SwitchboardAccountType::TYPE_AGGREGATOR as u8 {
-        msg!("switchboard address not of type aggregator");
+        emit_log_event!(&SwitchboardError {
+            event_type: LogEventType::SwitchboardError,
+            oracle_pubkey: *switchboard_feed_info.key,
+            error_message: "Switchboard feed is not of type aggregator".to_string(),
+        });
         return Err(LendingError::InvalidAccountInput.into());
     }
 
@@ -2367,13 +2436,17 @@ fn get_switchboard_price(
     //     return Err(LendingError::InvalidAccountInput.into());
     // }
     let round_result: RoundResult = get_aggregator_result(&aggregator)?;
-
+    let open_slot = round_result.round_open_slot.unwrap();
     let slots_elapsed = clock
         .slot
-        .checked_sub(round_result.round_open_slot.unwrap())
+        .checked_sub(open_slot)
         .ok_or(LendingError::MathOverflow)?;
     if slots_elapsed >= STALE_AFTER_SLOTS_ELAPSED {
-        msg!("Switchboard oracle price is stale");
+        emit_log_event!(&SwitchboardError {
+            event_type: LogEventType::SwitchboardError,
+            oracle_pubkey: *switchboard_feed_info.key,
+            error_message: format!("Oracle price is stale by {} slots", slots_elapsed),
+        });
         return Err(LendingError::InvalidOracleConfig.into());
     }
 
@@ -2384,7 +2457,14 @@ fn get_switchboard_price(
     let price_quotient = 10u64.pow(9);
     let price = ((price_quotient as f64) * price_float) as u128;
 
-    Decimal::from(price).try_div(price_quotient)
+    let market_price = Decimal::from(price).try_div(price_quotient)?;
+    emit_log_event!(&SwitchboardV1OraclePriceUpdate {
+        event_type: LogEventType::SwitchboardV1OraclePriceUpdate,
+        oracle_pubkey: *switchboard_feed_info.key,
+        price: market_price,
+        published_slot: open_slot,
+    });
+    Ok(market_price)
 }
 
 /// Issue a spl_token `InitializeAccount` instruction.
