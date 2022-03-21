@@ -23,6 +23,7 @@ use spl_token_lending::{
         init_reserve, liquidate_obligation, refresh_reserve,
     },
     math::{Decimal, Rate, TryAdd, TryMul},
+    processor::switchboard_v2_mainnet,
     pyth,
     state::{
         InitLendingMarketParams, InitObligationParams, InitReserveParams, LendingMarket,
@@ -30,7 +31,6 @@ use spl_token_lending::{
         ObligationLiquidity, Reserve, ReserveCollateral, ReserveConfig, ReserveFees,
         ReserveLiquidity, INITIAL_COLLATERAL_RATIO, PROGRAM_VERSION,
     },
-    SWITCHBOARD_V2_MAINNET,
 };
 use std::{convert::TryInto, str::FromStr};
 use switchboard_v2::AggregatorAccountData;
@@ -1274,7 +1274,7 @@ pub fn add_oracle(
             Account {
                 lamports: u32::MAX as u64,
                 data: switchboard_feed_data,
-                owner: SWITCHBOARD_V2_MAINNET,
+                owner: switchboard_v2_mainnet::id(),
                 executable: false,
                 rent_epoch: 0,
             },

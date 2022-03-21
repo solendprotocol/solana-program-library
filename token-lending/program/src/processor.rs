@@ -34,6 +34,16 @@ use switchboard_program::{
 };
 use switchboard_v2::AggregatorAccountData;
 
+/// Mainnet program id for Switchboard v2.
+pub mod switchboard_v2_mainnet {
+    solana_program::declare_id!("SW1TCH7qEPTdLsDHRgPuMQjbQxKdH2aBStViMFnt64f");
+}
+
+/// Devnet program id for Switchboard v2.
+pub mod switchboard_v2_devnet {
+    solana_program::declare_id!("2TfB33aLaneQb5TNVwyDz3jSZXS6jdW2ARw1Dgf84XCG");
+}
+
 /// Processes an instruction
 pub fn process_instruction(
     program_id: &Pubkey,
@@ -2354,8 +2364,8 @@ fn get_switchboard_price(
     if *switchboard_feed_info.key == spl_token_lending::NULL_PUBKEY {
         return Err(LendingError::NullOracleConfig.into());
     }
-    if switchboard_feed_info.owner == &spl_token_lending::SWITCHBOARD_V2_MAINNET
-        || switchboard_feed_info.owner == &spl_token_lending::SWITCHBOARD_V2_DEVNET
+    if switchboard_feed_info.owner == &switchboard_v2_mainnet::id()
+        || switchboard_feed_info.owner == &switchboard_v2_devnet::id()
     {
         return get_switchboard_price_v2(switchboard_feed_info, clock);
     }
@@ -2409,14 +2419,14 @@ fn get_switchboard_price_v2(
         return Err(LendingError::InvalidOracleConfig.into());
     }
 
-    let price_float: f64 = feed.get_result()?.try_into()?;
-
-    // we just do this so we can parse coins with low usd value
-    // it might be better to just extract the mantissa and exponent from the float directly
-    let price_quotient = 10u64.pow(9);
-    let price = ((price_quotient as f64) * price_float) as u128;
-
-    Decimal::from(price).try_div(price_quotient)
+    let price_switchboard_desc = feed.get_result()?;
+    if price_switchboard_desc.mantissa < 0 {
+        msg!("Switchboard oracle price is negative which is not allowed");
+        return Err(LendingError::InvalidOracleConfig.into());
+    }
+    let price = Decimal::from(price_switchboard_desc.mantissa as u128);
+    let exp = (10u64).checked_pow(price_switchboard_desc.scale).unwrap();
+    price.try_div(exp)
 }
 
 /// Issue a spl_token `InitializeAccount` instruction.
@@ -2657,8 +2667,8 @@ fn validate_switchboard_keys(
         return Ok(());
     }
     if switchboard_feed_info.owner != &lending_market.switchboard_oracle_program_id
-        && switchboard_feed_info.owner != &spl_token_lending::SWITCHBOARD_V2_MAINNET
-        && switchboard_feed_info.owner != &spl_token_lending::SWITCHBOARD_V2_DEVNET
+        && switchboard_feed_info.owner != &switchboard_v2_mainnet::id()
+        && switchboard_feed_info.owner != &switchboard_v2_devnet::id()
     {
         msg!("Switchboard account provided is not owned by the switchboard oracle program");
         return Err(LendingError::InvalidOracleConfig.into());
