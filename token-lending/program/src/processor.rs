@@ -1865,7 +1865,7 @@ fn process_liquidate_obligation_and_redeem_reserve_collateral(
     let token_program_id = next_account_info(account_info_iter)?;
     let clock = &Clock::get()?;
 
-    let withdraw_collateral_amount = _liquidate_obligation(
+    let withdrawn_collateral_amount = _liquidate_obligation(
         program_id,
         liquidity_amount,
         source_liquidity_info,
@@ -1883,6 +1883,11 @@ fn process_liquidate_obligation_and_redeem_reserve_collateral(
     )?;
 
     _refresh_reserve_interest(program_id, withdraw_reserve_info, clock)?;
+    let withdraw_reserve = Reserve::unpack(&withdraw_reserve_info.data.borrow())?;
+    let collateral_exchange_rate = withdraw_reserve.collateral_exchange_rate()?;
+    let max_redeemable_collateral = collateral_exchange_rate
+        .liquidity_to_collateral(withdraw_reserve.liquidity.available_amount)?;
+    let withdraw_collateral_amount = min(withdrawn_collateral_amount, max_redeemable_collateral);
     let withdraw_liquidity_amount = _redeem_reserve_collateral(
         program_id,
         withdraw_collateral_amount,
