@@ -1888,6 +1888,9 @@ fn process_liquidate_obligation_and_redeem_reserve_collateral(
     let max_redeemable_collateral = collateral_exchange_rate
         .liquidity_to_collateral(withdraw_reserve.liquidity.available_amount)?;
     let withdraw_collateral_amount = min(withdrawn_collateral_amount, max_redeemable_collateral);
+    if withdraw_collateral_amount == 0 {
+        return Ok(());
+    }
     let withdraw_liquidity_amount = _redeem_reserve_collateral(
         program_id,
         withdraw_collateral_amount,
