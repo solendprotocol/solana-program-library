@@ -902,7 +902,6 @@ fn process_refresh_obligation(program_id: &Pubkey, accounts: &[AccountInfo]) -> 
     obligation.deposited_value = deposited_value;
     obligation.borrowed_value = borrowed_value;
 
-
     // Wednesday, June 22, 2022 12:00:00 AM GMT
     let start_timestamp = 1655856000u64;
     // Wednesday, June 29, 2022 12:00:00 AM GMT
