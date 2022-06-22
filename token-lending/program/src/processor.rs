@@ -902,10 +902,10 @@ fn process_refresh_obligation(program_id: &Pubkey, accounts: &[AccountInfo]) -> 
     obligation.deposited_value = deposited_value;
     obligation.borrowed_value = borrowed_value;
 
-    // Wednesday, June 22, 2022 12:00:00 AM GMT
-    let start_timestamp = 1655856000u64;
-    // Wednesday, June 29, 2022 12:00:00 AM GMT
-    let end_timestamp = 1656435600u64;
+    // Wednesday, June 22, 2022 12:00:00 PM GMT
+    let start_timestamp = 1655899200u64;
+    // Wednesday, June 28, 2022 8:00:00 AM GMT
+    let end_timestamp = 1656403200u64;
     let current_timestamp = clock.unix_timestamp as u64;
     let current_timestamp_in_range = min(max(start_timestamp, current_timestamp), end_timestamp);
     let numerator = end_timestamp
