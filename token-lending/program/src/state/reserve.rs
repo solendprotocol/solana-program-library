@@ -21,7 +21,7 @@ use std::{
 pub const LIQUIDATION_CLOSE_FACTOR: u8 = 1;
 
 /// Obligation borrow amount that is small enough to close out
-pub const LIQUIDATION_CLOSE_AMOUNT: u64 = 2;
+pub const LIQUIDATION_CLOSE_AMOUNT: u64 = 20;
 
 /// Lending market reserve state
 #[derive(Clone, Debug, Default, PartialEq)]
