@@ -64,11 +64,3 @@ jobs:
           name: token-lending-programs
           path: "target/deploy/*.so"
           if-no-files-found: error
-
-      - name: run test coverage
-        run: ./coverage.sh token-lending
-
-      - name: Display coverage results
-        uses: pavi2410/html-preview-action@v2
-        with:
-          html_file: 'target/cov/LATEST/index.html'
