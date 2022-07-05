@@ -160,11 +160,7 @@ jobs:
       - name: run test coverage
         run: ./coverage.sh token-lending
 
-      - name: Display coverage results
-        id: coverage_preview
-        uses: pavi2410/html-preview-action@v2
+      - uses: actions/upload-artifact@v3
         with:
-          html_file: 'target/cov/LATEST/index.html'
-
-      - name: output coverage url
-        run: echo ${{ steps.coverage_preview.outputs.url }}
+          name: coverage-report
+          path: target/cov/LATEST/
