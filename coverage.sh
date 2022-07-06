@@ -13,11 +13,6 @@ if ! which grcov; then
   exit 1
 fi
 
-if [[ ! "$(grcov --version)" =~ "0.6.1" ]]; then
-  echo Error: Required grcov version not installed
-  exit 1
-fi
-
 : "${CI_COMMIT:=local}"
 reportName="lcov-${CI_COMMIT:0:9}"
 
@@ -85,12 +80,13 @@ find target/cov -type f -name '*.gcda' -newer target/cov/before-test ! -newer ta
   set -x
   grcov target/cov/tmp -t html -o target/cov/$reportName
   grcov target/cov/tmp -t lcov -o target/cov/lcov.info
+  grcov target/cov/tmp -t cobertura -o target/cov/cobertura.xml
 
   cd target/cov
   tar zcf report.tar.gz $reportName
 )
 
-ls -l target/cov/$reportName/index.html
+ls -l target/cov/
 ln -sf $reportName target/cov/LATEST
 
 exit $test_status

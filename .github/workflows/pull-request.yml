@@ -160,7 +160,7 @@ jobs:
       - name: run test coverage
         run: ./coverage.sh token-lending
 
-      - uses: actions/upload-artifact@v3
+      - name: Codecov
+        uses: codecov/codecov-action@v3.1.0
         with:
-          name: coverage-report
-          path: "target/cov/lcov-local/"
+          file: target/cov/cobertura.xml
