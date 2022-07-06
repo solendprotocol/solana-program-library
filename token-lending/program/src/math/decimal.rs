@@ -224,7 +224,6 @@ mod test {
 
         let hundred = Decimal::from(100u64);
         // 2^64 * 5 + 7766279631452241920 = 1e20
-        assert_eq!(hundred.0.0, [7766279631452241920, 5, 0]);
+        assert_eq!(hundred.0 .0, [7766279631452241920, 5, 0]);
     }
-
 }
