@@ -213,4 +213,18 @@ mod test {
     fn test_scaler() {
         assert_eq!(U192::exp10(SCALE), Decimal::wad());
     }
+
+    #[test]
+    fn test_u192() {
+        let one = U192::from(1);
+        assert_eq!(one.0, [1u64, 0, 0]);
+
+        let wad = Decimal::wad();
+        assert_eq!(wad.0, [WAD, 0, 0]);
+
+        let hundred = Decimal::from(100u64);
+        // 2^64 * 5 + 7766279631452241920 = 1e20
+        assert_eq!(hundred.0.0, [7766279631452241920, 5, 0]);
+    }
+
 }
