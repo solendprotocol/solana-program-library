@@ -216,9 +216,7 @@ mod test {
             Rate::from_percent(120)
         );
         assert_eq!(
-            Rate::from_percent(240)
-                .try_mul(10)
-                .unwrap(),
+            Rate::from_percent(240).try_mul(10).unwrap(),
             Decimal::from(24u64).try_into().unwrap()
         );
 
