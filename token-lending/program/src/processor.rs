@@ -2399,9 +2399,6 @@ fn _flash_borrow_reserve_liquidity<'a>(
         return Err(LendingError::FlashLoansDisabled.into());
     }
 
-    let flash_loan_amount = liquidity_amount;
-    let flash_loan_amount_decimal = Decimal::from(flash_loan_amount);
-
     // Make sure this isnt a cpi call
     let current_index = load_current_index_checked(sysvar_info)? as usize;
     let current_ixn = load_instruction_at_checked(current_index, sysvar_info)?;
@@ -2417,6 +2414,8 @@ fn _flash_borrow_reserve_liquidity<'a>(
     // Loop through instructions, looking for an equivalent repay to this borrow.
     // Always start by looking at next instruction after current_index.
     let mut i = current_index;
+    let mut found_repay_ix = false;
+
     loop {
         i += 1;
 
@@ -2424,13 +2423,19 @@ fn _flash_borrow_reserve_liquidity<'a>(
         if let Ok(ixn) = load_instruction_at_checked(i, sysvar_info) {
             // In order to validate the repay we need to:
             //
-            // 1. Ensure the instruction can be unpacked into a LendingInstruction
-            // 2. Ensure the instruction is for this program
+            // 1. Ensure the instruction is for this program
+            // 2. Ensure the instruction can be unpacked into a LendingInstruction
             // 3. Ensure that the reserve for the repay matches the borrow
-            // 4. Ensure that there are no flash borrows between this borrow and the repay for the same reserve
+            // 4. Ensure that there are no other flash instructions in the rest of the transaction
             // 5. Ensure that the repay amount matches the borrow amount
             //
             // If all of these conditions are not met, the flash borrow fails.
+
+            if ixn.program_id != *program_id {
+                // If the instruction is not from this program
+                // then we don't care about it, so continue.
+                continue;
+            }
 
             // Attempt to unpack this instruction into a LendingInstruction.
             let unpacked = match LendingInstruction::unpack(ixn.data.as_slice()) {
@@ -2442,42 +2447,27 @@ fn _flash_borrow_reserve_liquidity<'a>(
                 }
             };
 
-            if ixn.program_id != *program_id {
-                // If the instruction is not from this program
-                // then we don't care about it, so continue.
-                continue;
-            }
-
             match unpacked {
                 LendingInstruction::FlashRepayReserveLiquidity {
                     liquidity_amount: repay_liquidity_amount,
                 } => {
+                    if found_repay_ix {
+                        msg!("Multiple flash repays not allowed");
+                        return Err(LendingError::MultipleFlashBorrows.into());
+                    }
                     if ixn.accounts[4].pubkey != *reserve_info.key {
-                        // If the instruction is not for this reserve
-                        // then we don't care about it, so continue.
-                        continue;
+                        msg!("Invalid reserve account on flash repay");
+                        return Err(LendingError::InvalidFlashRepay.into());
                     }
 
-                    // If borrow amount matches repay amount then
-                    // we have successfully verified that the flash
-                    // borrow will be repaid. If it does not – then
-                    // return an error as this borrow is invalid.
                     if repay_liquidity_amount == liquidity_amount {
-                        break;
+                        found_repay_ix = true;
                     } else {
                         msg!("Liquidity amount for flash repay doesn't match borrow");
                         return Err(LendingError::InvalidFlashRepay.into());
                     }
                 }
                 LendingInstruction::FlashBorrowReserveLiquidity { .. } => {
-                    if ixn.accounts[2].pubkey != *reserve_info.key {
-                        // If the instruction is not for this reserve
-                        // then we don't care about it, so continue.
-                        continue;
-                    }
-
-                    // Throw an error if we encounter another flash borrow before
-                    // encountering a valid flash repay.
                     msg!("Multiple flash borrows not allowed");
                     return Err(LendingError::MultipleFlashBorrows.into());
                 }
@@ -2486,20 +2476,22 @@ fn _flash_borrow_reserve_liquidity<'a>(
                 }
             }
         } else {
-            // If no more instructions and a valid repay was never found then
-            // return an error.
-            msg!("No flash repay found");
-            return Err(LendingError::NoFlashRepayFound.into());
+            break;
         }
     }
 
-    reserve.liquidity.borrow(flash_loan_amount_decimal)?;
+    if !found_repay_ix {
+        msg!("No flash repay found");
+        return Err(LendingError::NoFlashRepayFound.into());
+    }
+
+    reserve.liquidity.borrow(Decimal::from(liquidity_amount))?;
     Reserve::pack(reserve, &mut reserve_info.data.borrow_mut())?;
 
     spl_token_transfer(TokenTransferParams {
         source: source_liquidity_info.clone(),
         destination: destination_liquidity_info.clone(),
-        amount: flash_loan_amount,
+        amount: liquidity_amount,
         authority: lending_market_authority_info.clone(),
         authority_signer_seeds,
         token_program: token_program_id.clone(),
