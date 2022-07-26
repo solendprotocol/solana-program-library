@@ -2408,11 +2408,7 @@ fn _flash_repay_reserve_liquidity<'a>(
         token_program: token_program_id.clone(),
     })?;
 
-    let mut owner_fee = origination_fee;
     if host_fee > 0 {
-        owner_fee = owner_fee
-            .checked_sub(host_fee)
-            .ok_or(LendingError::MathOverflow)?;
         spl_token_transfer(TokenTransferParams {
             source: source_liquidity_info.clone(),
             destination: host_fee_receiver_info.clone(),
@@ -2423,11 +2419,11 @@ fn _flash_repay_reserve_liquidity<'a>(
         })?;
     }
 
-    if owner_fee > 0 {
+    if origination_fee > 0 {
         spl_token_transfer(TokenTransferParams {
             source: source_liquidity_info.clone(),
             destination: reserve_liquidity_fee_receiver_info.clone(),
-            amount: owner_fee,
+            amount: origination_fee,
             authority: user_transfer_authority_info.clone(),
             authority_signer_seeds: &[],
             token_program: token_program_id.clone(),
