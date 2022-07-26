@@ -2,6 +2,7 @@
 
 pub mod flash_loan_receiver;
 pub mod genesis;
+pub mod flash_loan_proxy;
 
 use assert_matches::*;
 use solana_program::{program_option::COption, program_pack::Pack, pubkey::Pubkey};
