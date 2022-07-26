@@ -696,7 +696,7 @@ async fn test_fail_invalid_repay_ix() {
                 .unwrap(),
             TransactionError::InstructionError(
                 1,
-                InstructionError::Custom(spl_token::error::TokenError::InsufficientFunds as u32),
+                InstructionError::Custom(LendingError::TokenTransferFailed as u32)
             )
         );
     }
