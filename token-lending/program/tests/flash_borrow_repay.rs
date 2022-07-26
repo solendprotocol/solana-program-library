@@ -477,7 +477,7 @@ async fn test_fail_invalid_repay_ix() {
     );
 
     const FLASH_LOAN_AMOUNT: u64 = 3_000_000;
-    const LIQUIDITY_AMOUNT: u64 = 1_000 * FRACTIONAL_TO_USDC;
+    const LIQUIDITY_AMOUNT: u64 = 1_000_000 * FRACTIONAL_TO_USDC;
     const FEE_AMOUNT: u64 = 3_000_000;
 
     let user_accounts_owner = Keypair::new();
@@ -658,10 +658,52 @@ async fn test_fail_invalid_repay_ix() {
             )
         );
     }
+
+    // case 5: insufficient funds to pay fees on repay. FEE_AMOUNT was calculated using
+    // FLASH_LOAN_AMOUNT, not LIQUIDITY_AMOUNT.
+    {
+        let mut transaction = Transaction::new_with_payer(
+            &[
+                flash_borrow_reserve_liquidity(
+                    solend_program::id(),
+                    LIQUIDITY_AMOUNT,
+                    usdc_test_reserve.liquidity_supply_pubkey,
+                    usdc_test_reserve.user_liquidity_pubkey,
+                    usdc_test_reserve.pubkey,
+                    lending_market.pubkey,
+                ),
+                flash_repay_reserve_liquidity(
+                    solend_program::id(),
+                    LIQUIDITY_AMOUNT,
+                    usdc_test_reserve.user_liquidity_pubkey,
+                    usdc_test_reserve.liquidity_supply_pubkey,
+                    usdc_test_reserve.config.fee_receiver,
+                    usdc_test_reserve.liquidity_host_pubkey,
+                    usdc_test_reserve.pubkey,
+                    lending_market.pubkey,
+                    user_accounts_owner.pubkey(),
+                ),
+            ],
+            Some(&payer.pubkey()),
+        );
+        transaction.sign(&[&payer, &user_accounts_owner], recent_blockhash);
+
+        assert_eq!(
+            banks_client
+                .process_transaction(transaction)
+                .await
+                .unwrap_err()
+                .unwrap(),
+            TransactionError::InstructionError(
+                1,
+                InstructionError::Custom(spl_token::error::TokenError::InsufficientFunds as u32),
+            )
+        );
+    }
 }
 
 #[tokio::test]
-async fn test_fail_insufficient_liquidity() {
+async fn test_fail_insufficient_liquidity_for_borrow() {
     let mut test = ProgramTest::new(
         "solend_program",
         solend_program::id(),
