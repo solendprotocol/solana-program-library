@@ -273,6 +273,7 @@ pub enum LendingInstruction {
     },
 
     // 13
+    /// This instruction is now deprecated. Use FlashBorrowReserveLiquidity instead.
     /// Make a flash loan.
     ///
     /// Accounts expected by this instruction:
@@ -1308,43 +1309,6 @@ pub fn liquidate_obligation(
             AccountMeta::new_readonly(spl_token::id(), false),
         ],
         data: LendingInstruction::LiquidateObligation { liquidity_amount }.pack(),
-    }
-}
-
-/// Creates a `FlashLoan` instruction.
-#[allow(clippy::too_many_arguments)]
-pub fn flash_loan(
-    program_id: Pubkey,
-    amount: u64,
-    source_liquidity_pubkey: Pubkey,
-    destination_liquidity_pubkey: Pubkey,
-    reserve_pubkey: Pubkey,
-    reserve_liquidity_fee_receiver_pubkey: Pubkey,
-    host_fee_receiver_pubkey: Pubkey,
-    lending_market_pubkey: Pubkey,
-    flash_loan_receiver_program_id: Pubkey,
-    flash_loan_receiver_program_accounts: Vec<AccountMeta>,
-) -> Instruction {
-    let (lending_market_authority_pubkey, _bump_seed) = Pubkey::find_program_address(
-        &[&lending_market_pubkey.to_bytes()[..PUBKEY_BYTES]],
-        &program_id,
-    );
-    let mut accounts = vec![
-        AccountMeta::new(source_liquidity_pubkey, false),
-        AccountMeta::new(destination_liquidity_pubkey, false),
-        AccountMeta::new(reserve_pubkey, false),
-        AccountMeta::new(reserve_liquidity_fee_receiver_pubkey, false),
-        AccountMeta::new(host_fee_receiver_pubkey, false),
-        AccountMeta::new_readonly(lending_market_pubkey, false),
-        AccountMeta::new_readonly(lending_market_authority_pubkey, false),
-        AccountMeta::new_readonly(spl_token::id(), false),
-        AccountMeta::new_readonly(flash_loan_receiver_program_id, false),
-    ];
-    accounts.extend(flash_loan_receiver_program_accounts);
-    Instruction {
-        program_id,
-        accounts,
-        data: LendingInstruction::FlashLoan { amount }.pack(),
     }
 }
 
