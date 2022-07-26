@@ -1,4 +1,4 @@
-// #[cfg(feature = "test-bpf")]
+#![cfg(feature = "test-bpf")]
 
 mod helpers;
 
@@ -123,7 +123,7 @@ async fn test_fail_disable_flash_loans() {
     let lending_market = add_lending_market(&mut test);
 
     let mut reserve_config = test_reserve_config();
-    reserve_config.fees.flash_loan_fee_wad = u64::MAX;
+    reserve_config.fees.flash_loan_fee_wad = u64::MAX; // disabled
 
     let usdc_mint = add_usdc_mint(&mut test);
     let usdc_oracle = add_usdc_oracle(&mut test);
@@ -696,7 +696,7 @@ async fn test_fail_invalid_repay_ix() {
                 .unwrap(),
             TransactionError::InstructionError(
                 1,
-                InstructionError::Custom(LendingError::TokenTransferFailed as u32)
+                InstructionError::Custom(1 as u32)
             )
         );
     }

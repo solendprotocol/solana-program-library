@@ -2317,9 +2317,9 @@ fn process_flash_borrow_reserve_liquidity(
     let lending_market_authority_info = next_account_info(account_info_iter)?;
     let sysvar_info = next_account_info(account_info_iter)?;
     let token_program_id = next_account_info(account_info_iter)?;
-    let clock = &Clock::from_account_info(next_account_info(account_info_iter)?)?;
+    let clock = Clock::get()?;
 
-    _refresh_reserve_interest(program_id, reserve_info, clock)?;
+    _refresh_reserve_interest(program_id, reserve_info, &clock)?;
     _flash_borrow_reserve_liquidity(
         program_id,
         liquidity_amount,
@@ -2463,6 +2463,7 @@ fn _flash_borrow_reserve_liquidity<'a>(
 
     reserve.liquidity.borrow(Decimal::from(liquidity_amount))?;
     Reserve::pack(reserve, &mut reserve_info.data.borrow_mut())?;
+    // TODO should i mark reserve as stale?
 
     spl_token_transfer(TokenTransferParams {
         source: source_liquidity_info.clone(),
@@ -2929,6 +2930,7 @@ fn spl_token_transfer(params: TokenTransferParams<'_, '_>) -> ProgramResult {
         &[source, destination, authority, token_program],
         authority_signer_seeds,
     );
+
     result.map_err(|_| LendingError::TokenTransferFailed.into())
 }
 

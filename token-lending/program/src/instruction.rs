@@ -1481,7 +1481,6 @@ pub fn flash_borrow_reserve_liquidity(
             AccountMeta::new_readonly(lending_market_authority_pubkey, false),
             AccountMeta::new_readonly(sysvar::instructions::id(), false),
             AccountMeta::new_readonly(spl_token::id(), false),
-            AccountMeta::new_readonly(sysvar::clock::id(), false),
         ],
         data: LendingInstruction::FlashBorrowReserveLiquidity { liquidity_amount }.pack(),
     }
