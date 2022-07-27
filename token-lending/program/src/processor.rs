@@ -2423,7 +2423,7 @@ fn _flash_repay_reserve_liquidity<'a>(
 
     let unpacked = LendingInstruction::unpack(ixn.data.as_slice())?;
     match unpacked {
-        // don't need to check anything here because we check in the borrow instruction
+        // don't need to check anything here because we've checked correctness in the flash borrow
         LendingInstruction::FlashBorrowReserveLiquidity { .. } => {}
         _ => {
             msg!("Flash repay: Supplied borrow instruction index is not a flash borrow");
