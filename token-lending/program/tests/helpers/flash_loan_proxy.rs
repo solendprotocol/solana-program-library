@@ -19,8 +19,13 @@ use solend_program::{
 };
 
 pub enum FlashLoanProxyInstruction {
-    ProxyBorrow { liquidity_amount: u64 },
-    ProxyRepay { liquidity_amount: u64, borrow_instruction_index: u8 },
+    ProxyBorrow {
+        liquidity_amount: u64,
+    },
+    ProxyRepay {
+        liquidity_amount: u64,
+        borrow_instruction_index: u8,
+    },
 }
 
 pub fn process_instruction(
@@ -45,9 +50,17 @@ impl Processor {
                 msg!("Instruction: Proxy Borrow");
                 Self::process_proxy_borrow(accounts, liquidity_amount, program_id)
             }
-            FlashLoanProxyInstruction::ProxyRepay { liquidity_amount, borrow_instruction_index } => {
+            FlashLoanProxyInstruction::ProxyRepay {
+                liquidity_amount,
+                borrow_instruction_index,
+            } => {
                 msg!("Instruction: Proxy Repay");
-                Self::process_proxy_repay(accounts, liquidity_amount, borrow_instruction_index, program_id)
+                Self::process_proxy_repay(
+                    accounts,
+                    liquidity_amount,
+                    borrow_instruction_index,
+                    program_id,
+                )
             }
         }
     }
@@ -208,7 +221,11 @@ pub fn repay_proxy(
             AccountMeta::new_readonly(sysvar::instructions::id(), false),
             AccountMeta::new_readonly(spl_token::id(), false),
         ],
-        data: FlashLoanProxyInstruction::ProxyRepay { liquidity_amount, borrow_instruction_index }.pack(),
+        data: FlashLoanProxyInstruction::ProxyRepay {
+            liquidity_amount,
+            borrow_instruction_index,
+        }
+        .pack(),
     }
 }
 
@@ -249,7 +266,10 @@ impl FlashLoanProxyInstruction {
                 buf.push(0);
                 buf.extend_from_slice(&liquidity_amount.to_le_bytes());
             }
-            Self::ProxyRepay { liquidity_amount, borrow_instruction_index } => {
+            Self::ProxyRepay {
+                liquidity_amount,
+                borrow_instruction_index,
+            } => {
                 buf.push(1);
                 buf.extend_from_slice(&liquidity_amount.to_le_bytes());
                 buf.extend_from_slice(&borrow_instruction_index.to_le_bytes());

@@ -735,7 +735,9 @@ impl ReserveFees {
             FeeCalculation::Exclusive,
         )?;
 
-        let origination_fee = total_fees.checked_sub(host_fee).ok_or(LendingError::MathOverflow)?;
+        let origination_fee = total_fees
+            .checked_sub(host_fee)
+            .ok_or(LendingError::MathOverflow)?;
         Ok((origination_fee, host_fee))
     }
 

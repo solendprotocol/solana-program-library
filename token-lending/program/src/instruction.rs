@@ -614,7 +614,10 @@ impl LendingInstruction {
             20 => {
                 let (liquidity_amount, rest) = Self::unpack_u64(rest)?;
                 let (borrow_instruction_index, _rest) = Self::unpack_u8(rest)?;
-                Self::FlashRepayReserveLiquidity { liquidity_amount, borrow_instruction_index }
+                Self::FlashRepayReserveLiquidity {
+                    liquidity_amount,
+                    borrow_instruction_index,
+                }
             }
             _ => {
                 msg!("Instruction cannot be unpacked");
@@ -811,7 +814,10 @@ impl LendingInstruction {
                 buf.push(19);
                 buf.extend_from_slice(&liquidity_amount.to_le_bytes());
             }
-            Self::FlashRepayReserveLiquidity { liquidity_amount, borrow_instruction_index } => {
+            Self::FlashRepayReserveLiquidity {
+                liquidity_amount,
+                borrow_instruction_index,
+            } => {
                 buf.push(20);
                 buf.extend_from_slice(&liquidity_amount.to_le_bytes());
                 buf.extend_from_slice(&borrow_instruction_index.to_le_bytes());
@@ -1481,6 +1487,10 @@ pub fn flash_repay_reserve_liquidity(
             AccountMeta::new_readonly(sysvar::instructions::id(), false),
             AccountMeta::new_readonly(spl_token::id(), false),
         ],
-        data: LendingInstruction::FlashRepayReserveLiquidity { liquidity_amount, borrow_instruction_index }.pack(),
+        data: LendingInstruction::FlashRepayReserveLiquidity {
+            liquidity_amount,
+            borrow_instruction_index,
+        }
+        .pack(),
     }
 }
