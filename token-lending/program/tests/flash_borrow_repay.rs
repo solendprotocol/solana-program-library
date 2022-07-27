@@ -16,6 +16,7 @@ use solend_program::{
     processor::process_instruction,
 };
 use spl_token::error::TokenError;
+use spl_token::instruction::approve;
 
 #[tokio::test]
 async fn test_success() {
@@ -70,6 +71,7 @@ async fn test_success() {
             flash_repay_reserve_liquidity(
                 solend_program::id(),
                 FLASH_LOAN_AMOUNT,
+                0,
                 usdc_test_reserve.user_liquidity_pubkey,
                 usdc_test_reserve.liquidity_supply_pubkey,
                 usdc_test_reserve.config.fee_receiver,
@@ -157,6 +159,7 @@ async fn test_fail_disable_flash_loans() {
             flash_repay_reserve_liquidity(
                 solend_program::id(),
                 FLASH_LOAN_AMOUNT,
+                0,
                 usdc_test_reserve.user_liquidity_pubkey,
                 usdc_test_reserve.liquidity_supply_pubkey,
                 usdc_test_reserve.config.fee_receiver,
@@ -245,6 +248,7 @@ async fn test_fail_double_borrow() {
             flash_repay_reserve_liquidity(
                 solend_program::id(),
                 FLASH_LOAN_AMOUNT,
+                0,
                 usdc_test_reserve.user_liquidity_pubkey,
                 usdc_test_reserve.liquidity_supply_pubkey,
                 usdc_test_reserve.config.fee_receiver,
@@ -325,6 +329,7 @@ async fn test_fail_double_repay() {
             flash_repay_reserve_liquidity(
                 solend_program::id(),
                 FLASH_LOAN_AMOUNT,
+                0,
                 usdc_test_reserve.user_liquidity_pubkey,
                 usdc_test_reserve.liquidity_supply_pubkey,
                 usdc_test_reserve.config.fee_receiver,
@@ -335,6 +340,7 @@ async fn test_fail_double_repay() {
             ),
             flash_repay_reserve_liquidity(
                 solend_program::id(),
+                0,
                 0,
                 usdc_test_reserve.user_liquidity_pubkey,
                 usdc_test_reserve.liquidity_supply_pubkey,
@@ -416,6 +422,7 @@ async fn test_fail_only_one_flash_ix_pair_per_tx() {
             flash_repay_reserve_liquidity(
                 solend_program::id(),
                 FLASH_LOAN_AMOUNT,
+                0,
                 usdc_test_reserve.user_liquidity_pubkey,
                 usdc_test_reserve.liquidity_supply_pubkey,
                 usdc_test_reserve.config.fee_receiver,
@@ -435,6 +442,7 @@ async fn test_fail_only_one_flash_ix_pair_per_tx() {
             flash_repay_reserve_liquidity(
                 solend_program::id(),
                 FLASH_LOAN_AMOUNT,
+                2,
                 usdc_test_reserve.user_liquidity_pubkey,
                 usdc_test_reserve.liquidity_supply_pubkey,
                 usdc_test_reserve.config.fee_receiver,
@@ -522,6 +530,7 @@ async fn test_fail_invalid_repay_ix() {
                 flash_repay_reserve_liquidity(
                     solend_program::id(),
                     FLASH_LOAN_AMOUNT,
+                    0,
                     usdc_test_reserve.user_liquidity_pubkey,
                     usdc_test_reserve.liquidity_supply_pubkey,
                     usdc_test_reserve.config.fee_receiver,
@@ -563,6 +572,7 @@ async fn test_fail_invalid_repay_ix() {
                 flash_repay_reserve_liquidity(
                     solend_program::id(),
                     FLASH_LOAN_AMOUNT - 1,
+                    0,
                     usdc_test_reserve.user_liquidity_pubkey,
                     usdc_test_reserve.liquidity_supply_pubkey,
                     usdc_test_reserve.config.fee_receiver,
@@ -633,6 +643,7 @@ async fn test_fail_invalid_repay_ix() {
                 helpers::flash_loan_proxy::repay_proxy(
                     proxy_program_id,
                     FLASH_LOAN_AMOUNT,
+                    0,
                     usdc_test_reserve.user_liquidity_pubkey,
                     usdc_test_reserve.liquidity_supply_pubkey,
                     usdc_test_reserve.config.fee_receiver,
@@ -676,6 +687,7 @@ async fn test_fail_invalid_repay_ix() {
                 flash_repay_reserve_liquidity(
                     solend_program::id(),
                     LIQUIDITY_AMOUNT,
+                    0,
                     usdc_test_reserve.user_liquidity_pubkey,
                     usdc_test_reserve.liquidity_supply_pubkey,
                     usdc_test_reserve.config.fee_receiver,
@@ -705,6 +717,124 @@ async fn test_fail_invalid_repay_ix() {
                     1,
                     InstructionError::Custom(LendingError::TokenTransferFailed as u32)
                 )
+        );
+    }
+
+    // case 6: Sole repay instruction
+    {
+        let mut transaction = Transaction::new_with_payer(
+            &[flash_repay_reserve_liquidity(
+                solend_program::id(),
+                LIQUIDITY_AMOUNT,
+                0,
+                usdc_test_reserve.user_liquidity_pubkey,
+                usdc_test_reserve.liquidity_supply_pubkey,
+                usdc_test_reserve.config.fee_receiver,
+                usdc_test_reserve.liquidity_host_pubkey,
+                usdc_test_reserve.pubkey,
+                lending_market.pubkey,
+                user_accounts_owner.pubkey(),
+            )],
+            Some(&payer.pubkey()),
+        );
+        transaction.sign(&[&payer, &user_accounts_owner], recent_blockhash);
+
+        assert_eq!(
+            banks_client
+                .process_transaction(transaction)
+                .await
+                .unwrap_err()
+                .unwrap(),
+            TransactionError::InstructionError(
+                0,
+                InstructionError::Custom(LendingError::InvalidFlashRepay as u32)
+            )
+        );
+    }
+
+    // case 7: Incorrect borrow instruction index -- points to itself
+    {
+        let mut transaction = Transaction::new_with_payer(
+            &[
+                flash_borrow_reserve_liquidity(
+                    solend_program::id(),
+                    LIQUIDITY_AMOUNT,
+                    usdc_test_reserve.liquidity_supply_pubkey,
+                    usdc_test_reserve.user_liquidity_pubkey,
+                    usdc_test_reserve.pubkey,
+                    lending_market.pubkey,
+                ),
+                flash_repay_reserve_liquidity(
+                    solend_program::id(),
+                    LIQUIDITY_AMOUNT,
+                    1, // should be zero
+                    usdc_test_reserve.user_liquidity_pubkey,
+                    usdc_test_reserve.liquidity_supply_pubkey,
+                    usdc_test_reserve.config.fee_receiver,
+                    usdc_test_reserve.liquidity_host_pubkey,
+                    usdc_test_reserve.pubkey,
+                    lending_market.pubkey,
+                    user_accounts_owner.pubkey(),
+                ),
+            ],
+            Some(&payer.pubkey()),
+        );
+        transaction.sign(&[&payer, &user_accounts_owner], recent_blockhash);
+
+        assert_eq!(
+            banks_client
+                .process_transaction(transaction)
+                .await
+                .unwrap_err()
+                .unwrap(),
+            TransactionError::InstructionError(
+                0,
+                InstructionError::Custom(LendingError::InvalidFlashRepay as u32)
+            )
+        );
+    }
+
+    // case 8: Incorrect borrow instruction index -- points to some other program
+    {
+        let user_transfer_authority = Keypair::new();
+        let mut transaction = Transaction::new_with_payer(
+            &[
+                approve(
+                    &spl_token::id(),
+                    &usdc_test_reserve.user_liquidity_pubkey,
+                    &user_transfer_authority.pubkey(),
+                    &user_accounts_owner.pubkey(),
+                    &[],
+                    1,
+                )
+                .unwrap(),
+                flash_repay_reserve_liquidity(
+                    solend_program::id(),
+                    LIQUIDITY_AMOUNT,
+                    0, // should be zero
+                    usdc_test_reserve.user_liquidity_pubkey,
+                    usdc_test_reserve.liquidity_supply_pubkey,
+                    usdc_test_reserve.config.fee_receiver,
+                    usdc_test_reserve.liquidity_host_pubkey,
+                    usdc_test_reserve.pubkey,
+                    lending_market.pubkey,
+                    user_accounts_owner.pubkey(),
+                ),
+            ],
+            Some(&payer.pubkey()),
+        );
+        transaction.sign(&[&payer, &user_accounts_owner], recent_blockhash);
+
+        assert_eq!(
+            banks_client
+                .process_transaction(transaction)
+                .await
+                .unwrap_err()
+                .unwrap(),
+            TransactionError::InstructionError(
+                1,
+                InstructionError::Custom(LendingError::InvalidFlashRepay as u32)
+            )
         );
     }
 }
@@ -761,6 +891,7 @@ async fn test_fail_insufficient_liquidity_for_borrow() {
             flash_repay_reserve_liquidity(
                 solend_program::id(),
                 LIQUIDITY_AMOUNT + 1,
+                0,
                 usdc_test_reserve.user_liquidity_pubkey,
                 usdc_test_reserve.liquidity_supply_pubkey,
                 usdc_test_reserve.config.fee_receiver,

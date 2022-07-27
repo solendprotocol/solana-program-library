@@ -457,6 +457,8 @@ pub enum LendingInstruction {
     FlashRepayReserveLiquidity {
         /// Amount of liquidity to flash repay
         liquidity_amount: u64,
+        /// Index of FlashBorrowReserveLiquidity instruction
+        borrow_instruction_index: u8,
     },
 }
 
@@ -610,8 +612,9 @@ impl LendingInstruction {
                 Self::FlashBorrowReserveLiquidity { liquidity_amount }
             }
             20 => {
-                let (liquidity_amount, _rest) = Self::unpack_u64(rest)?;
-                Self::FlashRepayReserveLiquidity { liquidity_amount }
+                let (liquidity_amount, rest) = Self::unpack_u64(rest)?;
+                let (borrow_instruction_index, _rest) = Self::unpack_u8(rest)?;
+                Self::FlashRepayReserveLiquidity { liquidity_amount, borrow_instruction_index }
             }
             _ => {
                 msg!("Instruction cannot be unpacked");
@@ -808,9 +811,10 @@ impl LendingInstruction {
                 buf.push(19);
                 buf.extend_from_slice(&liquidity_amount.to_le_bytes());
             }
-            Self::FlashRepayReserveLiquidity { liquidity_amount } => {
+            Self::FlashRepayReserveLiquidity { liquidity_amount, borrow_instruction_index } => {
                 buf.push(20);
                 buf.extend_from_slice(&liquidity_amount.to_le_bytes());
+                buf.extend_from_slice(&borrow_instruction_index.to_le_bytes());
             }
         }
         buf
@@ -1455,6 +1459,7 @@ pub fn flash_borrow_reserve_liquidity(
 pub fn flash_repay_reserve_liquidity(
     program_id: Pubkey,
     liquidity_amount: u64,
+    borrow_instruction_index: u8,
     source_liquidity_pubkey: Pubkey,
     destination_liquidity_pubkey: Pubkey,
     reserve_liquidity_fee_receiver_pubkey: Pubkey,
@@ -1476,6 +1481,6 @@ pub fn flash_repay_reserve_liquidity(
             AccountMeta::new_readonly(sysvar::instructions::id(), false),
             AccountMeta::new_readonly(spl_token::id(), false),
         ],
-        data: LendingInstruction::FlashRepayReserveLiquidity { liquidity_amount }.pack(),
+        data: LendingInstruction::FlashRepayReserveLiquidity { liquidity_amount, borrow_instruction_index }.pack(),
     }
 }

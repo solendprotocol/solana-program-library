@@ -153,9 +153,17 @@ pub fn process_instruction(
             msg!("Instruction: Flash Borrow Reserve Liquidity");
             process_flash_borrow_reserve_liquidity(program_id, liquidity_amount, accounts)
         }
-        LendingInstruction::FlashRepayReserveLiquidity { liquidity_amount } => {
+        LendingInstruction::FlashRepayReserveLiquidity {
+            liquidity_amount,
+            borrow_instruction_index,
+        } => {
             msg!("Instruction: Flash Repay Reserve Liquidity");
-            process_flash_repay_reserve_liquidity(program_id, liquidity_amount, accounts)
+            process_flash_repay_reserve_liquidity(
+                program_id,
+                liquidity_amount,
+                borrow_instruction_index,
+                accounts,
+            )
         }
     }
 }
@@ -2250,6 +2258,7 @@ fn _flash_borrow_reserve_liquidity<'a>(
         match unpacked {
             LendingInstruction::FlashRepayReserveLiquidity {
                 liquidity_amount: repay_liquidity_amount,
+                borrow_instruction_index,
             } => {
                 if found_repay_ix {
                     msg!("Multiple flash repays not allowed");
@@ -2261,6 +2270,10 @@ fn _flash_borrow_reserve_liquidity<'a>(
                 }
                 if repay_liquidity_amount != liquidity_amount {
                     msg!("Liquidity amount for flash repay doesn't match borrow");
+                    return Err(LendingError::InvalidFlashRepay.into());
+                }
+                if (borrow_instruction_index as usize) != current_index {
+                    msg!("Borrow instruction index {} for flash repay doesn't match current index {}", borrow_instruction_index, current_index);
                     return Err(LendingError::InvalidFlashRepay.into());
                 }
 
@@ -2300,6 +2313,7 @@ fn _flash_borrow_reserve_liquidity<'a>(
 fn process_flash_repay_reserve_liquidity(
     program_id: &Pubkey,
     liquidity_amount: u64,
+    borrow_instruction_index: u8,
     accounts: &[AccountInfo],
 ) -> ProgramResult {
     let account_info_iter = &mut accounts.iter();
@@ -2316,6 +2330,7 @@ fn process_flash_repay_reserve_liquidity(
     _flash_repay_reserve_liquidity(
         program_id,
         liquidity_amount,
+        borrow_instruction_index,
         source_liquidity_info,
         destination_liquidity_info,
         reserve_liquidity_fee_receiver_info,
@@ -2333,6 +2348,7 @@ fn process_flash_repay_reserve_liquidity(
 fn _flash_repay_reserve_liquidity<'a>(
     program_id: &Pubkey,
     liquidity_amount: u64,
+    borrow_instruction_index: u8,
     source_liquidity_info: &AccountInfo<'a>,
     destination_liquidity_info: &AccountInfo<'a>,
     reserve_liquidity_fee_receiver_info: &AccountInfo<'a>,
@@ -2393,6 +2409,27 @@ fn _flash_repay_reserve_liquidity<'a>(
         );
         return Err(LendingError::FlashRepayCpi.into());
     }
+
+    // validate flash borrow
+    let ixn = load_instruction_at_checked(borrow_instruction_index as usize, sysvar_info)?;
+    if ixn.program_id != *program_id {
+        msg!(
+            "Flash repay: supplied instruction index {} doesn't belong to program id {}",
+            borrow_instruction_index,
+            *program_id
+        );
+        return Err(LendingError::InvalidFlashRepay.into());
+    }
+
+    let unpacked = LendingInstruction::unpack(ixn.data.as_slice())?;
+    match unpacked {
+        // don't need to check anything here because we check in the borrow instruction
+        LendingInstruction::FlashBorrowReserveLiquidity { .. } => {}
+        _ => {
+            msg!("Flash repay: Supplied borrow instruction index is not a flash borrow");
+            return Err(LendingError::InvalidFlashRepay.into());
+        }
+    };
 
     reserve
         .liquidity

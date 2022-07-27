@@ -20,7 +20,7 @@ use solend_program::{
 
 pub enum FlashLoanProxyInstruction {
     ProxyBorrow { liquidity_amount: u64 },
-    ProxyRepay { liquidity_amount: u64 },
+    ProxyRepay { liquidity_amount: u64, borrow_instruction_index: u8 },
 }
 
 pub fn process_instruction(
@@ -45,9 +45,9 @@ impl Processor {
                 msg!("Instruction: Proxy Borrow");
                 Self::process_proxy_borrow(accounts, liquidity_amount, program_id)
             }
-            FlashLoanProxyInstruction::ProxyRepay { liquidity_amount } => {
+            FlashLoanProxyInstruction::ProxyRepay { liquidity_amount, borrow_instruction_index } => {
                 msg!("Instruction: Proxy Repay");
-                Self::process_proxy_repay(accounts, liquidity_amount, program_id)
+                Self::process_proxy_repay(accounts, liquidity_amount, borrow_instruction_index, program_id)
             }
         }
     }
@@ -55,6 +55,7 @@ impl Processor {
     fn process_proxy_repay(
         accounts: &[AccountInfo],
         liquidity_amount: u64,
+        borrow_instruction_index: u8,
         _program_id: &Pubkey,
     ) -> ProgramResult {
         let account_info_iter = &mut accounts.iter();
@@ -71,6 +72,7 @@ impl Processor {
             &flash_repay_reserve_liquidity(
                 *token_lending_info.key,
                 liquidity_amount,
+                borrow_instruction_index,
                 *source_liquidity_info.key,
                 *destination_liquidity_info.key,
                 *reserve_liquidity_fee_receiver_info.key,
@@ -119,22 +121,46 @@ impl FlashLoanProxyInstruction {
 
         Ok(match tag {
             0 => Self::ProxyBorrow {
-                liquidity_amount: Self::unpack_amount(rest)?,
+                liquidity_amount: Self::unpack_u64(rest)?.0,
             },
-            1 => Self::ProxyRepay {
-                liquidity_amount: Self::unpack_amount(rest)?,
-            },
+            1 => {
+                let (liquidity_amount, rest) = Self::unpack_u64(rest)?;
+                let (borrow_instruction_index, _rest) = Self::unpack_u8(rest)?;
+                Self::ProxyRepay {
+                    liquidity_amount,
+                    borrow_instruction_index,
+                }
+            }
             _ => return Err(InvalidInstruction.into()),
         })
     }
 
-    fn unpack_amount(input: &[u8]) -> Result<u64, ProgramError> {
-        let liquidity_amount = input
+    fn unpack_u64(input: &[u8]) -> Result<(u64, &[u8]), ProgramError> {
+        if input.len() < 8 {
+            msg!("u64 cannot be unpacked");
+            return Err(FlashLoanProxyError::InvalidInstruction.into());
+        }
+        let (bytes, rest) = input.split_at(8);
+        let value = bytes
             .get(..8)
             .and_then(|slice| slice.try_into().ok())
             .map(u64::from_le_bytes)
-            .ok_or(InvalidInstruction)?;
-        Ok(liquidity_amount)
+            .ok_or(FlashLoanProxyError::InvalidInstruction)?;
+        Ok((value, rest))
+    }
+
+    fn unpack_u8(input: &[u8]) -> Result<(u8, &[u8]), ProgramError> {
+        if input.is_empty() {
+            msg!("u8 cannot be unpacked");
+            return Err(FlashLoanProxyError::InvalidInstruction.into());
+        }
+        let (bytes, rest) = input.split_at(1);
+        let value = bytes
+            .get(..1)
+            .and_then(|slice| slice.try_into().ok())
+            .map(u8::from_le_bytes)
+            .ok_or(FlashLoanProxyError::InvalidInstruction)?;
+        Ok((value, rest))
     }
 }
 
@@ -158,6 +184,7 @@ impl From<FlashLoanProxyError> for ProgramError {
 pub fn repay_proxy(
     program_id: Pubkey,
     liquidity_amount: u64,
+    borrow_instruction_index: u8,
     source_liquidity_pubkey: Pubkey,
     destination_liquidity_pubkey: Pubkey,
     reserve_liquidity_fee_receiver_pubkey: Pubkey,
@@ -181,7 +208,7 @@ pub fn repay_proxy(
             AccountMeta::new_readonly(sysvar::instructions::id(), false),
             AccountMeta::new_readonly(spl_token::id(), false),
         ],
-        data: FlashLoanProxyInstruction::ProxyRepay { liquidity_amount }.pack(),
+        data: FlashLoanProxyInstruction::ProxyRepay { liquidity_amount, borrow_instruction_index }.pack(),
     }
 }
 
@@ -222,9 +249,10 @@ impl FlashLoanProxyInstruction {
                 buf.push(0);
                 buf.extend_from_slice(&liquidity_amount.to_le_bytes());
             }
-            Self::ProxyRepay { liquidity_amount } => {
+            Self::ProxyRepay { liquidity_amount, borrow_instruction_index } => {
                 buf.push(1);
                 buf.extend_from_slice(&liquidity_amount.to_le_bytes());
+                buf.extend_from_slice(&borrow_instruction_index.to_le_bytes());
             }
         }
         buf

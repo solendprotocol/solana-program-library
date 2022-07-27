@@ -174,7 +174,7 @@ pub enum LendingError {
     #[error("No corresponding repay found for flash borrow")]
     NoFlashRepayFound,
     /// Invalid flash repay found for borrow
-    #[error("Invalid repay found for flash borrow")]
+    #[error("Invalid repay found")]
     InvalidFlashRepay,
 
     // 50
