@@ -27,7 +27,7 @@ async fn test_success() {
     );
 
     // limit to track compute unit increase
-    test.set_bpf_compute_max_units(70_000);
+    test.set_compute_max_units(70_000);
 
     let user_accounts_owner = Keypair::new();
     let lending_market = add_lending_market(&mut test);
@@ -92,7 +92,7 @@ async fn test_init_reserve_null_oracles() {
     );
 
     // limit to track compute unit increase
-    test.set_bpf_compute_max_units(70_000);
+    test.set_compute_max_units(70_000);
 
     let user_accounts_owner = Keypair::new();
     let lending_market = add_lending_market(&mut test);
@@ -153,7 +153,7 @@ async fn test_null_switchboard() {
     );
 
     // limit to track compute unit increase
-    test.set_bpf_compute_max_units(75_000);
+    test.set_compute_max_units(75_000);
 
     let user_accounts_owner = Keypair::new();
     let lending_market = add_lending_market(&mut test);
