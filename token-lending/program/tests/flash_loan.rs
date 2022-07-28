@@ -95,10 +95,7 @@ async fn test_success() {
             usdc_test_reserve.liquidity_host_pubkey,
             lending_market.pubkey,
             receiver_program_id,
-            vec![AccountMeta::new_readonly(
-                receiver_authority_pubkey,
-                false,
-            )],
+            vec![AccountMeta::new_readonly(receiver_authority_pubkey, false)],
         )],
         Some(&payer.pubkey()),
     );
@@ -204,10 +201,7 @@ async fn test_failure() {
             usdc_test_reserve.liquidity_host_pubkey,
             lending_market.pubkey,
             flash_loan_receiver_program_id,
-            vec![AccountMeta::new_readonly(
-                receiver_authority_pubkey,
-                false,
-            )],
+            vec![AccountMeta::new_readonly(receiver_authority_pubkey, false)],
         )],
         Some(&payer.pubkey()),
     );
