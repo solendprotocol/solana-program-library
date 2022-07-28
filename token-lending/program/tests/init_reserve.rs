@@ -6,7 +6,6 @@ use helpers::*;
 use solana_program_test::*;
 use solana_sdk::{
     instruction::InstructionError,
-    pubkey::Pubkey,
     signature::{Keypair, Signer},
     transaction::{Transaction, TransactionError},
 };
@@ -465,7 +464,7 @@ async fn test_update_invalid_oracle_config() {
             liquidity_amount: 42,
             liquidity_mint_decimals: mint.decimals,
             liquidity_mint_pubkey: mint.pubkey,
-            config: config,
+            config,
             ..AddReserveArgs::default()
         },
     );

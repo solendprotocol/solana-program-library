@@ -5,7 +5,6 @@ mod helpers;
 use helpers::*;
 use solana_program_test::*;
 use solana_sdk::{
-    pubkey::Pubkey,
     signature::{Keypair, Signer},
     transaction::Transaction,
 };
@@ -14,7 +13,7 @@ use solend_program::{
     processor::process_instruction,
     state::{INITIAL_COLLATERAL_RATIO, LIQUIDATION_CLOSE_FACTOR},
 };
-use std::cmp::{max, min};
+use std::cmp::max;
 
 #[tokio::test]
 async fn test_success() {
@@ -179,7 +178,8 @@ async fn test_success() {
         // 30% of the bonus
         // SOL_LIQUIDATION_AMOUNT_LAMPORTS * 3 / 10 / 11,
         // 0 % min 1 for now
-        max(SOL_LIQUIDATION_AMOUNT_LAMPORTS * 0 / 10 / 11, 1),
+        // max(SOL_LIQUIDATION_AMOUNT_LAMPORTS * 0 / 10 / 11, 1),
+        1,
         (fee_receiver_withdraw_liquidity_balance - initial_fee_receiver_withdraw_liquidity_balance)
     );
 
@@ -225,7 +225,7 @@ async fn test_success_insufficent_liquidity() {
 
     const SOL_RESERVE_COLLATERAL_LAMPORTS: u64 = 2 * SOL_DEPOSIT_AMOUNT_LAMPORTS;
     const USDC_RESERVE_LIQUIDITY_FRACTIONAL: u64 = 2 * USDC_BORROW_AMOUNT_FRACTIONAL;
-    const AVAILABLE_SOL_LIQUIDITY: u64 = 1 * LAMPORTS_TO_SOL / 2;
+    const AVAILABLE_SOL_LIQUIDITY: u64 = LAMPORTS_TO_SOL / 2;
 
     let user_accounts_owner = Keypair::new();
     let lending_market = add_lending_market(&mut test);
@@ -371,8 +371,8 @@ async fn test_success_insufficent_liquidity() {
         // max((min(SOL_LIQUIDATION_AMOUNT_LAMPORTS, AVAILABLE_SOL_LIQUIDITY) * 3 - 1 ) / (10 * 11) + 1, 1),
         // 0 % min 1 for now
         max(
-            (min(SOL_LIQUIDATION_AMOUNT_LAMPORTS, AVAILABLE_SOL_LIQUIDITY) * 0) / (10 * 11),
-            1
+            // (min(SOL_LIQUIDATION_AMOUNT_LAMPORTS, AVAILABLE_SOL_LIQUIDITY) * 0) / (10 * 11),
+            0, 1
         ),
         (fee_reciever_withdraw_liquidity_balance - initial_fee_reciever_withdraw_liquidity_balance)
     );

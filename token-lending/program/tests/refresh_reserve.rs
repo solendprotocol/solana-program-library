@@ -5,7 +5,6 @@ mod helpers;
 use helpers::*;
 use solana_program_test::*;
 use solana_sdk::{
-    pubkey::Pubkey,
     signature::{Keypair, Signer},
     transaction::Transaction,
 };

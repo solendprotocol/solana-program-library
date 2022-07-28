@@ -5,7 +5,6 @@ mod helpers;
 use helpers::*;
 use solana_program_test::*;
 use solana_sdk::{
-    pubkey::Pubkey,
     signature::{Keypair, Signer},
     transaction::Transaction,
 };
@@ -112,7 +111,7 @@ async fn test_success() {
     assert!(banks_client.process_transaction(transaction).await.is_ok());
 
     let sol_reserve = sol_test_reserve.get_state(&mut banks_client).await;
-    assert_eq!(sol_reserve.last_update.stale, true);
+    assert!(sol_reserve.last_update.stale);
 
     // check that collateral tokens were transferred
     let collateral_supply_balance =

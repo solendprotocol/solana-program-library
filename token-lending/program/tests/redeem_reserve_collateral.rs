@@ -5,7 +5,6 @@ mod helpers;
 use helpers::*;
 use solana_program_test::*;
 use solana_sdk::{
-    pubkey::Pubkey,
     signature::{Keypair, Signer},
     transaction::Transaction,
 };
@@ -99,7 +98,7 @@ async fn test_success() {
     assert!(banks_client.process_transaction(transaction).await.is_ok());
 
     let usdc_reserve = usdc_test_reserve.get_state(&mut banks_client).await;
-    assert_eq!(usdc_reserve.last_update.stale, true);
+    assert!(usdc_reserve.last_update.stale);
 
     assert!(usdc_reserve.liquidity.cumulative_borrow_rate_wads > old_borrow_rate);
 }

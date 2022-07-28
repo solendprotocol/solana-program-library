@@ -4,7 +4,7 @@ mod helpers;
 
 use helpers::*;
 use solana_program_test::*;
-use solana_sdk::{pubkey::Pubkey, signature::Keypair};
+use solana_sdk::signature::Keypair;
 use solend_program::processor::process_instruction;
 
 #[tokio::test]
@@ -65,7 +65,7 @@ async fn test_success() {
         .await;
 
     let usdc_reserve = usdc_test_reserve.get_state(&mut banks_client).await;
-    assert_eq!(usdc_reserve.last_update.stale, true);
+    assert!(usdc_reserve.last_update.stale);
 
     let user_remaining_liquidity_amount =
         get_token_balance(&mut banks_client, usdc_test_reserve.user_liquidity_pubkey).await;
