@@ -1092,7 +1092,6 @@ async fn test_fail_repay_from_diff_reserve() {
 
     const FLASH_LOAN_AMOUNT: u64 = 1_000 * FRACTIONAL_TO_USDC;
     const FEE_AMOUNT: u64 = 3_000_000;
-    const HOST_FEE_AMOUNT: u64 = 600_000;
 
     let user_accounts_owner = Keypair::new();
     let lending_market = add_lending_market(&mut test);
