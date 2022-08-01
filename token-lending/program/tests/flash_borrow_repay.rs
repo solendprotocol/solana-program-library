@@ -95,6 +95,7 @@ async fn test_success() {
 
     let usdc_reserve = usdc_test_reserve.get_state(&mut banks_client).await;
     assert_eq!(usdc_reserve.liquidity.available_amount, FLASH_LOAN_AMOUNT);
+    assert!(usdc_reserve.last_update.stale);
 
     let liquidity_supply =
         get_token_balance(&mut banks_client, usdc_test_reserve.liquidity_supply_pubkey).await;

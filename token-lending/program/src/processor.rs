@@ -2304,8 +2304,8 @@ fn _flash_borrow_reserve_liquidity<'a>(
     }
 
     reserve.liquidity.borrow(Decimal::from(liquidity_amount))?;
+    reserve.last_update.mark_stale();
     Reserve::pack(reserve, &mut reserve_info.data.borrow_mut())?;
-    // TODO should i mark reserve as stale?
 
     spl_token_transfer(TokenTransferParams {
         source: source_liquidity_info.clone(),
@@ -2443,6 +2443,7 @@ fn _flash_repay_reserve_liquidity<'a>(
     reserve
         .liquidity
         .repay(flash_loan_amount, flash_loan_amount_decimal)?;
+    reserve.last_update.mark_stale();
     Reserve::pack(reserve, &mut reserve_info.data.borrow_mut())?;
 
     spl_token_transfer(TokenTransferParams {
