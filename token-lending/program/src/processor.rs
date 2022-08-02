@@ -2420,6 +2420,15 @@ fn _flash_repay_reserve_liquidity<'a>(
     }
 
     // validate flash borrow
+    if (borrow_instruction_index as usize) > current_index {
+        msg!(
+            "Flash repay: borrow instruction index {} has to be less than current index {}",
+            borrow_instruction_index,
+            current_index
+        );
+        return Err(LendingError::InvalidFlashRepay.into());
+    }
+
     let ixn = load_instruction_at_checked(borrow_instruction_index as usize, sysvar_info)?;
     if ixn.program_id != *program_id {
         msg!(

@@ -924,6 +924,59 @@ async fn test_fail_invalid_repay_ix() {
             )
         );
     }
+    // case 9: Incorrect borrow instruction index -- points to a later borrow
+    {
+        let mut transaction = Transaction::new_with_payer(
+            &[
+                flash_repay_reserve_liquidity(
+                    solend_program::id(),
+                    FRACTIONAL_TO_USDC,
+                    1,
+                    usdc_test_reserve.user_liquidity_pubkey,
+                    usdc_test_reserve.liquidity_supply_pubkey,
+                    usdc_test_reserve.config.fee_receiver,
+                    usdc_test_reserve.liquidity_host_pubkey,
+                    usdc_test_reserve.pubkey,
+                    lending_market.pubkey,
+                    user_accounts_owner.pubkey(),
+                ),
+                flash_borrow_reserve_liquidity(
+                    solend_program::id(),
+                    FEE_AMOUNT,
+                    usdc_test_reserve.liquidity_supply_pubkey,
+                    usdc_test_reserve.user_liquidity_pubkey,
+                    usdc_test_reserve.pubkey,
+                    lending_market.pubkey,
+                ),
+                flash_repay_reserve_liquidity(
+                    solend_program::id(),
+                    FEE_AMOUNT,
+                    1,
+                    usdc_test_reserve.user_liquidity_pubkey,
+                    usdc_test_reserve.liquidity_supply_pubkey,
+                    usdc_test_reserve.config.fee_receiver,
+                    usdc_test_reserve.liquidity_host_pubkey,
+                    usdc_test_reserve.pubkey,
+                    lending_market.pubkey,
+                    user_accounts_owner.pubkey(),
+                ),
+            ],
+            Some(&payer.pubkey()),
+        );
+        transaction.sign(&[&payer, &user_accounts_owner], recent_blockhash);
+
+        assert_eq!(
+            banks_client
+                .process_transaction(transaction)
+                .await
+                .unwrap_err()
+                .unwrap(),
+            TransactionError::InstructionError(
+                0,
+                InstructionError::Custom(LendingError::InvalidFlashRepay as u32)
+            )
+        );
+    }
 }
 
 #[tokio::test]
