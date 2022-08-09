@@ -2431,8 +2431,18 @@ fn _flash_repay_reserve_liquidity<'a>(
 
     let unpacked = LendingInstruction::unpack(ixn.data.as_slice())?;
     match unpacked {
-        // don't need to check anything here because we've checked correctness in the flash borrow
-        LendingInstruction::FlashBorrowReserveLiquidity { .. } => {}
+        LendingInstruction::FlashBorrowReserveLiquidity { liquidity_amount: borrow_liquidity_amount } => {
+            // re-check everything here out of paranoia
+            if ixn.accounts[2].pubkey != *reserve_info.key {
+                msg!("Invalid reserve account on flash repay");
+                return Err(LendingError::InvalidFlashRepay.into());
+            }
+
+            if liquidity_amount != borrow_liquidity_amount {
+                msg!("Liquidity amount for flash repay doesn't match borrow");
+                return Err(LendingError::InvalidFlashRepay.into());
+            }
+        }
         _ => {
             msg!("Flash repay: Supplied borrow instruction index is not a flash borrow");
             return Err(LendingError::InvalidFlashRepay.into());
