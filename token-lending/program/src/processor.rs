@@ -25,7 +25,11 @@ use solana_program::{
     program_pack::{IsInitialized, Pack},
     pubkey::Pubkey,
     sysvar::instructions::{load_current_index_checked, load_instruction_at_checked},
-    sysvar::{clock::{Clock, self}, rent::Rent, Sysvar},
+    sysvar::{
+        clock::{self, Clock},
+        rent::Rent,
+        Sysvar,
+    },
 };
 use spl_token::state::Mint;
 use std::{cmp::min, convert::TryInto, result::Result};
