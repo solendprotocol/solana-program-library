@@ -3,7 +3,7 @@
 //! A lending program for the Solana blockchain.
 
 pub mod entrypoint;
-pub use token_lending_common::{math, instruction, state, error};
+pub use token_lending_common::{error, instruction, math, state};
 pub mod processor;
 pub mod pyth;
 

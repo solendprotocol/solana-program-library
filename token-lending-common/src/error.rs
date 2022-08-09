@@ -1,8 +1,12 @@
 //! Error types
 use num_derive::FromPrimitive;
-use solana_program::{decode_error::DecodeError, program_error::{ProgramError, PrintProgramError}, msg};
-use thiserror::Error;
 use num_traits::FromPrimitive;
+use solana_program::{
+    decode_error::DecodeError,
+    msg,
+    program_error::{PrintProgramError, ProgramError},
+};
+use thiserror::Error;
 
 /// Errors that may be returned by the TokenLending program.
 #[derive(Clone, Debug, Eq, Error, FromPrimitive, PartialEq)]
