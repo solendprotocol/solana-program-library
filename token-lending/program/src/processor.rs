@@ -2234,13 +2234,8 @@ fn _flash_borrow_reserve_liquidity<'a>(
 
     // Make sure this isnt a cpi call
     let current_index = load_current_index_checked(sysvar_info)? as usize;
-    let current_ixn = load_instruction_at_checked(current_index, sysvar_info)?;
-    if current_ixn.program_id != *program_id {
-        msg!(
-            "Cpi call found: Flash borrow from {} does not match program_id {} ",
-            current_ixn.program_id,
-            *program_id
-        );
+    if is_cpi_call(program_id, current_index, sysvar_info)? {
+        msg!("Flash Borrow was called via CPI!");
         return Err(LendingError::FlashBorrowCpi.into());
     }
 
@@ -2409,13 +2404,8 @@ fn _flash_repay_reserve_liquidity<'a>(
 
     // Make sure this isnt a cpi call
     let current_index = load_current_index_checked(sysvar_info)? as usize;
-    let current_ixn = load_instruction_at_checked(current_index, sysvar_info)?;
-    if current_ixn.program_id != *program_id {
-        msg!(
-            "Cpi call found: Flash repay from {} does not match program_id {} ",
-            current_ixn.program_id,
-            *program_id
-        );
+    if is_cpi_call(program_id, current_index, sysvar_info)? {
+        msg!("Flash Repay was called via CPI!");
         return Err(LendingError::FlashRepayCpi.into());
     }
 
@@ -2974,6 +2964,31 @@ fn validate_switchboard_keys(
         return Err(LendingError::InvalidOracleConfig.into());
     }
     Ok(())
+}
+
+fn is_cpi_call(
+    program_id: &Pubkey,
+    current_index: usize,
+    sysvar_info: &AccountInfo,
+) -> Result<bool, ProgramError> {
+    // say the tx looks like:
+    // ix 0
+    //   - ix a
+    //   - ix b
+    //   - ix c
+    // ix 1
+    // and we call "load_current_index_checked" from b, we will get 0. And when we
+    // load_instruction_at_checked(0), we will get ix 0.
+    // tldr; instructions sysvar only stores top-level instructions, never CPI instructions.
+    let current_ixn = load_instruction_at_checked(current_index, sysvar_info)?;
+
+    // the current ixn must match the flash_* ix. otherwise, it's a CPI. Comparing program_ids is a
+    // cheaper way of verifying this property, bc token-lending doesn't allow re-entrancy anywhere.
+    if *program_id != current_ixn.program_id {
+        return Ok(true);
+    }
+
+    Ok(false)
 }
 
 struct TokenInitializeMintParams<'a: 'b, 'b> {
