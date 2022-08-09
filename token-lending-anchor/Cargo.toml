@@ -1,0 +1,12 @@
+[package]
+name = "token-lending-anchor"
+version = "0.1.0"
+description = "Anchor CPI bindings for the solend program"
+edition = "2018"
+
+[dependencies]
+anchor-lang = "0.24"
+anchor-spl = { version = "0.24" }
+token-lending-common= { path = "../token-lending-common" }
+solana-program = "1.9"
+spl-token = "3.2.0"
