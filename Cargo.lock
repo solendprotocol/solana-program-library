@@ -3701,6 +3701,17 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "cda74da7e1a664f795bb1f8a87ec406fb89a02522cf6e50620d016add6dbbf5c"
 
 [[package]]
+name = "token-lending-anchor"
+version = "0.1.0"
+dependencies = [
+ "anchor-lang",
+ "anchor-spl",
+ "solana-program",
+ "spl-token",
+ "token-lending-common",
+]
+
+[[package]]
 name = "token-lending-common"
 version = "0.1.0"
 dependencies = [

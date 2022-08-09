@@ -3,6 +3,7 @@ members = [
   "token-lending/cli",
   "token-lending/program",
   "token-lending-common",
+  "token-lending-anchor",
 ]
 
 [profile.dev]
