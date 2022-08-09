@@ -2239,10 +2239,6 @@ fn _flash_borrow_reserve_liquidity<'a>(
         return Err(LendingError::FlashBorrowCpi.into());
     }
 
-    // Find the corresponding repay instruction.
-    let mut i = current_index + 1;
-    let mut found_repay_ix = false;
-
     // Find and validate the flash repay instruction.
     //
     // 1. Ensure the instruction is for this program
@@ -2252,9 +2248,21 @@ fn _flash_borrow_reserve_liquidity<'a>(
     // 5. Ensure that the repay amount matches the borrow amount
     //
     // If all of these conditions are not met, the flash borrow fails.
-    while let Ok(ixn) = load_instruction_at_checked(i, sysvar_info) {
+    let mut i = current_index;
+    let mut found_repay_ix = false;
+
+    loop {
+        i += 1;
+
+        let ixn = match load_instruction_at_checked(i, sysvar_info) {
+            Ok(ix) => ix,
+            Err(ProgramError::InvalidArgument) => break, // out of bounds
+            Err(e) => {
+                return Err(e);
+            }
+        };
+
         if ixn.program_id != *program_id {
-            i += 1;
             continue;
         }
 
@@ -2289,8 +2297,6 @@ fn _flash_borrow_reserve_liquidity<'a>(
             }
             _ => (),
         };
-
-        i += 1;
     }
 
     if !found_repay_ix {
@@ -2431,7 +2437,9 @@ fn _flash_repay_reserve_liquidity<'a>(
 
     let unpacked = LendingInstruction::unpack(ixn.data.as_slice())?;
     match unpacked {
-        LendingInstruction::FlashBorrowReserveLiquidity { liquidity_amount: borrow_liquidity_amount } => {
+        LendingInstruction::FlashBorrowReserveLiquidity {
+            liquidity_amount: borrow_liquidity_amount,
+        } => {
             // re-check everything here out of paranoia
             if ixn.accounts[2].pubkey != *reserve_info.key {
                 msg!("Invalid reserve account on flash repay");
