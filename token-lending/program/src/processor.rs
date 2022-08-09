@@ -2823,12 +2823,3 @@ struct TokenBurnParams<'a: 'b, 'b> {
     authority_signer_seeds: &'b [&'b [u8]],
     token_program: AccountInfo<'a>,
 }
-
-impl PrintProgramError for LendingError {
-    fn print<E>(&self)
-    where
-        E: 'static + std::error::Error + DecodeError<E> + PrintProgramError + FromPrimitive,
-    {
-        msg!(&self.to_string());
-    }
-}

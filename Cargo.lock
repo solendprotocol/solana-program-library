@@ -3337,12 +3337,10 @@ dependencies = [
 name = "solend-program"
 version = "0.1.0"
 dependencies = [
- "arrayref",
  "assert_matches",
  "base64 0.13.0",
  "bytemuck",
  "log",
- "num-derive",
  "num-traits",
  "proptest",
  "serde",
@@ -3354,7 +3352,7 @@ dependencies = [
  "switchboard-program",
  "switchboard-v2",
  "thiserror",
- "uint",
+ "token-lending-common",
 ]
 
 [[package]]
@@ -3701,6 +3699,20 @@ name = "tinyvec_macros"
 version = "0.1.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "cda74da7e1a664f795bb1f8a87ec406fb89a02522cf6e50620d016add6dbbf5c"
+
+[[package]]
+name = "token-lending-common"
+version = "0.1.0"
+dependencies = [
+ "arrayref",
+ "num-derive",
+ "num-traits",
+ "proptest",
+ "solana-program",
+ "spl-token",
+ "thiserror",
+ "uint",
+]
 
 [[package]]
 name = "tokio"
