@@ -5,7 +5,7 @@
 
 source ci/rust-version.sh nightly # get $rust_nightly env variable
 
-set -e
+set -ex
 cd "$(dirname "$0")"
 
 if ! which grcov; then
@@ -15,17 +15,6 @@ fi
 
 : "${CI_COMMIT:=local}"
 reportName="lcov-${CI_COMMIT:0:9}"
-
-if [[ -z $1 ]]; then
-  programs=(
-    memo/program
-    token/program
-    token-lending/program
-    token-swap/program
-  )
-else
-  programs=("$@")
-fi
 
 coverageFlags=(-Zprofile)                # Enable coverage
 coverageFlags+=("-Clink-dead-code")      # Dead code should appear red in the report
@@ -49,14 +38,7 @@ mkdir -p target/cov
 # Mark the base time for a clean room dir
 touch target/cov/before-test
 
-for program in ${programs[@]}; do
-  here=$PWD
-  (
-    set -ex
-    cd $program
-    cargo +"$rust_nightly" test --features test-bpf --target-dir $here/target/cov
-  )
-done
+cargo +"$rust_nightly" test --features test-bpf --target-dir target/cov
 
 touch target/cov/after-test
 
