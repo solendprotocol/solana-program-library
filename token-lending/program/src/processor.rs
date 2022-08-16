@@ -1589,7 +1589,7 @@ fn process_liquidate_obligation(
     _accounts: &[AccountInfo],
 ) -> ProgramResult {
     msg!("method deprecated, please migrate to Liquidate Obligation and Redeem Reserve Collateral");
-    return Err(LendingError::DeprecatedInstruction.into());
+    Err(LendingError::DeprecatedInstruction.into())
 }
 
 #[allow(clippy::too_many_arguments)]
