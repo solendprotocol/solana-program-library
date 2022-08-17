@@ -13,7 +13,7 @@ use solend_program::{
     processor::process_instruction,
     state::{INITIAL_COLLATERAL_RATIO, LIQUIDATION_CLOSE_FACTOR},
 };
-use std::cmp::max;
+use std::cmp::{max, min};
 
 #[tokio::test]
 async fn test_success() {
@@ -176,10 +176,7 @@ async fn test_success() {
 
     assert_eq!(
         // 30% of the bonus
-        // SOL_LIQUIDATION_AMOUNT_LAMPORTS * 3 / 10 / 11,
-        // 0 % min 1 for now
-        // max(SOL_LIQUIDATION_AMOUNT_LAMPORTS * 0 / 10 / 11, 1),
-        1,
+        max(SOL_LIQUIDATION_AMOUNT_LAMPORTS * 3 / 10 / 11, 1),
         (fee_receiver_withdraw_liquidity_balance - initial_fee_receiver_withdraw_liquidity_balance)
     );
 
@@ -367,12 +364,10 @@ async fn test_success_insufficent_liquidity() {
     );
 
     assert_eq!(
-        // 30% of the bonus (math looks stupid because i need to divide but round up so x/y -> (x-1)/y+1 )
-        // max((min(SOL_LIQUIDATION_AMOUNT_LAMPORTS, AVAILABLE_SOL_LIQUIDITY) * 3 - 1 ) / (10 * 11) + 1, 1),
-        // 0 % min 1 for now
+        // 30% of the bonus (math looks stupid because need to divide but round up so x/y -> (x-1)/y+1 )
         max(
-            // (min(SOL_LIQUIDATION_AMOUNT_LAMPORTS, AVAILABLE_SOL_LIQUIDITY) * 0) / (10 * 11),
-            0, 1
+            (min(SOL_LIQUIDATION_AMOUNT_LAMPORTS, AVAILABLE_SOL_LIQUIDITY) * 3 - 1) / (10 * 11) + 1,
+            1
         ),
         (fee_reciever_withdraw_liquidity_balance - initial_fee_reciever_withdraw_liquidity_balance)
     );
