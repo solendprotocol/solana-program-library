@@ -18,7 +18,7 @@ use solana_program::{
     account_info::{next_account_info, AccountInfo},
     decode_error::DecodeError,
     entrypoint::ProgramResult,
-    instruction::{Instruction, get_stack_height, TRANSACTION_LEVEL_STACK_HEIGHT},
+    instruction::{get_stack_height, Instruction, TRANSACTION_LEVEL_STACK_HEIGHT},
     msg,
     program::{invoke, invoke_signed},
     program_error::{PrintProgramError, ProgramError},
