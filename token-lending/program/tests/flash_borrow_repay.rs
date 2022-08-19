@@ -33,7 +33,7 @@ async fn test_success() {
     );
 
     // limit to track compute unit increase
-    test.set_bpf_compute_max_units(60_000);
+    test.set_compute_max_units(60_000);
 
     const FLASH_LOAN_AMOUNT: u64 = 1_000 * FRACTIONAL_TO_USDC;
     const FEE_AMOUNT: u64 = 3_000_000;
@@ -123,7 +123,7 @@ async fn test_fail_disable_flash_loans() {
     );
 
     // limit to track compute unit increase
-    test.set_bpf_compute_max_units(60_000);
+    test.set_compute_max_units(60_000);
 
     const FLASH_LOAN_AMOUNT: u64 = 3_000_000;
     const LIQUIDITY_AMOUNT: u64 = 1_000 * FRACTIONAL_TO_USDC;
@@ -203,7 +203,7 @@ async fn test_fail_borrow_over_borrow_limit() {
     );
 
     // limit to track compute unit increase
-    test.set_bpf_compute_max_units(60_000);
+    test.set_compute_max_units(60_000);
 
     const FLASH_LOAN_AMOUNT: u64 = 3_000_000;
     const LIQUIDITY_AMOUNT: u64 = 1_000 * FRACTIONAL_TO_USDC;
@@ -283,7 +283,7 @@ async fn test_fail_double_borrow() {
     );
 
     // limit to track compute unit increase
-    test.set_bpf_compute_max_units(60_000);
+    test.set_compute_max_units(60_000);
 
     const FLASH_LOAN_AMOUNT: u64 = 3_000_000;
     const LIQUIDITY_AMOUNT: u64 = 1_000 * FRACTIONAL_TO_USDC;
@@ -372,7 +372,7 @@ async fn test_fail_double_repay() {
     );
 
     // limit to track compute unit increase
-    test.set_bpf_compute_max_units(60_000);
+    test.set_compute_max_units(60_000);
 
     const FLASH_LOAN_AMOUNT: u64 = 3_000_000;
     const LIQUIDITY_AMOUNT: u64 = 1_000 * FRACTIONAL_TO_USDC;
@@ -464,7 +464,7 @@ async fn test_fail_only_one_flash_ix_pair_per_tx() {
     );
 
     // limit to track compute unit increase
-    test.set_bpf_compute_max_units(60_000);
+    test.set_compute_max_units(60_000);
 
     const FLASH_LOAN_AMOUNT: u64 = 3_000_000;
     const LIQUIDITY_AMOUNT: u64 = 1_000 * FRACTIONAL_TO_USDC;
@@ -988,7 +988,7 @@ async fn test_fail_insufficient_liquidity_for_borrow() {
     );
 
     // limit to track compute unit increase
-    test.set_bpf_compute_max_units(60_000);
+    test.set_compute_max_units(60_000);
 
     const LIQUIDITY_AMOUNT: u64 = 1_000 * FRACTIONAL_TO_USDC;
     const FEE_AMOUNT: u64 = 3_000_000;
@@ -1075,7 +1075,7 @@ async fn test_fail_cpi_borrow() {
     );
 
     // limit to track compute unit increase
-    test.set_bpf_compute_max_units(60_000);
+    test.set_compute_max_units(60_000);
 
     const FLASH_LOAN_AMOUNT: u64 = 3_000_000;
     const LIQUIDITY_AMOUNT: u64 = 1_000 * FRACTIONAL_TO_USDC;
@@ -1151,7 +1151,7 @@ async fn test_fail_cpi_repay() {
     );
 
     // limit to track compute unit increase
-    test.set_bpf_compute_max_units(60_000);
+    test.set_compute_max_units(60_000);
 
     const FLASH_LOAN_AMOUNT: u64 = 3_000_000;
     const LIQUIDITY_AMOUNT: u64 = 1_000 * FRACTIONAL_TO_USDC;
@@ -1222,7 +1222,7 @@ async fn test_fail_repay_from_diff_reserve() {
     );
 
     // limit to track compute unit increase
-    test.set_bpf_compute_max_units(61_000);
+    test.set_compute_max_units(61_000);
 
     const FLASH_LOAN_AMOUNT: u64 = 1_000 * FRACTIONAL_TO_USDC;
     const FEE_AMOUNT: u64 = 3_000_000;

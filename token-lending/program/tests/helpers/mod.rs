@@ -532,7 +532,7 @@ impl TestLendingMarket {
             Some(&payer.pubkey()),
         );
 
-        let recent_blockhash = banks_client.get_recent_blockhash().await.unwrap();
+        let recent_blockhash = banks_client.get_latest_blockhash().await.unwrap();
         transaction.sign(&[payer, &lending_market_keypair], recent_blockhash);
         assert_matches!(banks_client.process_transaction(transaction).await, Ok(()));
 
@@ -562,7 +562,7 @@ impl TestLendingMarket {
             Some(&payer.pubkey()),
         );
 
-        let recent_blockhash = banks_client.get_recent_blockhash().await.unwrap();
+        let recent_blockhash = banks_client.get_latest_blockhash().await.unwrap();
         transaction.sign(&[payer], recent_blockhash);
 
         assert_matches!(banks_client.process_transaction(transaction).await, Ok(()));
@@ -603,7 +603,7 @@ impl TestLendingMarket {
             Some(&payer.pubkey()),
         );
 
-        let recent_blockhash = banks_client.get_recent_blockhash().await.unwrap();
+        let recent_blockhash = banks_client.get_latest_blockhash().await.unwrap();
         transaction.sign(
             &[payer, user_accounts_owner, &user_transfer_authority],
             recent_blockhash,
@@ -662,7 +662,7 @@ impl TestLendingMarket {
             Some(&payer.pubkey()),
         );
 
-        let recent_blockhash = banks_client.get_recent_blockhash().await.unwrap();
+        let recent_blockhash = banks_client.get_latest_blockhash().await.unwrap();
         transaction.sign(
             &[payer, user_accounts_owner, &user_transfer_authority],
             recent_blockhash,
@@ -714,7 +714,7 @@ impl TestLendingMarket {
             ],
             Some(&payer.pubkey()),
         );
-        let recent_blockhash = banks_client.get_recent_blockhash().await.unwrap();
+        let recent_blockhash = banks_client.get_latest_blockhash().await.unwrap();
         transaction.sign(
             &[payer, user_accounts_owner, &user_transfer_authority],
             recent_blockhash,
@@ -765,7 +765,7 @@ impl TestLendingMarket {
             Some(&payer.pubkey()),
         );
 
-        let recent_blockhash = banks_client.get_recent_blockhash().await.unwrap();
+        let recent_blockhash = banks_client.get_latest_blockhash().await.unwrap();
         transaction.sign(
             &[payer, user_accounts_owner, &user_transfer_authority],
             recent_blockhash,
@@ -802,7 +802,7 @@ impl TestLendingMarket {
             Some(&payer.pubkey()),
         );
 
-        let recent_blockhash = banks_client.get_recent_blockhash().await.unwrap();
+        let recent_blockhash = banks_client.get_latest_blockhash().await.unwrap();
         transaction.sign(&vec![payer, user_accounts_owner], recent_blockhash);
 
         assert_matches!(banks_client.process_transaction(transaction).await, Ok(()));
@@ -957,7 +957,7 @@ impl TestReserve {
             ],
             Some(&payer.pubkey()),
         );
-        let recent_blockhash = banks_client.get_recent_blockhash().await.unwrap();
+        let recent_blockhash = banks_client.get_latest_blockhash().await.unwrap();
         transaction.sign(
             &vec![
                 payer,
@@ -1089,7 +1089,7 @@ impl TestObligation {
             Some(&payer.pubkey()),
         );
 
-        let recent_blockhash = banks_client.get_recent_blockhash().await.unwrap();
+        let recent_blockhash = banks_client.get_latest_blockhash().await.unwrap();
         transaction.sign(
             &vec![payer, &obligation.keypair, user_accounts_owner],
             recent_blockhash,
@@ -1427,7 +1427,7 @@ pub async fn create_token_account(
         Some(&payer.pubkey()),
     );
 
-    let recent_blockhash = banks_client.get_recent_blockhash().await.unwrap();
+    let recent_blockhash = banks_client.get_latest_blockhash().await.unwrap();
     transaction.sign(&[payer, &token_keypair], recent_blockhash);
 
     assert_matches!(banks_client.process_transaction(transaction).await, Ok(()));
@@ -1456,7 +1456,7 @@ pub async fn mint_to(
         Some(&payer.pubkey()),
     );
 
-    let recent_blockhash = banks_client.get_recent_blockhash().await.unwrap();
+    let recent_blockhash = banks_client.get_latest_blockhash().await.unwrap();
     transaction.sign(&[payer, authority], recent_blockhash);
 
     assert_matches!(banks_client.process_transaction(transaction).await, Ok(()));

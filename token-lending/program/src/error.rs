@@ -187,6 +187,9 @@ pub enum LendingError {
     /// Flash loans are disabled for this reserve
     #[error("Flash loans are disabled for this reserve")]
     FlashLoansDisabled,
+    /// Deprecated instruction
+    #[error("Instruction is deprecated")]
+    DeprecatedInstruction,
 }
 
 impl From<LendingError> for ProgramError {

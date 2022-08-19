@@ -5,7 +5,6 @@ mod helpers;
 use helpers::*;
 use solana_program_test::*;
 use solana_sdk::{
-    pubkey::Pubkey,
     signature::{Keypair, Signer},
     transaction::Transaction,
 };
@@ -25,7 +24,7 @@ async fn test_success() {
     );
 
     // limit to track compute unit increase
-    test.set_bpf_compute_max_units(101_000);
+    test.set_compute_max_units(101_000);
 
     // 100 SOL collateral
     const SOL_DEPOSIT_AMOUNT_LAMPORTS: u64 = 100 * LAMPORTS_TO_SOL * INITIAL_COLLATERAL_RATIO;
@@ -177,9 +176,7 @@ async fn test_success() {
 
     assert_eq!(
         // 30% of the bonus
-        // SOL_LIQUIDATION_AMOUNT_LAMPORTS * 3 / 10 / 11,
-        // 0 % min 1 for now
-        max(SOL_LIQUIDATION_AMOUNT_LAMPORTS * 0 / 10 / 11, 1),
+        max(SOL_LIQUIDATION_AMOUNT_LAMPORTS * 3 / 10 / 11, 1),
         (fee_receiver_withdraw_liquidity_balance - initial_fee_receiver_withdraw_liquidity_balance)
     );
 
@@ -210,7 +207,7 @@ async fn test_success_insufficent_liquidity() {
     );
 
     // limit to track compute unit increase
-    test.set_bpf_compute_max_units(101_000);
+    test.set_compute_max_units(101_000);
 
     // 100 SOL collateral
     const SOL_DEPOSIT_AMOUNT_LAMPORTS: u64 = 100 * LAMPORTS_TO_SOL * INITIAL_COLLATERAL_RATIO;
@@ -225,7 +222,7 @@ async fn test_success_insufficent_liquidity() {
 
     const SOL_RESERVE_COLLATERAL_LAMPORTS: u64 = 2 * SOL_DEPOSIT_AMOUNT_LAMPORTS;
     const USDC_RESERVE_LIQUIDITY_FRACTIONAL: u64 = 2 * USDC_BORROW_AMOUNT_FRACTIONAL;
-    const AVAILABLE_SOL_LIQUIDITY: u64 = 1 * LAMPORTS_TO_SOL / 2;
+    const AVAILABLE_SOL_LIQUIDITY: u64 = LAMPORTS_TO_SOL / 2;
 
     let user_accounts_owner = Keypair::new();
     let lending_market = add_lending_market(&mut test);
@@ -367,11 +364,9 @@ async fn test_success_insufficent_liquidity() {
     );
 
     assert_eq!(
-        // 30% of the bonus (math looks stupid because i need to divide but round up so x/y -> (x-1)/y+1 )
-        // max((min(SOL_LIQUIDATION_AMOUNT_LAMPORTS, AVAILABLE_SOL_LIQUIDITY) * 3 - 1 ) / (10 * 11) + 1, 1),
-        // 0 % min 1 for now
+        // 30% of the bonus (math looks stupid because need to divide but round up so x/y -> (x-1)/y+1 )
         max(
-            (min(SOL_LIQUIDATION_AMOUNT_LAMPORTS, AVAILABLE_SOL_LIQUIDITY) * 0) / (10 * 11),
+            (min(SOL_LIQUIDATION_AMOUNT_LAMPORTS, AVAILABLE_SOL_LIQUIDITY) * 3 - 1) / (10 * 11) + 1,
             1
         ),
         (fee_reciever_withdraw_liquidity_balance - initial_fee_reciever_withdraw_liquidity_balance)
