@@ -18,7 +18,7 @@ use solana_program::{
     account_info::{next_account_info, AccountInfo},
     decode_error::DecodeError,
     entrypoint::ProgramResult,
-    instruction::Instruction,
+    instruction::{Instruction, get_stack_height, TRANSACTION_LEVEL_STACK_HEIGHT},
     msg,
     program::{invoke, invoke_signed},
     program_error::{PrintProgramError, ProgramError},
@@ -3011,6 +3011,10 @@ fn is_cpi_call(
     // the current ixn must match the flash_* ix. otherwise, it's a CPI. Comparing program_ids is a
     // cheaper way of verifying this property, bc token-lending doesn't allow re-entrancy anywhere.
     if *program_id != current_ixn.program_id {
+        return Ok(true);
+    }
+
+    if get_stack_height() > TRANSACTION_LEVEL_STACK_HEIGHT {
         return Ok(true);
     }
 
