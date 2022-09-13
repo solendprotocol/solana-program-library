@@ -1320,7 +1320,7 @@ fn command_update_reserve(
         reserve.liquidity.switchboard_oracle_pubkey = switchboard_feed_pubkey.unwrap();
     }
     if no_change {
-        println!("No changes made for reserve {}", reserve_pubkey.to_string());
+        println!("No changes made for reserve {}", reserve_pubkey);
         return Ok(());
     }
 
