@@ -427,7 +427,12 @@ fn process_refresh_reserve(program_id: &Pubkey, accounts: &[AccountInfo]) -> Pro
     let account_info_iter = &mut accounts.iter().peekable();
     let reserve_info = next_account_info(account_info_iter)?;
     let pyth_price_info = next_account_info(account_info_iter)?;
-    let switchboard_feed_info = next_account_info(account_info_iter)?;
+    // set switchboard to a placeholder account info
+    let mut switchboard_feed_info = pyth_price_info;
+    // if the next account info exists and is not the clock set it to be switchboard
+    if account_info_iter.peek().map(|a| a.key) != Some(&clock::ID) {
+        switchboard_feed_info = next_account_info(account_info_iter)?;
+    }
     let clock = &Clock::get()?;
     if account_info_iter.peek().map(|a| a.key) == Some(&clock::ID) {
         next_account_info(account_info_iter)?;
@@ -2572,7 +2577,13 @@ fn get_price(
     if pyth_price != Decimal::zero() {
         return Ok(pyth_price);
     }
-    get_switchboard_price(switchboard_feed_info, clock)
+
+    // if switchboard was not passed in don't try to grab the price
+    if switchboard_feed_info.key != pyth_price_account_info.key {
+        return get_switchboard_price(switchboard_feed_info, clock);
+    }
+
+    Err(LendingError::InvalidOracleConfig.into())
 }
 
 fn get_pyth_price(pyth_price_info: &AccountInfo, clock: &Clock) -> Result<Decimal, ProgramError> {
