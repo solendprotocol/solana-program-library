@@ -430,7 +430,8 @@ fn process_refresh_reserve(program_id: &Pubkey, accounts: &[AccountInfo]) -> Pro
     // set switchboard to a placeholder account info
     let mut switchboard_feed_info = pyth_price_info;
     // if the next account info exists and is not the clock set it to be switchboard
-    if account_info_iter.peek().map(|a| a.key) != Some(&clock::ID) {
+    let switchboard_peek = account_info_iter.peek().map(|a| a.key);
+    if  switchboard_peek.is_some() && switchboard_peek != Some(&clock::ID) {
         switchboard_feed_info = next_account_info(account_info_iter)?;
     }
     let clock = &Clock::get()?;
@@ -462,8 +463,10 @@ fn _refresh_reserve<'a>(
         msg!("Reserve liquidity pyth oracle does not match the reserve liquidity pyth oracle provided");
         return Err(LendingError::InvalidAccountInput.into());
     }
-
-    if &reserve.liquidity.switchboard_oracle_pubkey != switchboard_feed_info.key {
+    // the first check is to allow for the only passing in pyth case
+    if pyth_price_info.key != switchboard_feed_info.key
+        && &reserve.liquidity.switchboard_oracle_pubkey != switchboard_feed_info.key
+    {
         msg!("Reserve liquidity switchboard oracle does not match the reserve liquidity switchboard oracle provided");
         return Err(LendingError::InvalidOracleConfig.into());
     }
