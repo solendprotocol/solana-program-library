@@ -116,11 +116,15 @@ impl Obligation {
         &self,
         liquidity: &ObligationLiquidity,
     ) -> Result<Decimal, ProgramError> {
-        let max_liquidation_value = self
+        let mut max_liquidation_value = self
             .borrowed_value
             .try_mul(Rate::from_percent(LIQUIDATION_CLOSE_FACTOR))?
             .min(liquidity.market_value)
             .min(Decimal::from(MAX_LIQUIDATABLE_VALUE_AT_ONCE));
+
+        if self.deposited_value < Decimal::from(1u64) {
+            max_liquidation_value = self.borrowed_value.min(liquidity.market_value)
+        }
 
         let max_liquidation_pct = max_liquidation_value.try_div(liquidity.market_value)?;
         liquidity.borrowed_amount_wads.try_mul(max_liquidation_pct)
