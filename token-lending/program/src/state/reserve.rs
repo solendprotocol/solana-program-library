@@ -1589,6 +1589,7 @@ mod test {
                     market_value: Decimal::from(test_case.borrow_market_value),
                 }],
                 borrowed_value: Decimal::from(test_case.borrow_market_value),
+                deposited_value: Decimal::from(test_case.deposit_market_value),
                 ..Obligation::default()
             };
 
