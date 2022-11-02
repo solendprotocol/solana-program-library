@@ -17,9 +17,11 @@ use solana_sdk::{
 use solend_program::{
     error::LendingError,
     instruction::{
-        flash_borrow_reserve_liquidity, flash_repay_reserve_liquidity, LendingInstruction,
+        flash_borrow_reserve_liquidity, flash_repay_reserve_liquidity, redeem_reserve_collateral,
+        refresh_reserve, update_reserve_config, LendingInstruction,
     },
     processor::process_instruction,
+    state::{ReserveConfig, ReserveFees},
 };
 use spl_token::error::TokenError;
 use spl_token::instruction::approve;
@@ -45,7 +47,7 @@ async fn test_success() {
     let mut reserve_config = test_reserve_config();
     reserve_config.fees.host_fee_percentage = 20;
     reserve_config.fees.flash_loan_fee_wad = 3_000_000_000_000_000;
-
+    reserve_config.deposit_limit = 3_000_000_000_000_000;
     let usdc_mint = add_usdc_mint(&mut test);
     let usdc_oracle = add_usdc_oracle(&mut test);
     let usdc_test_reserve = add_reserve(
@@ -1304,6 +1306,255 @@ async fn test_fail_repay_from_diff_reserve() {
     assert_eq!(
         err,
         TransactionError::InstructionError(1, PrivilegeEscalation)
+    );
+}
+#[tokio::test]
+async fn test_liquidity_supply_matches_fee_recipient() {
+    let mut test = ProgramTest::new(
+        "solend_program",
+        solend_program::id(),
+        processor!(process_instruction),
+    );
+
+    // limit to track compute unit increase
+    test.set_compute_max_units(60_000);
+
+    const FLASH_LOAN_AMOUNT: u64 = FRACTIONAL_TO_USDC;
+    const USER_LIQ_AMOUNT: u64 = FLASH_LOAN_AMOUNT;
+    const FEE_AMOUNT: u64 = 4500;
+    const HOST_FEE_AMOUNT: u64 = 1000;
+
+    const COLLATERAL_AMOUNT: u64 = USER_LIQ_AMOUNT / 2;
+
+    let user_accounts_owner = Keypair::new();
+    let lending_market = add_lending_market(&mut test);
+
+    let mut reserve_config = test_reserve_config();
+    reserve_config.fees.host_fee_percentage = 20;
+    reserve_config.fees.flash_loan_fee_wad = 5_000_000_000_000_000;
+    reserve_config.deposit_limit = 3_000_000_000_000_000;
+    let usdc_mint = add_usdc_mint(&mut test);
+    let usdc_oracle = add_usdc_oracle(&mut test);
+    let usdc_test_reserve = add_reserve(
+        &mut test,
+        &lending_market,
+        &usdc_oracle,
+        &user_accounts_owner,
+        AddReserveArgs {
+            user_liquidity_amount: USER_LIQ_AMOUNT,
+            liquidity_amount: FLASH_LOAN_AMOUNT,
+            liquidity_mint_pubkey: usdc_mint.pubkey,
+            liquidity_mint_decimals: usdc_mint.decimals,
+            config: reserve_config,
+            ..AddReserveArgs::default()
+        },
+    );
+    let mut new_config = usdc_test_reserve.config;
+    new_config.fee_receiver = usdc_test_reserve.liquidity_supply_pubkey;
+    let (mut banks_client, payer, recent_blockhash) = test.start().await;
+
+    let before_ctoken_amount =
+        get_token_balance(&mut banks_client, usdc_test_reserve.user_collateral_pubkey).await;
+    assert_eq!(before_ctoken_amount, 1000000);
+
+  
+    lending_market
+        .deposit(
+            &mut banks_client,
+            &user_accounts_owner,
+            &payer,
+            &usdc_test_reserve,
+            COLLATERAL_AMOUNT,
+        )
+        .await;
+    let mut  usdc_reserve = usdc_test_reserve.get_state(&mut banks_client).await;
+    assert!(usdc_reserve.last_update.stale);
+
+    let initial_ctoken_count =
+        get_token_balance(&mut banks_client, usdc_test_reserve.user_collateral_pubkey).await;
+    assert_eq!(initial_ctoken_count, 1000000 + COLLATERAL_AMOUNT);
+
+    let before_balance =
+        get_token_balance(&mut banks_client, usdc_test_reserve.user_liquidity_pubkey).await;
+    assert_eq!(before_balance, USER_LIQ_AMOUNT - COLLATERAL_AMOUNT);
+    //\assert!(usdc_reserve.liquidity.cumulative_borrow_rate_wads > old_borrow_rate);
+
+    let mut transaction = Transaction::new_with_payer(
+        &[update_reserve_config(
+            solend_program::id(),
+            new_config,
+            usdc_test_reserve.pubkey,
+            lending_market.pubkey,
+            lending_market.owner.pubkey(),
+            usdc_oracle.pyth_product_pubkey,
+            usdc_oracle.pyth_price_pubkey,
+            usdc_oracle.switchboard_feed_pubkey,
+        )],
+        Some(&payer.pubkey()),
+    );
+    transaction.sign(&[&payer, &lending_market.owner], recent_blockhash);
+    assert!(banks_client.process_transaction(transaction).await.is_ok());
+    let updated_reserve = usdc_test_reserve.get_state(&mut banks_client).await;
+    assert_eq!(updated_reserve.config, new_config);
+
+    lending_market
+        .deposit(
+            &mut banks_client,
+            &user_accounts_owner,
+            &payer,
+            &usdc_test_reserve,
+            COLLATERAL_AMOUNT / 10,
+        )
+        .await;
+
+    let user_transfer_authority = Keypair::new();
+    let mut transaction = Transaction::new_with_payer(
+        &[
+            approve(
+                &spl_token::id(),
+                &usdc_test_reserve.user_collateral_pubkey,
+                &user_transfer_authority.pubkey(),
+                &user_accounts_owner.pubkey(),
+                &[],
+                COLLATERAL_AMOUNT,
+            )
+            .unwrap(),
+            redeem_reserve_collateral(
+                solend_program::id(),
+                COLLATERAL_AMOUNT / 10,
+                usdc_test_reserve.user_collateral_pubkey,
+                usdc_test_reserve.user_liquidity_pubkey,
+                usdc_test_reserve.pubkey,
+                usdc_test_reserve.collateral_mint_pubkey,
+                usdc_test_reserve.liquidity_supply_pubkey,
+                lending_market.pubkey,
+                user_transfer_authority.pubkey(),
+            ),
+            refresh_reserve(
+                solend_program::id(),
+                usdc_test_reserve.pubkey,
+                usdc_oracle.pyth_price_pubkey,
+                usdc_oracle.switchboard_feed_pubkey,
+            ),
+        ],
+        Some(&payer.pubkey()),
+    );
+
+    transaction.sign(
+        &[&payer, &user_accounts_owner, &user_transfer_authority],
+        recent_blockhash,
+    );
+    assert!(banks_client.process_transaction(transaction).await.is_ok());
+
+    let test_redeem_balance =
+        get_token_balance(&mut banks_client, usdc_test_reserve.user_liquidity_pubkey).await;
+    assert_eq!(test_redeem_balance - before_balance, 0);
+    let mut transaction = Transaction::new_with_payer(
+        &[
+            flash_borrow_reserve_liquidity(
+                solend_program::id(),
+                FLASH_LOAN_AMOUNT,
+                usdc_test_reserve.liquidity_supply_pubkey,
+                usdc_test_reserve.user_liquidity_pubkey,
+                usdc_test_reserve.pubkey,
+                lending_market.pubkey,
+            ),
+            flash_repay_reserve_liquidity(
+                solend_program::id(),
+                FLASH_LOAN_AMOUNT,
+                0,
+                usdc_test_reserve.user_liquidity_pubkey,
+                usdc_test_reserve.liquidity_supply_pubkey,
+                usdc_test_reserve.liquidity_supply_pubkey,
+                usdc_test_reserve.liquidity_host_pubkey,
+                usdc_test_reserve.pubkey,
+                lending_market.pubkey,
+                user_accounts_owner.pubkey(),
+            ),
+            refresh_reserve(
+                solend_program::id(),
+                usdc_test_reserve.pubkey,
+                usdc_oracle.pyth_price_pubkey,
+                usdc_oracle.switchboard_feed_pubkey,
+            ),
+        ],
+        Some(&payer.pubkey()),
+    );
+
+    transaction.sign(&[&payer, &user_accounts_owner], recent_blockhash);
+    assert!(banks_client.process_transaction(transaction).await.is_ok());
+
+    let fee_balance =
+        get_token_balance(&mut banks_client, usdc_test_reserve.config.fee_receiver).await;
+    assert_eq!(fee_balance, 0);
+
+    let host_fee_balance =
+        get_token_balance(&mut banks_client, usdc_test_reserve.liquidity_host_pubkey).await;
+    assert_eq!(host_fee_balance, HOST_FEE_AMOUNT);
+
+    let after_repay_balance =
+        get_token_balance(&mut banks_client, usdc_test_reserve.user_liquidity_pubkey).await;
+    assert_eq!(
+        after_repay_balance,
+        COLLATERAL_AMOUNT - reserve_config.fees.flash_loan_fee_wad / 1_000_000_000_000
+    );
+
+    let user_transfer_authority = Keypair::new();
+    let mut transaction = Transaction::new_with_payer(
+        &[
+            approve(
+                &spl_token::id(),
+                &usdc_test_reserve.user_collateral_pubkey,
+                &user_transfer_authority.pubkey(),
+                &user_accounts_owner.pubkey(),
+                &[],
+                COLLATERAL_AMOUNT,
+            )
+            .unwrap(),
+            redeem_reserve_collateral(
+                solend_program::id(),
+                COLLATERAL_AMOUNT,
+                usdc_test_reserve.user_collateral_pubkey,
+                usdc_test_reserve.user_liquidity_pubkey,
+                usdc_test_reserve.pubkey,
+                usdc_test_reserve.collateral_mint_pubkey,
+                usdc_test_reserve.liquidity_supply_pubkey,
+                lending_market.pubkey,
+                user_transfer_authority.pubkey(),
+            ),
+            refresh_reserve(
+                solend_program::id(),
+                usdc_test_reserve.pubkey,
+                usdc_oracle.pyth_price_pubkey,
+                usdc_oracle.switchboard_feed_pubkey,
+            ),
+        ],
+        Some(&payer.pubkey()),
+    );
+
+    transaction.sign(
+        &[&payer, &user_accounts_owner, &user_transfer_authority],
+        recent_blockhash,
+    );
+    assert!(banks_client.process_transaction(transaction).await.is_ok());
+
+    let final_ctoken_count =
+        get_token_balance(&mut banks_client, usdc_test_reserve.user_collateral_pubkey).await;
+    assert_eq!(final_ctoken_count, 1000000);
+
+    let final_bal =
+        get_token_balance(&mut banks_client, usdc_test_reserve.user_liquidity_pubkey).await;
+    assert!(
+        final_bal > COLLATERAL_AMOUNT - reserve_config.fees.flash_loan_fee_wad / 1_000_000_000_000
+    );
+    let usdc_reserve = usdc_test_reserve.get_state(&mut banks_client).await;
+
+    let liquidity_supply =
+        get_token_balance(&mut banks_client, usdc_test_reserve.liquidity_supply_pubkey).await;
+    assert!(liquidity_supply < FLASH_LOAN_AMOUNT + FEE_AMOUNT - HOST_FEE_AMOUNT);
+
+    assert!(
+        usdc_reserve.liquidity.available_amount < FLASH_LOAN_AMOUNT + FEE_AMOUNT - HOST_FEE_AMOUNT
     );
 }
 
