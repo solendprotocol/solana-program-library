@@ -1044,8 +1044,7 @@ fn command_liquidate_obligation(
         &withdraw_reserve_state.liquidity.mint_pubkey,
     );
 
-    let mut instructions = Vec::new();
-    instructions.push(ComputeBudgetInstruction::request_units(300_000, 30101));
+    let mut instructions = vec![ComputeBudgetInstruction::request_units(300_000, 30101)];
 
     // refresh all reserves
     instructions.extend(reserves.iter().map(|(pubkey, reserve)| {
