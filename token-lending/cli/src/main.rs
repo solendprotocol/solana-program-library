@@ -1,5 +1,5 @@
 use solana_client::rpc_config::RpcSendTransactionConfig;
-use solana_sdk::commitment_config::CommitmentLevel;
+use solana_sdk::{commitment_config::CommitmentLevel, compute_budget::ComputeBudgetInstruction};
 use solend_program::{
     instruction::{
         liquidate_obligation_and_redeem_reserve_collateral, refresh_obligation, refresh_reserve,
@@ -1045,6 +1045,8 @@ fn command_liquidate_obligation(
     );
 
     let mut instructions = Vec::new();
+    instructions.push(ComputeBudgetInstruction::request_units(300_000, 30101));
+
     // refresh all reserves
     instructions.extend(reserves.iter().map(|(pubkey, reserve)| {
         refresh_reserve(
