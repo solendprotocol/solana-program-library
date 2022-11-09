@@ -1,3 +1,12 @@
+use solana_client::rpc_config::RpcSendTransactionConfig;
+use solana_sdk::commitment_config::CommitmentLevel;
+use solend_program::{
+    instruction::{
+        liquidate_obligation_and_redeem_reserve_collateral, refresh_obligation, refresh_reserve,
+    },
+    state::Obligation,
+};
+
 use {
     clap::{
         crate_description, crate_name, crate_version, value_t, App, AppSettings, Arg, ArgMatches,
@@ -193,6 +202,67 @@ fn main() {
                         .default_value("USD")
                         .help("Currency market prices are quoted in"),
                 ),
+        )
+        .subcommand(
+            SubCommand::with_name("liquidate-obligation")
+                .about("Liquidate Obligation and redeem reserve collateral")
+                // @TODO: use is_valid_signer
+                .arg(
+                    Arg::with_name("obligation")
+                        .long("obligation")
+                        .value_name("OBLIGATION_PUBKEY")
+                        .takes_value(true)
+                        .required(true)
+                        .help("obligation pubkey"),
+                )
+                .arg(
+                    Arg::with_name("repay-reserve")
+                        .long("repay-reserve")
+                        .value_name("RESERVE_PUBKEY")
+                        .takes_value(true)
+                        .required(true)
+                        .help("repay reserve"),
+                )
+                .arg(
+                    Arg::with_name("source-liquidity")
+                        .long("source-liquidity")
+                        .value_name("PUBKEY")
+                        .takes_value(true)
+                        .required(true)
+                        .help("Token account that repays the obligation's debt"),
+                )
+                .arg(
+                    Arg::with_name("withdraw-reserve")
+                        .long("withdraw-reserve")
+                        .value_name("RESERVE_PUBKEY")
+                        .takes_value(true)
+                        .required(true)
+                        .help("withdraw reserve"),
+                )
+                .arg(
+                    Arg::with_name("destination-collateral")
+                        .long("destination-collateral")
+                        .value_name("PUBKEY")
+                        .takes_value(true)
+                        .required(true)
+                        .help("ctoken ATA corresponding to the withdraw reserve ctoken mint"),
+                )
+                .arg(
+                    Arg::with_name("destination-liquidity")
+                        .long("destination-liquidity")
+                        .value_name("PUBKEY")
+                        .takes_value(true)
+                        .required(true)
+                        .help("ATA corresponding to the withdraw reserve token mint"),
+                )
+                .arg(
+                    Arg::with_name("liquidity-amount")
+                        .long("liquidity-amount")
+                        .value_name("AMOUNT")
+                        .takes_value(true)
+                        .required(true)
+                        .help("amount of tokens to repay"),
+                )
         )
         .subcommand(
             SubCommand::with_name("add-reserve")
@@ -660,6 +730,26 @@ fn main() {
                 switchboard_oracle_program_id,
             )
         }
+        ("liquidate-obligation", Some(arg_matches)) => {
+            let obligation = pubkey_of(arg_matches, "obligation").unwrap();
+            let repay_reserve = pubkey_of(arg_matches, "repay-reserve").unwrap();
+            let source_liquidity = pubkey_of(arg_matches, "source-liquidity").unwrap();
+            let withdraw_reserve = pubkey_of(arg_matches, "withdraw-reserve").unwrap();
+            let liquidity_amount = value_of(arg_matches, "liquidity-amount").unwrap();
+            let destination_collateral = pubkey_of(arg_matches, "destination-collateral").unwrap();
+            let destination_liquidity = pubkey_of(arg_matches, "destination-liquidity").unwrap();
+
+            command_liquidate_obligation(
+                &config,
+                obligation,
+                repay_reserve,
+                source_liquidity,
+                withdraw_reserve,
+                destination_collateral,
+                destination_liquidity,
+                liquidity_amount,
+            )
+        }
         ("add-reserve", Some(arg_matches)) => {
             let lending_market_owner_keypair =
                 keypair_of(arg_matches, "lending_market_owner").unwrap();
@@ -872,6 +962,115 @@ fn command_create_lending_market(
         "Authority Address {}",
         Pubkey::create_program_address(authority_signer_seeds, &config.lending_program_id)?,
     );
+    Ok(())
+}
+
+fn command_liquidate_obligation(
+    config: &Config,
+    obligation_pubkey: Pubkey,
+    repay_reserve_pubkey: Pubkey,
+    source_liquidity_pubkey: Pubkey,
+    withdraw_reserve_pubkey: Pubkey,
+    destination_collateral_pubkey: Pubkey,
+    destination_liquidity_pubkey: Pubkey,
+    liquidity_amount: u64,
+) -> CommandResult {
+    let obligation_state = {
+        let data = config.rpc_client.get_account(&obligation_pubkey)?;
+        Obligation::unpack(&data.data)?
+    };
+
+    // get reserve pubkeys
+    let reserve_pubkeys = {
+        let mut r = Vec::new();
+        r.extend(obligation_state.deposits.iter().map(|d| d.deposit_reserve));
+        r.extend(obligation_state.borrows.iter().map(|b| b.borrow_reserve));
+        r
+    };
+
+    // get reserve accounts
+    let reserves: Vec<(Pubkey, Reserve)> = config
+        .rpc_client
+        .get_multiple_accounts(&reserve_pubkeys)?
+        .into_iter()
+        .zip(reserve_pubkeys.iter())
+        .map(|(account, pubkey)| (*pubkey, Reserve::unpack(&account.unwrap().data).unwrap()))
+        .collect();
+
+    assert!(reserve_pubkeys.len() == reserves.len());
+
+    // find repay, withdraw reserve states
+    let withdraw_reserve_state = reserves
+        .iter()
+        .find_map(|(pubkey, reserve)| {
+            if withdraw_reserve_pubkey == *pubkey {
+                Some(reserve)
+            } else {
+                None
+            }
+        })
+        .unwrap();
+    let repay_reserve_state = reserves
+        .iter()
+        .find_map(|(pubkey, reserve)| {
+            if repay_reserve_pubkey == *pubkey {
+                Some(reserve)
+            } else {
+                None
+            }
+        })
+        .unwrap();
+
+    let mut instructions = Vec::new();
+    // refresh all reserves
+    instructions.extend(reserves.iter().map(|(pubkey, reserve)| {
+        refresh_reserve(
+            config.lending_program_id,
+            *pubkey,
+            reserve.liquidity.pyth_oracle_pubkey,
+            reserve.liquidity.switchboard_oracle_pubkey,
+        )
+    }));
+
+    // refresh obligation
+    instructions.push(refresh_obligation(
+        config.lending_program_id,
+        obligation_pubkey,
+        reserve_pubkeys,
+    ));
+
+    instructions.push(liquidate_obligation_and_redeem_reserve_collateral(
+        config.lending_program_id,
+        liquidity_amount,
+        source_liquidity_pubkey,
+        destination_collateral_pubkey,
+        destination_liquidity_pubkey,
+        repay_reserve_pubkey,
+        repay_reserve_state.liquidity.supply_pubkey,
+        withdraw_reserve_pubkey,
+        withdraw_reserve_state.collateral.mint_pubkey,
+        withdraw_reserve_state.collateral.supply_pubkey,
+        withdraw_reserve_state.liquidity.supply_pubkey,
+        withdraw_reserve_state.config.fee_receiver,
+        obligation_pubkey,
+        obligation_state.lending_market,
+        config.fee_payer.pubkey(),
+    ));
+    println!("{:#?}", instructions[instructions.len() - 1]);
+
+    let recent_blockhash = config.rpc_client.get_latest_blockhash()?;
+    let transaction = Transaction::new(
+        &vec![config.fee_payer.as_ref()],
+        Message::new_with_blockhash(
+            &instructions,
+            Some(&config.fee_payer.pubkey()),
+            &recent_blockhash,
+        ),
+        recent_blockhash,
+    );
+
+    send_transaction(config, transaction)?;
+
     Ok(())
 }
 
@@ -1378,7 +1577,16 @@ fn send_transaction(
     } else {
         let signature = config
             .rpc_client
-            .send_and_confirm_transaction_with_spinner(&transaction)?;
+            .send_and_confirm_transaction_with_spinner_and_config(
+                &transaction,
+                CommitmentConfig::confirmed(),
+                RpcSendTransactionConfig {
+                    preflight_commitment: Some(CommitmentLevel::Confirmed),
+                    skip_preflight: true,
+                    encoding: None,
+                    max_retries: None,
+                },
+            )?;
         println!("Signature: {}", signature);
     }
     Ok(())
