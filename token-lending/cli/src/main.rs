@@ -44,6 +44,8 @@ use {
     system_instruction::create_account,
 };
 
+use spl_associated_token_account::{create_associated_token_account, get_associated_token_address};
+
 struct Config {
     rpc_client: RpcClient,
     fee_payer: Box<dyn Signer>,
@@ -238,22 +240,6 @@ fn main() {
                         .takes_value(true)
                         .required(true)
                         .help("withdraw reserve"),
-                )
-                .arg(
-                    Arg::with_name("destination-collateral")
-                        .long("destination-collateral")
-                        .value_name("PUBKEY")
-                        .takes_value(true)
-                        .required(true)
-                        .help("ctoken ATA corresponding to the withdraw reserve ctoken mint"),
-                )
-                .arg(
-                    Arg::with_name("destination-liquidity")
-                        .long("destination-liquidity")
-                        .value_name("PUBKEY")
-                        .takes_value(true)
-                        .required(true)
-                        .help("ATA corresponding to the withdraw reserve token mint"),
                 )
                 .arg(
                     Arg::with_name("liquidity-amount")
@@ -736,8 +722,6 @@ fn main() {
             let source_liquidity = pubkey_of(arg_matches, "source-liquidity").unwrap();
             let withdraw_reserve = pubkey_of(arg_matches, "withdraw-reserve").unwrap();
             let liquidity_amount = value_of(arg_matches, "liquidity-amount").unwrap();
-            let destination_collateral = pubkey_of(arg_matches, "destination-collateral").unwrap();
-            let destination_liquidity = pubkey_of(arg_matches, "destination-liquidity").unwrap();
 
             command_liquidate_obligation(
                 &config,
@@ -745,8 +729,6 @@ fn main() {
                 repay_reserve,
                 source_liquidity,
                 withdraw_reserve,
-                destination_collateral,
-                destination_liquidity,
                 liquidity_amount,
             )
         }
@@ -965,14 +947,13 @@ fn command_create_lending_market(
     Ok(())
 }
 
+#[allow(clippy::too_many_arguments)]
 fn command_liquidate_obligation(
     config: &Config,
     obligation_pubkey: Pubkey,
     repay_reserve_pubkey: Pubkey,
     source_liquidity_pubkey: Pubkey,
     withdraw_reserve_pubkey: Pubkey,
-    destination_collateral_pubkey: Pubkey,
-    destination_liquidity_pubkey: Pubkey,
     liquidity_amount: u64,
 ) -> CommandResult {
     let obligation_state = {
@@ -1021,6 +1002,48 @@ fn command_liquidate_obligation(
         })
         .unwrap();
 
+    // make sure atas exist. if they don't, create them.
+    let required_mints = [
+        withdraw_reserve_state.collateral.mint_pubkey,
+        withdraw_reserve_state.liquidity.mint_pubkey,
+    ];
+
+    for mint in required_mints {
+        let ata = get_associated_token_address(&config.fee_payer.pubkey(), &mint);
+
+        if let Err(e) = config.rpc_client.get_account(&ata) {
+            println!("{:?}", e);
+
+            // create the ata
+            println!("Creating ATA for mint {:?}", mint);
+            let recent_blockhash = config.rpc_client.get_latest_blockhash()?;
+            let transaction = Transaction::new(
+                &vec![config.fee_payer.as_ref()],
+                Message::new_with_blockhash(
+                    &[create_associated_token_account(
+                        &config.fee_payer.pubkey(),
+                        &config.fee_payer.pubkey(),
+                        &mint,
+                    )],
+                    Some(&config.fee_payer.pubkey()),
+                    &recent_blockhash,
+                ),
+                recent_blockhash,
+            );
+
+            send_transaction(config, transaction)?;
+        }
+    }
+
+    let destination_collateral_pubkey = get_associated_token_address(
+        &config.fee_payer.pubkey(),
+        &withdraw_reserve_state.collateral.mint_pubkey,
+    );
+    let destination_liquidity_pubkey = get_associated_token_address(
+        &config.fee_payer.pubkey(),
+        &withdraw_reserve_state.liquidity.mint_pubkey,
+    );
+
     let mut instructions = Vec::new();
     // refresh all reserves
     instructions.extend(reserves.iter().map(|(pubkey, reserve)| {
@@ -1056,7 +1079,6 @@ fn command_liquidate_obligation(
         obligation_state.lending_market,
         config.fee_payer.pubkey(),
     ));
-    println!("{:#?}", instructions[instructions.len() - 1]);
 
     let recent_blockhash = config.rpc_client.get_latest_blockhash()?;
     let transaction = Transaction::new(
@@ -1581,7 +1603,7 @@ fn send_transaction(
                 &transaction,
                 CommitmentConfig::confirmed(),
                 RpcSendTransactionConfig {
-                    preflight_commitment: Some(CommitmentLevel::Confirmed),
+                    preflight_commitment: Some(CommitmentLevel::Processed),
                     skip_preflight: true,
                     encoding: None,
                     max_retries: None,
