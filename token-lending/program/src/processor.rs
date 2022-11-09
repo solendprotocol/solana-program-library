@@ -5,6 +5,7 @@ use crate::{
     error::LendingError,
     instruction::LendingInstruction,
     math::{Decimal, Rate, TryAdd, TryDiv, TryMul, TrySub, WAD},
+    // TODO use pyth_sdk_solana everywhere
     pyth,
     state::{
         CalculateBorrowResult, CalculateLiquidationResult, CalculateRepayResult,
@@ -14,6 +15,7 @@ use crate::{
     },
 };
 use num_traits::FromPrimitive;
+use pyth_sdk_solana::{self, state::PriceAccount};
 use solana_program::{
     account_info::{next_account_info, AccountInfo},
     decode_error::DecodeError,
@@ -2591,54 +2593,36 @@ fn get_price(
 }
 
 fn get_pyth_price(pyth_price_info: &AccountInfo, clock: &Clock) -> Result<Decimal, ProgramError> {
+    const MAX_PYTH_CONFIDENCE_RATIO: u64 = 10;
     const STALE_AFTER_SLOTS_ELAPSED: u64 = 240;
 
     if *pyth_price_info.key == solend_program::NULL_PUBKEY {
         return Err(LendingError::NullOracleConfig.into());
     }
 
-    let pyth_price_data = pyth_price_info.try_borrow_data()?;
-    let pyth_price = pyth::load::<pyth::Price>(&pyth_price_data)
-        .map_err(|_| ProgramError::InvalidAccountData)?;
+    let price_feed = pyth_sdk_solana::load_price_feed_from_account_info(pyth_price_info)?;
+    let pyth_price = price_feed
+        .get_latest_available_price_within_duration(clock.unix_timestamp, STALE_AFTER_SLOTS_ELAPSED)
+        .ok_or(LendingError::InvalidOracleConfig)?;
 
-    if pyth_price.ptype != pyth::PriceType::Price {
-        msg!("Oracle price type is invalid {}", pyth_price.ptype as u8);
-        return Err(LendingError::InvalidOracleConfig.into());
-    }
-
-    if pyth_price.agg.status != pyth::PriceStatus::Trading {
-        msg!(
-            "Oracle price status is invalid: {}",
-            pyth_price.agg.status as u8
-        );
-        return Err(LendingError::InvalidOracleConfig.into());
-    }
-
-    let slots_elapsed = clock
-        .slot
-        .checked_sub(pyth_price.valid_slot)
-        .ok_or(LendingError::MathOverflow)?;
-    if slots_elapsed >= STALE_AFTER_SLOTS_ELAPSED {
-        msg!("Pyth oracle price is stale");
-        return Err(LendingError::InvalidOracleConfig.into());
-    }
-
-    let price: u64 = pyth_price.agg.price.try_into().map_err(|_| {
+    let price: u64 = pyth_price.price.try_into().map_err(|_| {
         msg!("Oracle price cannot be negative");
         LendingError::InvalidOracleConfig
     })?;
 
-    let conf = pyth_price.agg.conf;
-
-    let confidence_ratio: u64 = 10;
     // Perhaps confidence_ratio should exist as a per reserve config
     // 100/confidence_ratio = maximum size of confidence range as a percent of price
     // confidence_ratio of 10 filters out pyth prices with conf > 10% of price
-    if conf.checked_mul(confidence_ratio).unwrap() > price {
+    if pyth_price
+        .conf
+        .checked_mul(MAX_PYTH_CONFIDENCE_RATIO)
+        .unwrap()
+        > price
+    {
         msg!(
             "Oracle price confidence is too wide. price: {}, conf: {}",
             price,
-            conf,
+            pyth_price.conf,
         );
         return Err(LendingError::InvalidOracleConfig.into());
     }

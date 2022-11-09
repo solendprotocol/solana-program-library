@@ -4,6 +4,7 @@ use bytemuck::{
     cast_slice, cast_slice_mut, from_bytes, from_bytes_mut, try_cast_slice, try_cast_slice_mut,
     Pod, PodCastError, Zeroable,
 };
+use static_assertions::assert_eq_size;
 use std::mem::size_of;
 
 pub const MAGIC: u32 = 0xa1b2c3d4;
@@ -53,6 +54,7 @@ pub struct PriceInfo {
     pub corp_act: CorpAction,
     pub pub_slot: u64,
 }
+assert_eq_size!(PriceInfo, [u8; 32]);
 
 #[derive(Copy, Clone)]
 #[repr(C)]
@@ -61,6 +63,7 @@ pub struct PriceComp {
     agg: PriceInfo,
     latest: PriceInfo,
 }
+assert_eq_size!(PriceComp, [u8; 96]);
 
 #[derive(PartialEq, Copy, Clone)]
 #[repr(C)]
@@ -96,6 +99,8 @@ pub struct Price {
     pub agg: PriceInfo,        // aggregate price info
     pub comp: [PriceComp; 32], // price components one per quoter
 }
+
+assert_eq_size!(Price, [u8; 3312]);
 
 #[cfg(target_endian = "little")]
 unsafe impl Zeroable for Price {}
