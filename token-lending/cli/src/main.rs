@@ -1,3 +1,4 @@
+use lending_state::SolendState;
 use solana_client::rpc_config::RpcSendTransactionConfig;
 use solana_sdk::{commitment_config::CommitmentLevel, compute_budget::ComputeBudgetInstruction};
 use solend_program::{
@@ -6,6 +7,8 @@ use solend_program::{
     },
     state::Obligation,
 };
+
+mod lending_state;
 
 use {
     clap::{
@@ -248,6 +251,35 @@ fn main() {
                         .takes_value(true)
                         .required(true)
                         .help("amount of tokens to repay"),
+                )
+        )
+        .subcommand(
+            SubCommand::with_name("withdraw-collateral")
+                .about("Withdraw obligation collateral")
+                // @TODO: use is_valid_signer
+                .arg(
+                    Arg::with_name("obligation")
+                        .long("obligation")
+                        .value_name("OBLIGATION_PUBKEY")
+                        .takes_value(true)
+                        .required(true)
+                        .help("obligation pubkey"),
+                )
+                .arg(
+                    Arg::with_name("withdraw-reserve")
+                        .long("withdraw-reserve")
+                        .value_name("RESERVE_PUBKEY")
+                        .takes_value(true)
+                        .required(true)
+                        .help("reserve that you want to withdraw ctokens from"),
+                )
+                .arg(
+                    Arg::with_name("collateral-amount")
+                        .long("withdraw-amount")
+                        .value_name("AMOUNT")
+                        .takes_value(true)
+                        .required(true)
+                        .help("amount of ctokens to withdraw"),
                 )
         )
         .subcommand(
@@ -732,6 +764,13 @@ fn main() {
                 liquidity_amount,
             )
         }
+        ("withdraw-collateral", Some(arg_matches)) => {
+            let obligation = pubkey_of(arg_matches, "obligation").unwrap();
+            let withdraw_reserve = pubkey_of(arg_matches, "withdraw-reserve").unwrap();
+            let collateral_amount = value_of(arg_matches, "collateral-amount").unwrap();
+
+            command_withdraw_collateral(&config, obligation, withdraw_reserve, collateral_amount)
+        }
         ("add-reserve", Some(arg_matches)) => {
             let lending_market_owner_keypair =
                 keypair_of(arg_matches, "lending_market_owner").unwrap();
@@ -948,6 +987,43 @@ fn command_create_lending_market(
 }
 
 #[allow(clippy::too_many_arguments)]
+fn command_withdraw_collateral(
+    config: &Config,
+    obligation_pubkey: Pubkey,
+    withdraw_reserve_pubkey: Pubkey,
+    collateral_amount: u64,
+) -> CommandResult {
+    let solend_state = SolendState::new(
+        config.lending_program_id,
+        obligation_pubkey,
+        &config.rpc_client,
+    );
+
+    let withdraw_reserve = solend_state
+        .find_reserve_by_key(withdraw_reserve_pubkey)
+        .unwrap();
+
+    // make atas
+    get_or_create_associated_token_address(config, &withdraw_reserve.collateral.mint_pubkey);
+
+    let instructions = solend_state.withdraw(&withdraw_reserve_pubkey, collateral_amount);
+    let recent_blockhash = config.rpc_client.get_latest_blockhash()?;
+    let transaction = Transaction::new(
+        &vec![config.fee_payer.as_ref()],
+        Message::new_with_blockhash(
+            &instructions,
+            Some(&config.fee_payer.pubkey()),
+            &recent_blockhash,
+        ),
+        recent_blockhash,
+    );
+
+    send_transaction(config, transaction)?;
+
+    Ok(())
+}
+
+#[allow(clippy::too_many_arguments)]
 fn command_liquidate_obligation(
     config: &Config,
     obligation_pubkey: Pubkey,
@@ -1009,30 +1085,7 @@ fn command_liquidate_obligation(
     ];
 
     for mint in required_mints {
-        let ata = get_associated_token_address(&config.fee_payer.pubkey(), &mint);
-
-        if let Err(e) = config.rpc_client.get_account(&ata) {
-            println!("{:?}", e);
-
-            // create the ata
-            println!("Creating ATA for mint {:?}", mint);
-            let recent_blockhash = config.rpc_client.get_latest_blockhash()?;
-            let transaction = Transaction::new(
-                &vec![config.fee_payer.as_ref()],
-                Message::new_with_blockhash(
-                    &[create_associated_token_account(
-                        &config.fee_payer.pubkey(),
-                        &config.fee_payer.pubkey(),
-                        &mint,
-                    )],
-                    Some(&config.fee_payer.pubkey()),
-                    &recent_blockhash,
-                ),
-                recent_blockhash,
-            );
-
-            send_transaction(config, transaction)?;
-        }
+        get_or_create_associated_token_address(config, &mint);
     }
 
     let destination_collateral_pubkey = get_associated_token_address(
@@ -1605,7 +1658,7 @@ fn send_transaction(
                 CommitmentConfig::confirmed(),
                 RpcSendTransactionConfig {
                     preflight_commitment: Some(CommitmentLevel::Processed),
-                    skip_preflight: true,
+                    skip_preflight: false,
                     encoding: None,
                     max_retries: None,
                 },
@@ -1629,4 +1682,33 @@ fn quote_currency_of(matches: &ArgMatches<'_>, name: &str) -> Option<[u8; 32]> {
     } else {
         None
     }
+}
+
+fn get_or_create_associated_token_address(config: &Config, mint: &Pubkey) -> Pubkey {
+    let ata = get_associated_token_address(&config.fee_payer.pubkey(), mint);
+
+    if let Err(e) = config.rpc_client.get_account(&ata) {
+        println!("{:?}", e);
+
+        // create the ata
+        println!("Creating ATA for mint {:?}", mint);
+        let recent_blockhash = config.rpc_client.get_latest_blockhash().unwrap();
+        let transaction = Transaction::new(
+            &vec![config.fee_payer.as_ref()],
+            Message::new_with_blockhash(
+                &[create_associated_token_account(
+                    &config.fee_payer.pubkey(),
+                    &config.fee_payer.pubkey(),
+                    mint,
+                )],
+                Some(&config.fee_payer.pubkey()),
+                &recent_blockhash,
+            ),
+            recent_blockhash,
+        );
+
+        send_transaction(config, transaction).unwrap();
+    }
+
+    ata
 }
