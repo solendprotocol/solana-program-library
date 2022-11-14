@@ -3,7 +3,8 @@ use solana_client::rpc_config::RpcSendTransactionConfig;
 use solana_sdk::{commitment_config::CommitmentLevel, compute_budget::ComputeBudgetInstruction};
 use solend_program::{
     instruction::{
-        liquidate_obligation_and_redeem_reserve_collateral, refresh_obligation, refresh_reserve,
+        liquidate_obligation_and_redeem_reserve_collateral, redeem_reserve_collateral,
+        refresh_obligation, refresh_reserve,
     },
     state::Obligation,
 };
@@ -280,6 +281,27 @@ fn main() {
                         .takes_value(true)
                         .required(true)
                         .help("amount of ctokens to withdraw"),
+                )
+        )
+        .subcommand(
+            SubCommand::with_name("redeem-collateral")
+                .about("Redeem ctokens for tokens")
+                // @TODO: use is_valid_signer
+                .arg(
+                    Arg::with_name("redeem-reserve")
+                        .long("redeem-reserve")
+                        .value_name("RESERVE_PUBKEY")
+                        .takes_value(true)
+                        .required(true)
+                        .help("reserve pubkey"),
+                )
+                .arg(
+                    Arg::with_name("collateral-amount")
+                        .long("redeem-amount")
+                        .value_name("AMOUNT")
+                        .takes_value(true)
+                        .required(true)
+                        .help("amount of ctokens to redeem"),
                 )
         )
         .subcommand(
@@ -771,6 +793,12 @@ fn main() {
 
             command_withdraw_collateral(&config, obligation, withdraw_reserve, collateral_amount)
         }
+        ("redeem-collateral", Some(arg_matches)) => {
+            let redeem_reserve = pubkey_of(arg_matches, "redeem-reserve").unwrap();
+            let collateral_amount = value_of(arg_matches, "collateral-amount").unwrap();
+
+            command_redeem_collateral(&config, &redeem_reserve, collateral_amount)
+        }
         ("add-reserve", Some(arg_matches)) => {
             let lending_market_owner_keypair =
                 keypair_of(arg_matches, "lending_market_owner").unwrap();
@@ -983,6 +1011,51 @@ fn command_create_lending_market(
         "Authority Address {}",
         Pubkey::create_program_address(authority_signer_seeds, &config.lending_program_id)?,
     );
+    Ok(())
+}
+
+#[allow(clippy::too_many_arguments)]
+fn command_redeem_collateral(
+    config: &Config,
+    redeem_reserve_pubkey: &Pubkey,
+    collateral_amount: u64,
+) -> CommandResult {
+    let redeem_reserve = {
+        let data = config
+            .rpc_client
+            .get_account(redeem_reserve_pubkey)
+            .unwrap();
+        Reserve::unpack(&data.data).unwrap()
+    };
+
+    let source_ata =
+        get_or_create_associated_token_address(config, &redeem_reserve.collateral.mint_pubkey);
+    let dest_ata =
+        get_or_create_associated_token_address(config, &redeem_reserve.liquidity.mint_pubkey);
+
+    let recent_blockhash = config.rpc_client.get_latest_blockhash()?;
+    let transaction = Transaction::new(
+        &vec![config.fee_payer.as_ref()],
+        Message::new_with_blockhash(
+            &[redeem_reserve_collateral(
+                config.lending_program_id,
+                collateral_amount,
+                source_ata,
+                dest_ata,
+                *redeem_reserve_pubkey,
+                redeem_reserve.collateral.mint_pubkey,
+                redeem_reserve.liquidity.supply_pubkey,
+                redeem_reserve.lending_market,
+                config.fee_payer.pubkey(),
+            )],
+            Some(&config.fee_payer.pubkey()),
+            &recent_blockhash,
+        ),
+        recent_blockhash,
+    );
+
+    send_transaction(config, transaction)?;
+
     Ok(())
 }
 
@@ -1658,7 +1731,7 @@ fn send_transaction(
                 CommitmentConfig::confirmed(),
                 RpcSendTransactionConfig {
                     preflight_commitment: Some(CommitmentLevel::Processed),
-                    skip_preflight: false,
+                    skip_preflight: true,
                     encoding: None,
                     max_retries: None,
                 },
@@ -1687,11 +1760,9 @@ fn quote_currency_of(matches: &ArgMatches<'_>, name: &str) -> Option<[u8; 32]> {
 fn get_or_create_associated_token_address(config: &Config, mint: &Pubkey) -> Pubkey {
     let ata = get_associated_token_address(&config.fee_payer.pubkey(), mint);
 
-    if let Err(e) = config.rpc_client.get_account(&ata) {
-        println!("{:?}", e);
-
-        // create the ata
+    if config.rpc_client.get_account(&ata).is_err() {
         println!("Creating ATA for mint {:?}", mint);
+
         let recent_blockhash = config.rpc_client.get_latest_blockhash().unwrap();
         let transaction = Transaction::new(
             &vec![config.fee_payer.as_ref()],
