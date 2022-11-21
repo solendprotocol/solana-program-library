@@ -15,7 +15,7 @@ use crate::{
     },
 };
 use num_traits::FromPrimitive;
-use pyth_sdk_solana::{self, state::PriceAccount};
+use pyth_sdk_solana;
 use solana_program::{
     account_info::{next_account_info, AccountInfo},
     decode_error::DecodeError,
