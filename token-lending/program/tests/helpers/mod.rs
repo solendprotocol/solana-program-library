@@ -24,7 +24,6 @@ use solend_program::{
     },
     math::{Decimal, Rate, TryAdd, TryMul},
     processor::switchboard_v2_mainnet,
-    // pyth,
     state::{
         InitLendingMarketParams, InitObligationParams, InitReserveParams, LendingMarket,
         NewReserveCollateralParams, NewReserveLiquidityParams, Obligation, ObligationCollateral,
