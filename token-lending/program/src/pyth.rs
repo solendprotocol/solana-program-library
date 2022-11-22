@@ -21,7 +21,7 @@ pub struct AccKey {
     pub val: [u8; 32],
 }
 
-#[derive(PartialEq, Copy, Clone)]
+#[derive(PartialEq, Eq, Copy, Clone)]
 #[repr(C)]
 pub enum AccountType {
     Unknown,
@@ -30,7 +30,7 @@ pub enum AccountType {
     Price,
 }
 
-#[derive(PartialEq, Copy, Clone)]
+#[derive(PartialEq, Eq, Copy, Clone)]
 #[repr(C)]
 pub enum PriceStatus {
     Unknown,
@@ -39,7 +39,7 @@ pub enum PriceStatus {
     Auction,
 }
 
-#[derive(PartialEq, Copy, Clone)]
+#[derive(PartialEq, Eq, Copy, Clone)]
 #[repr(C)]
 pub enum CorpAction {
     NoCorpAct,
@@ -65,7 +65,7 @@ pub struct PriceComp {
 }
 assert_eq_size!(PriceComp, [u8; 96]);
 
-#[derive(PartialEq, Copy, Clone)]
+#[derive(PartialEq, Eq, Copy, Clone)]
 #[repr(C)]
 pub enum PriceType {
     Unknown,

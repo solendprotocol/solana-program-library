@@ -1,11 +1,11 @@
 //! Program state processor
 
-use crate::oracles::get_pyth_price;
 use crate::{
     self as solend_program,
     error::LendingError,
     instruction::LendingInstruction,
     math::{Decimal, Rate, TryAdd, TryDiv, TryMul, TrySub, WAD},
+    oracles::get_pyth_price,
     state::{
         CalculateBorrowResult, CalculateLiquidationResult, CalculateRepayResult,
         InitLendingMarketParams, InitObligationParams, InitReserveParams, LendingMarket,
@@ -33,7 +33,7 @@ use solana_program::{
     },
 };
 use spl_token::state::Mint;
-use std::{cmp::min, convert::TryInto, result::Result};
+use std::{cmp::min, result::Result};
 use switchboard_program::{
     get_aggregator, get_aggregator_result, AggregatorState, RoundResult, SwitchboardAccountType,
 };
