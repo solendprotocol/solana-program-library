@@ -1314,14 +1314,10 @@ pub fn add_oracle(
             .try_into()
             .unwrap();
 
-        pyth_price.prev_price = pyth_price.agg.price;
-        pyth_price.prev_slot = pyth_price.valid_slot;
-        pyth_price.prev_conf = pyth_price.agg.conf;
         pyth_price.timestamp = SystemTime::now()
             .duration_since(UNIX_EPOCH)
             .unwrap()
             .as_secs() as i64;
-        pyth_price.prev_timestamp = pyth_price.timestamp;
 
         test.add_account(
             pyth_price_pubkey,
