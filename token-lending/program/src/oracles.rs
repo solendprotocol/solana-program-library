@@ -15,7 +15,7 @@ pub fn get_pyth_price(
     clock: &Clock,
 ) -> Result<Decimal, ProgramError> {
     const MAX_PYTH_CONFIDENCE_RATIO: u64 = 10;
-    const STALE_AFTER_SLOTS_ELAPSED: u64 = 240;
+    const STALE_AFTER_SECONDS_ELAPSED: u64 = 120;
 
     if *pyth_price_info.key == solend_program::NULL_PUBKEY {
         return Err(LendingError::NullOracleConfig.into());
@@ -23,7 +23,10 @@ pub fn get_pyth_price(
 
     let price_feed = pyth_sdk_solana::load_price_feed_from_account_info(pyth_price_info)?;
     let pyth_price = price_feed
-        .get_latest_available_price_within_duration(clock.unix_timestamp, STALE_AFTER_SLOTS_ELAPSED)
+        .get_latest_available_price_within_duration(
+            clock.unix_timestamp,
+            STALE_AFTER_SECONDS_ELAPSED,
+        )
         .ok_or_else(|| {
             msg!("Pyth oracle price is too stale!");
             LendingError::InvalidOracleConfig
@@ -186,7 +189,7 @@ mod test {
                     ..PriceAccount::default()
                 },
                 clock: Clock {
-                    unix_timestamp: 240 - 1,
+                    unix_timestamp: 120 - 1,
                     ..Clock::default()
                 },
                 expected_result: Ok(Decimal::from(2000_u64))
@@ -213,7 +216,7 @@ mod test {
                     ..PriceAccount::default()
                 },
                 clock: Clock {
-                    unix_timestamp: 240 - 1,
+                    unix_timestamp: 125 - 1,
                     ..Clock::default()
                 },
                 expected_result: Ok(Decimal::from(1900_u64))
@@ -237,7 +240,7 @@ mod test {
                     ..PriceAccount::default()
                 },
                 clock: Clock {
-                    unix_timestamp: 241,
+                    unix_timestamp: 121,
                     ..Clock::default()
                 },
                 expected_result: Err(LendingError::InvalidOracleConfig.into())
