@@ -42,8 +42,7 @@ pub fn get_pyth_price(
     // confidence_ratio of 10 filters out pyth prices with conf > 10% of price
     if pyth_price
         .conf
-        .checked_mul(MAX_PYTH_CONFIDENCE_RATIO)
-        .unwrap()
+        .saturating_mul(MAX_PYTH_CONFIDENCE_RATIO)
         > price
     {
         msg!(
