@@ -23,11 +23,12 @@ use solend_program::{
     math::{Decimal, Rate, TryAdd, TryMul},
     processor::switchboard_v2_mainnet,
     pyth,
+    smart_pack::SmartPack,
     state::{
         InitLendingMarketParams, InitObligationParams, InitReserveParams, LendingMarket,
-        NewReserveCollateralParams, NewReserveLiquidityParams, Obligation, ObligationCollateral,
-        ObligationLiquidity, Reserve, ReserveCollateral, ReserveConfig, ReserveFees,
-        ReserveLiquidity, INITIAL_COLLATERAL_RATIO, PROGRAM_VERSION,
+        LendingMarketV0, NewReserveCollateralParams, NewReserveLiquidityParams, Obligation,
+        ObligationCollateral, ObligationLiquidity, Reserve, ReserveCollateral, ReserveConfig,
+        ReserveFees, ReserveLiquidity, INITIAL_COLLATERAL_RATIO, PROGRAM_VERSION,
     },
 };
 use spl_token::{
@@ -117,14 +118,15 @@ pub fn add_lending_market(test: &mut ProgramTest) -> TestLendingMarket {
     test.add_packable_account(
         lending_market_pubkey,
         u32::MAX as u64,
-        &LendingMarket::new(InitLendingMarketParams {
+        &LendingMarketV0 {
+            version: 1,
             bump_seed,
             owner: lending_market_owner.pubkey(),
             quote_currency: QUOTE_CURRENCY,
             token_program_id: spl_token::id(),
             oracle_program_id,
             switchboard_oracle_program_id: oracle_program_id,
-        }),
+        },
         &solend_program::id(),
     );
 
@@ -516,8 +518,8 @@ impl TestLendingMarket {
                 create_account(
                     &payer.pubkey(),
                     &lending_market_pubkey,
-                    rent.minimum_balance(LendingMarket::LEN),
-                    LendingMarket::LEN as u64,
+                    rent.minimum_balance(LendingMarketV0::LEN),
+                    LendingMarketV0::LEN as u64,
                     &solend_program::id(),
                 ),
                 init_lending_market(
@@ -814,7 +816,8 @@ impl TestLendingMarket {
             .await
             .unwrap()
             .unwrap();
-        LendingMarket::unpack(&lending_market_account.data[..]).unwrap()
+        println!("{:?}", lending_market_account.data);
+        LendingMarket::smart_unpack(&lending_market_account.data[..]).unwrap()
     }
 
     pub async fn validate_state(&self, banks_client: &mut BanksClient) {

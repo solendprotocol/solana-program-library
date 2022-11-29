@@ -1,17 +1,20 @@
-use super::*;
-use arrayref::{array_mut_ref, array_ref, array_refs, mut_array_refs};
+use super::{lending_market_v0::LendingMarketV0, *};
+use crate::{
+    error::LendingError,
+    smart_pack::{AccountTag, SmartPack},
+};
+use borsh::{BorshDeserialize, BorshSerialize};
 use solana_program::{
-    msg,
-    program_error::ProgramError,
-    program_pack::{IsInitialized, Pack, Sealed},
-    pubkey::{Pubkey, PUBKEY_BYTES},
+    account_info::AccountInfo, program_error::ProgramError, program_pack::Pack, pubkey::Pubkey,
 };
 
 /// Lending market state
-#[derive(Clone, Debug, Default, PartialEq)]
+#[derive(Clone, Debug, Default, PartialEq, BorshSerialize, BorshDeserialize)]
 pub struct LendingMarket {
     /// Version of lending market
     pub version: u8,
+    /// Tag. Should always be AccountTag::LendingMarket. only present in version 2.
+    pub tag: AccountTag,
     /// Bump seed for derived authority address
     pub bump_seed: u8,
     /// Owner authority which can add new reserves
@@ -38,6 +41,7 @@ impl LendingMarket {
     /// Initialize a lending market
     pub fn init(&mut self, params: InitLendingMarketParams) {
         self.version = PROGRAM_VERSION;
+        self.tag = AccountTag::LendingMarket;
         self.bump_seed = params.bump_seed;
         self.owner = params.owner;
         self.quote_currency = params.quote_currency;
@@ -64,89 +68,97 @@ pub struct InitLendingMarketParams {
     pub switchboard_oracle_program_id: Pubkey,
 }
 
-impl Sealed for LendingMarket {}
-impl IsInitialized for LendingMarket {
-    fn is_initialized(&self) -> bool {
-        self.version != UNINITIALIZED_VERSION
+impl SmartPack for LendingMarket {
+    type Item = LendingMarket;
+
+    fn version(src: &[u8]) -> u8 {
+        match src.iter().next() {
+            // it's ok if the data buffer is _currently_ empty because we re-allocate in smart_pack
+            None => UNINITIALIZED_VERSION,
+            Some(v) => *v,
+        }
+    }
+
+    fn is_initialized(src: &[u8]) -> bool {
+        Self::version(src) != UNINITIALIZED_VERSION
+    }
+
+    /// deserialize bytes into LendingMarket. This function can be called off-chain as well.
+    fn smart_unpack(src: &[u8]) -> Result<Self, ProgramError> {
+        match Self::version(src) {
+            UNINITIALIZED_VERSION => {
+                msg!("Can't unpack an uninitialized object!");
+                Err(LendingError::FailedToDeserialize.into())
+            }
+            1 => Ok(LendingMarketV0::unpack(src)?.into()),
+            2 => match LendingMarket::try_from_slice(src) {
+                Ok(lending_market) => match lending_market.tag {
+                    AccountTag::LendingMarket => Ok(lending_market),
+                    tag => {
+                        msg!("This account is not a lending market, it is a {:?}", tag);
+                        Err(LendingError::FailedToDeserialize.into())
+                    }
+                },
+                Err(e) => {
+                    msg!("failed to borsh deserialize {:?}", e);
+                    Err(LendingError::FailedToDeserialize.into())
+                }
+            },
+            v => {
+                msg!("Unimplemented version detected: {}", v);
+                Err(LendingError::FailedToDeserialize.into())
+            }
+        }
+    }
+
+    fn smart_pack(
+        mut lending_market: LendingMarket,
+        dst_account_info: &AccountInfo,
+    ) -> Result<(), ProgramError> {
+        lending_market.version = PROGRAM_VERSION;
+
+        match PROGRAM_VERSION {
+            1 => LendingMarketV0::pack(
+                lending_market.into(),
+                &mut dst_account_info.try_borrow_mut_data()?,
+            ),
+            2 => {
+                // serialize into a vector first
+                let serialized = lending_market.try_to_vec().map_err(|e| {
+                    msg!("failed to borsh serialize: {:?}", e);
+                    LendingError::FailedToSerialize
+                })?;
+
+                // 1. always realloc because try_from_slice will error on buffer len mismatches
+                // 2. zero-init out of paranoia but i don't think we actually need this
+                dst_account_info.realloc(serialized.len(), true)?;
+
+                // copy_from_slice panics if the sizes of the two slices don't match.
+                // in this case, we're guaranteed to not panic because we just realloc'd the account
+                let mut dst = dst_account_info.try_borrow_mut_data()?;
+                dst.copy_from_slice(&serialized);
+
+                Ok(())
+            }
+            v => {
+                msg!("Unimplemented pack version detected: {}", v);
+                Err(LendingError::FailedToSerialize.into())
+            }
+        }
     }
 }
 
-const LENDING_MARKET_LEN: usize = 290; // 1 + 1 + 32 + 32 + 32 + 32 + 32 + 128
-impl Pack for LendingMarket {
-    const LEN: usize = LENDING_MARKET_LEN;
-
-    fn pack_into_slice(&self, output: &mut [u8]) {
-        let output = array_mut_ref![output, 0, LENDING_MARKET_LEN];
-        #[allow(clippy::ptr_offset_with_cast)]
-        let (
-            version,
-            bump_seed,
-            owner,
-            quote_currency,
-            token_program_id,
-            oracle_program_id,
-            switchboard_oracle_program_id,
-            _padding,
-        ) = mut_array_refs![
-            output,
-            1,
-            1,
-            PUBKEY_BYTES,
-            32,
-            PUBKEY_BYTES,
-            PUBKEY_BYTES,
-            PUBKEY_BYTES,
-            128
-        ];
-
-        *version = self.version.to_le_bytes();
-        *bump_seed = self.bump_seed.to_le_bytes();
-        owner.copy_from_slice(self.owner.as_ref());
-        quote_currency.copy_from_slice(self.quote_currency.as_ref());
-        token_program_id.copy_from_slice(self.token_program_id.as_ref());
-        oracle_program_id.copy_from_slice(self.oracle_program_id.as_ref());
-        switchboard_oracle_program_id.copy_from_slice(self.switchboard_oracle_program_id.as_ref());
-    }
-
-    /// Unpacks a byte buffer into a [LendingMarketInfo](struct.LendingMarketInfo.html)
-    fn unpack_from_slice(input: &[u8]) -> Result<Self, ProgramError> {
-        let input = array_ref![input, 0, LENDING_MARKET_LEN];
-        #[allow(clippy::ptr_offset_with_cast)]
-        let (
-            version,
-            bump_seed,
-            owner,
-            quote_currency,
-            token_program_id,
-            oracle_program_id,
-            switchboard_oracle_program_id,
-            _padding,
-        ) = array_refs![
-            input,
-            1,
-            1,
-            PUBKEY_BYTES,
-            32,
-            PUBKEY_BYTES,
-            PUBKEY_BYTES,
-            PUBKEY_BYTES,
-            128
-        ];
-
-        let version = u8::from_le_bytes(*version);
-        if version > PROGRAM_VERSION {
-            msg!("Lending market version does not match lending program version");
-            return Err(ProgramError::InvalidAccountData);
+impl From<LendingMarketV0> for LendingMarket {
+    fn from(lending_market_v0: LendingMarketV0) -> Self {
+        LendingMarket {
+            version: lending_market_v0.version,
+            tag: AccountTag::LendingMarket, // this field doesn't exist in V1
+            bump_seed: lending_market_v0.bump_seed,
+            owner: lending_market_v0.owner,
+            quote_currency: lending_market_v0.quote_currency,
+            token_program_id: lending_market_v0.token_program_id,
+            oracle_program_id: lending_market_v0.oracle_program_id,
+            switchboard_oracle_program_id: lending_market_v0.switchboard_oracle_program_id,
         }
-
-        Ok(Self {
-            version,
-            bump_seed: u8::from_le_bytes(*bump_seed),
-            owner: Pubkey::new_from_array(*owner),
-            quote_currency: *quote_currency,
-            token_program_id: Pubkey::new_from_array(*token_program_id),
-            oracle_program_id: Pubkey::new_from_array(*oracle_program_id),
-            switchboard_oracle_program_id: Pubkey::new_from_array(*switchboard_oracle_program_id),
-        })
     }
 }
