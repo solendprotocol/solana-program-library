@@ -21,7 +21,11 @@ pub fn get_pyth_price(
         return Err(LendingError::NullOracleConfig.into());
     }
 
-    let price_feed = pyth_sdk_solana::load_price_feed_from_account_info(pyth_price_info)?;
+    let price_feed =
+        pyth_sdk_solana::load_price_feed_from_account_info(pyth_price_info).map_err(|e| {
+            msg!("Couldn't load price feed from account info: {:?}", e);
+            LendingError::InvalidOracleConfig
+        })?;
     let pyth_price = price_feed
         .get_latest_available_price_within_duration(
             clock.unix_timestamp,
@@ -115,8 +119,8 @@ mod test {
                     unix_timestamp: 0,
                     ..Clock::default()
                 },
-                // PythError::InvalidAccountData. The struct is private
-                expected_result: Err(ProgramError::Custom(0)),
+                // PythError::InvalidAccountData.
+                expected_result: Err(LendingError::InvalidOracleConfig.into()),
             }),
             // case 3: failure. bad version number
             Just(PythPriceTestCase {
@@ -139,7 +143,7 @@ mod test {
                     unix_timestamp: 0,
                     ..Clock::default()
                 },
-                expected_result: Err(ProgramError::Custom(1)),
+                expected_result: Err(LendingError::InvalidOracleConfig.into()),
             }),
             // case 4: failure. bad account type
             Just(PythPriceTestCase {
@@ -162,7 +166,7 @@ mod test {
                     unix_timestamp: 0,
                     ..Clock::default()
                 },
-                expected_result: Err(ProgramError::Custom(2)),
+                expected_result: Err(LendingError::InvalidOracleConfig.into()),
             }),
             // case 5: ignore. bad price type is fine. not testing this
             // case 6: success. most recent price has status == trading, not stale
