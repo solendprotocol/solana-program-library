@@ -1314,6 +1314,7 @@ pub fn add_oracle(
             .try_into()
             .unwrap();
 
+        pyth_price.agg.pub_slot = valid_slot;
         pyth_price.timestamp = SystemTime::now()
             .duration_since(UNIX_EPOCH)
             .unwrap()
