@@ -3,9 +3,7 @@
 mod helpers;
 
 use helpers::*;
-use solana_program::instruction::{
-    AccountMeta, Instruction
-};
+use solana_program::instruction::{AccountMeta, Instruction};
 use solana_program::sysvar;
 use solana_program_test::*;
 use solana_sdk::transport::TransportError;
@@ -1298,7 +1296,10 @@ async fn test_fail_repay_from_diff_reserve() {
 
     transaction.sign(&[&payer], recent_blockhash);
     // panics due to signer privilege escalation
-    let err = banks_client.process_transaction(transaction).await.unwrap_err();
+    let err = banks_client
+        .process_transaction(transaction)
+        .await
+        .unwrap_err();
     match err {
         TransportError::IoError(..) => (),
         _ => panic!("Unexpected error: {:?}", err),

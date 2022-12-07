@@ -478,15 +478,15 @@ async fn test_borrow_limit() {
     let mut transaction = Transaction::new_with_payer(
         &[
             refresh_reserve(
-                solend_program::id(), 
-                sol_test_reserve.pubkey, 
-                sol_oracle.pyth_price_pubkey, 
+                solend_program::id(),
+                sol_test_reserve.pubkey,
+                sol_oracle.pyth_price_pubkey,
                 sol_oracle.switchboard_feed_pubkey,
             ),
             refresh_reserve(
-                solend_program::id(), 
-                usdc_test_reserve.pubkey, 
-                usdc_oracle.pyth_price_pubkey, 
+                solend_program::id(),
+                usdc_test_reserve.pubkey,
+                usdc_oracle.pyth_price_pubkey,
                 usdc_oracle.switchboard_feed_pubkey,
             ),
             refresh_obligation(
@@ -529,15 +529,15 @@ async fn test_borrow_limit() {
     let mut transaction = Transaction::new_with_payer(
         &[
             refresh_reserve(
-                solend_program::id(), 
-                sol_test_reserve.pubkey, 
-                sol_oracle.pyth_price_pubkey, 
+                solend_program::id(),
+                sol_test_reserve.pubkey,
+                sol_oracle.pyth_price_pubkey,
                 sol_oracle.switchboard_feed_pubkey,
             ),
             refresh_reserve(
-                solend_program::id(), 
-                usdc_test_reserve.pubkey, 
-                usdc_oracle.pyth_price_pubkey, 
+                solend_program::id(),
+                usdc_test_reserve.pubkey,
+                usdc_oracle.pyth_price_pubkey,
                 usdc_oracle.switchboard_feed_pubkey,
             ),
             refresh_obligation(
