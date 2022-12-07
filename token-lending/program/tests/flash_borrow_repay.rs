@@ -1302,6 +1302,10 @@ async fn test_fail_repay_from_diff_reserve() {
         .unwrap_err();
     match err {
         TransportError::IoError(..) => (),
+        TransportError::TransactionError(TransactionError::InstructionError(
+            1,
+            InstructionError::PrivilegeEscalation,
+        )) => (),
         _ => panic!("Unexpected error: {:?}", err),
     };
 }
