@@ -16,7 +16,7 @@ arrayref = "0.3.6"
 bytemuck = "1.5.1"
 num-derive = "0.3"
 num-traits = "0.2"
-pyth-sdk-solana = "0.6.1"
+pyth-sdk-solana = "0.7.0"
 solana-program = "=1.9.18"
 spl-token = { version = "3.2.0", features=["no-entrypoint"] }
 static_assertions = "1.1.0"

@@ -15,22 +15,19 @@ pub fn get_pyth_price(
     clock: &Clock,
 ) -> Result<Decimal, ProgramError> {
     const MAX_PYTH_CONFIDENCE_RATIO: u64 = 10;
-    const STALE_AFTER_SECONDS_ELAPSED: u64 = 120;
+    const STALE_AFTER_SLOTS_ELAPSED: u64 = 240; // roughly 2 min
 
     if *pyth_price_info.key == solend_program::NULL_PUBKEY {
         return Err(LendingError::NullOracleConfig.into());
     }
 
-    let price_feed =
-        pyth_sdk_solana::load_price_feed_from_account_info(pyth_price_info).map_err(|e| {
-            msg!("Couldn't load price feed from account info: {:?}", e);
-            LendingError::InvalidOracleConfig
-        })?;
-    let pyth_price = price_feed
-        .get_latest_available_price_within_duration(
-            clock.unix_timestamp,
-            STALE_AFTER_SECONDS_ELAPSED,
-        )
+    let data = &pyth_price_info.try_borrow_data()?;
+    let price_account = pyth_sdk_solana::state::load_price_account(data).map_err(|e| {
+        msg!("Couldn't load price feed from account info: {:?}", e);
+        LendingError::InvalidOracleConfig
+    })?;
+    let pyth_price = price_account
+        .get_price_no_older_than(clock, STALE_AFTER_SLOTS_ELAPSED)
         .ok_or_else(|| {
             msg!("Pyth oracle price is too stale!");
             LendingError::InvalidOracleConfig
@@ -83,9 +80,8 @@ mod test {
     use super::*;
     use bytemuck::bytes_of_mut;
     use proptest::prelude::*;
-    use pyth_sdk_solana::{
-        state::{AccountType, CorpAction, PriceAccount, PriceInfo, PriceType, MAGIC, VERSION_2},
-        PriceStatus,
+    use pyth_sdk_solana::state::{
+        AccountType, CorpAction, PriceAccount, PriceInfo, PriceStatus, PriceType, MAGIC, VERSION_2,
     };
     use solana_program::pubkey::Pubkey;
 
@@ -116,7 +112,7 @@ mod test {
                     ..PriceAccount::default()
                 },
                 clock: Clock {
-                    unix_timestamp: 0,
+                    slot: 4,
                     ..Clock::default()
                 },
                 // PythError::InvalidAccountData.
@@ -140,7 +136,7 @@ mod test {
                     ..PriceAccount::default()
                 },
                 clock: Clock {
-                    unix_timestamp: 0,
+                    slot: 4,
                     ..Clock::default()
                 },
                 expected_result: Err(LendingError::InvalidOracleConfig.into()),
@@ -163,7 +159,7 @@ mod test {
                     ..PriceAccount::default()
                 },
                 clock: Clock {
-                    unix_timestamp: 0,
+                    slot: 4,
                     ..Clock::default()
                 },
                 expected_result: Err(LendingError::InvalidOracleConfig.into()),
@@ -188,7 +184,7 @@ mod test {
                     ..PriceAccount::default()
                 },
                 clock: Clock {
-                    unix_timestamp: 120 - 1,
+                    slot: 240,
                     ..Clock::default()
                 },
                 expected_result: Ok(Decimal::from(2000_u64))
@@ -207,20 +203,20 @@ mod test {
                         conf: 1,
                         status: PriceStatus::Unknown,
                         corp_act: CorpAction::NoCorpAct,
-                        pub_slot: 0
+                        pub_slot: 1
                     },
                     prev_price: 190,
                     prev_conf: 10,
-                    prev_timestamp: 5,
+                    prev_slot: 0,
                     ..PriceAccount::default()
                 },
                 clock: Clock {
-                    unix_timestamp: 125 - 1,
+                    slot: 240,
                     ..Clock::default()
                 },
                 expected_result: Ok(Decimal::from(1900_u64))
             }),
-            // case 8: failure. most recent price has status == trading and is stale
+            // case 8: failure. most recent price is stale
             Just(PythPriceTestCase {
                 price_account: PriceAccount {
                     magic: MAGIC,
@@ -234,12 +230,13 @@ mod test {
                         conf: 1,
                         status: PriceStatus::Trading,
                         corp_act: CorpAction::NoCorpAct,
-                        pub_slot: 0
+                        pub_slot: 1
                     },
+                    prev_slot: 0, // there is no case where prev_slot > agg.pub_slot
                     ..PriceAccount::default()
                 },
                 clock: Clock {
-                    unix_timestamp: 121,
+                    slot: 242,
                     ..Clock::default()
                 },
                 expected_result: Err(LendingError::InvalidOracleConfig.into())
@@ -258,15 +255,15 @@ mod test {
                         conf: 1,
                         status: PriceStatus::Unknown,
                         corp_act: CorpAction::NoCorpAct,
-                        pub_slot: 0
+                        pub_slot: 1
                     },
                     prev_price: 190,
                     prev_conf: 10,
-                    prev_timestamp: 0,
+                    prev_slot: 0,
                     ..PriceAccount::default()
                 },
                 clock: Clock {
-                    unix_timestamp: 241,
+                    slot: 241,
                     ..Clock::default()
                 },
                 expected_result: Err(LendingError::InvalidOracleConfig.into())
@@ -290,7 +287,7 @@ mod test {
                     ..PriceAccount::default()
                 },
                 clock: Clock {
-                    unix_timestamp: 230,
+                    slot: 240,
                     ..Clock::default()
                 },
                 expected_result: Err(LendingError::InvalidOracleConfig.into())
@@ -314,7 +311,7 @@ mod test {
                     ..PriceAccount::default()
                 },
                 clock: Clock {
-                    unix_timestamp: 230,
+                    slot: 240,
                     ..Clock::default()
                 },
                 expected_result: Err(LendingError::InvalidOracleConfig.into())
