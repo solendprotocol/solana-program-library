@@ -821,7 +821,7 @@ impl TestLendingMarket {
 
     pub async fn validate_state(&self, banks_client: &mut BanksClient) {
         let lending_market = self.get_state(banks_client).await;
-        assert_eq!(lending_market.version, PROGRAM_VERSION);
+        assert_eq!(lending_market.version, 2);
         assert_eq!(lending_market.owner, self.owner.pubkey());
         assert_eq!(lending_market.quote_currency, self.quote_currency);
     }

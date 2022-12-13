@@ -7,7 +7,7 @@ use solend_program::{
         refresh_obligation, refresh_reserve,
     },
     smart_pack::SmartPack,
-    state::{LendingMarketV0, Obligation},
+    state::{LendingMarketV1, Obligation},
 };
 
 mod lending_state;
@@ -964,7 +964,7 @@ fn command_create_lending_market(
 
     let lending_market_balance = config
         .rpc_client
-        .get_minimum_balance_for_rent_exemption(LendingMarketV0::LEN)?;
+        .get_minimum_balance_for_rent_exemption(LendingMarketV1::LEN)?;
 
     let recent_blockhash = config.rpc_client.get_latest_blockhash()?;
 
@@ -975,7 +975,7 @@ fn command_create_lending_market(
                 &config.fee_payer.pubkey(),
                 &lending_market_keypair.pubkey(),
                 lending_market_balance,
-                LendingMarketV0::LEN as u64,
+                LendingMarketV1::LEN as u64,
                 &config.lending_program_id,
             ),
             // Initialize lending market account

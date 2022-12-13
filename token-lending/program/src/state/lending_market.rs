@@ -94,36 +94,166 @@ impl From<LendingMarketV1> for LendingMarket {
 
 #[cfg(test)]
 mod test {
-    use solana_program::pubkey::Pubkey;
+    use borsh::BorshSerialize;
+    use solana_program::{account_info::AccountInfo, program_pack::Pack, pubkey::Pubkey};
 
-    use crate::{state::LendingMarketV1, pyth, smart_pack::AccountTag};
+    use crate::{
+        smart_pack::{AccountTag, SmartPack},
+        state::LendingMarketV1,
+    };
 
     use super::LendingMarket;
 
-    /* from/to LendingMarket tests */
+    /* from old LendingMarket version tests */
     #[test]
     fn from_lending_market_v1() {
         let v1 = LendingMarketV1 {
             version: 2,
             bump_seed: 1,
-            owner: Pubkey::new_rand(),
+            owner: Pubkey::new_unique(),
             quote_currency: [1; 32],
             token_program_id: spl_token::id(),
             oracle_program_id: Pubkey::new_unique(),
             switchboard_oracle_program_id: Pubkey::new_unique(),
         };
 
-        let v1: LendingMarket = v1.clone().into();
-        assert_eq!(v1.version, v1.version);
-        assert_eq!(v1.tag, AccountTag::LendingMarket);
-        assert_eq!(v1.bump_seed, v1.bump_seed);
-        assert_eq!(v1.owner, v1.owner);
-        assert_eq!(v1.quote_currency, v1.quote_currency);
-        assert_eq!(v1.token_program_id, v1.token_program_id);
-        assert_eq!(v1.oracle_program_id, v1.oracle_program_id);
-        assert_eq!(v1.switchboard_oracle_program_id, v1.switchboard_oracle_program_id);
+        let v2: LendingMarket = v1.clone().into();
+        assert_eq!(v2.version, v1.version);
+        assert_eq!(v2.tag, AccountTag::LendingMarket);
+        assert_eq!(v2.bump_seed, v1.bump_seed);
+        assert_eq!(v2.owner, v1.owner);
+        assert_eq!(v2.quote_currency, v1.quote_currency);
+        assert_eq!(v2.token_program_id, v1.token_program_id);
+        assert_eq!(v2.oracle_program_id, v1.oracle_program_id);
+        assert_eq!(
+            v2.switchboard_oracle_program_id,
+            v1.switchboard_oracle_program_id
+        );
     }
 
-
     /* smart pack tests */
+    #[test]
+    fn unpack_from_v1() {
+        let v1 = LendingMarketV1 {
+            version: 1,
+            bump_seed: 1,
+            owner: Pubkey::new_unique(),
+            quote_currency: [1; 32],
+            token_program_id: spl_token::id(),
+            oracle_program_id: Pubkey::new_unique(),
+            switchboard_oracle_program_id: Pubkey::new_unique(),
+        };
+
+        let mut buf = [0; LendingMarketV1::LEN];
+        LendingMarketV1::pack(v1.clone(), &mut buf).unwrap();
+
+        let v2 = LendingMarket::smart_unpack(&buf).unwrap();
+        assert_eq!(v2.version, 2);
+        assert_eq!(v2.tag, AccountTag::LendingMarket);
+        assert_eq!(v2.bump_seed, v1.bump_seed);
+        assert_eq!(v2.owner, v1.owner);
+        assert_eq!(v2.quote_currency, v1.quote_currency);
+        assert_eq!(v2.token_program_id, v1.token_program_id);
+        assert_eq!(v2.oracle_program_id, v1.oracle_program_id);
+        assert_eq!(
+            v2.switchboard_oracle_program_id,
+            v1.switchboard_oracle_program_id
+        );
+    }
+
+    #[test]
+    fn unpack_from_v2() {
+        let v2 = LendingMarket {
+            version: 2,
+            tag: AccountTag::LendingMarket,
+            bump_seed: 1,
+            owner: Pubkey::new_unique(),
+            quote_currency: [1; 32],
+            token_program_id: spl_token::id(),
+            oracle_program_id: Pubkey::new_unique(),
+            switchboard_oracle_program_id: Pubkey::new_unique(),
+        };
+
+        let buf = v2.try_to_vec().unwrap();
+        let v2_new = LendingMarket::smart_unpack(&buf).unwrap();
+
+        assert_eq!(v2, v2_new);
+    }
+
+    #[test]
+    fn pack_to_v1() {
+        let v2 = LendingMarket {
+            version: 2,
+            tag: AccountTag::LendingMarket,
+            bump_seed: 1,
+            owner: Pubkey::new_unique(),
+            quote_currency: [1; 32],
+            token_program_id: spl_token::id(),
+            oracle_program_id: Pubkey::new_unique(),
+            switchboard_oracle_program_id: Pubkey::new_unique(),
+        };
+
+        let mut lamports = 20;
+        let pubkey = Pubkey::new_unique();
+        let mut buf = [0; 10000];
+        let dst_account_info = AccountInfo::new(
+            &pubkey,
+            false,
+            false,
+            &mut lamports,
+            &mut buf[0..LendingMarketV1::LEN],
+            &pubkey,
+            false,
+            0,
+        );
+
+        LendingMarket::smart_pack(v2.clone(), 1, &dst_account_info).unwrap();
+        let v1 = LendingMarketV1::unpack(&dst_account_info.try_borrow_data().unwrap()).unwrap();
+
+        assert_eq!(v1.version, 1);
+        assert_eq!(v2.tag, AccountTag::LendingMarket);
+        assert_eq!(v2.bump_seed, v1.bump_seed);
+        assert_eq!(v2.owner, v1.owner);
+        assert_eq!(v2.quote_currency, v1.quote_currency);
+        assert_eq!(v2.token_program_id, v1.token_program_id);
+        assert_eq!(v2.oracle_program_id, v1.oracle_program_id);
+        assert_eq!(
+            v2.switchboard_oracle_program_id,
+            v1.switchboard_oracle_program_id
+        );
+    }
+
+    #[test]
+    fn pack_to_v2() {
+        let v2 = LendingMarket {
+            version: 2,
+            tag: AccountTag::LendingMarket,
+            bump_seed: 1,
+            owner: Pubkey::new_unique(),
+            quote_currency: [1; 32],
+            token_program_id: spl_token::id(),
+            oracle_program_id: Pubkey::new_unique(),
+            switchboard_oracle_program_id: Pubkey::new_unique(),
+        };
+
+        let mut lamports = 20;
+        let pubkey = Pubkey::new_unique();
+        let mut buf = [0; 10000];
+        let dst_account_info = AccountInfo::new(
+            &pubkey,
+            false,
+            false,
+            &mut lamports,
+            &mut buf[0..8], // lol
+            &pubkey,
+            false,
+            0,
+        );
+
+        LendingMarket::smart_pack(v2.clone(), 2, &dst_account_info).unwrap();
+        let v2_new =
+            LendingMarket::smart_unpack(&dst_account_info.try_borrow_data().unwrap()).unwrap();
+
+        assert_eq!(v2, v2_new);
+    }
 }

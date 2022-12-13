@@ -6,10 +6,7 @@ use solana_program::{
     program_pack::{IsInitialized, Pack},
 };
 
-use crate::{
-    error::LendingError,
-    state::{PROGRAM_VERSION, UNINITIALIZED_VERSION},
-};
+use crate::{error::LendingError, state::UNINITIALIZED_VERSION};
 
 /// Wrapper trait that can deserialize multiple versions of an object, and can re-alloc space if
 /// needed
@@ -40,7 +37,7 @@ pub trait SmartPack<
                 Err(LendingError::FailedToDeserialize)
             }
             1 => match V1::unpack(src) {
-                Err(e) => Err(LendingError::FailedToDeserialize),
+                Err(_e) => Err(LendingError::FailedToDeserialize),
                 Ok(object) => Ok(object.into()),
             },
             2 => match V2::try_from_slice(src) {
@@ -48,12 +45,12 @@ pub trait SmartPack<
                     object.validate_tag()?;
                     Ok(object)
                 }
-                Err(e) => {
+                Err(_e) => {
                     // msg!("failed to borsh deserialize {:?}", e);
                     Err(LendingError::FailedToDeserialize)
                 }
             },
-            v => {
+            _v => {
                 // msg!("Unimplemented version detected: {}", v);
                 Err(LendingError::FailedToDeserialize)
             }
@@ -61,14 +58,16 @@ pub trait SmartPack<
     }
 
     /// Pack into slice. Re-alloc if the AccountInfo's data buffer is too small.
-    fn smart_pack(object: V2, dst_account_info: &AccountInfo) -> Result<(), ProgramError> {
-        // object.version = PROGRAM_VERSION;
-
-        match PROGRAM_VERSION {
+    fn smart_pack(
+        object: V2,
+        version: u8,
+        dst_account_info: &AccountInfo,
+    ) -> Result<(), ProgramError> {
+        match version {
             1 => V1::pack(object.into(), &mut dst_account_info.try_borrow_mut_data()?),
             2 => {
                 // serialize into a vector first
-                let serialized = object.try_to_vec().map_err(|e| {
+                let serialized = object.try_to_vec().map_err(|_e| {
                     // msg!("failed to borsh serialize: {:?}", e);
                     LendingError::FailedToSerialize
                 })?;
@@ -84,7 +83,7 @@ pub trait SmartPack<
 
                 Ok(())
             }
-            v => {
+            _v => {
                 // msg!("Unimplemented pack version detected: {}", v);
                 Err(LendingError::FailedToSerialize.into())
             }

@@ -49,6 +49,8 @@ pub mod switchboard_v2_devnet {
     solana_program::declare_id!("2TfB33aLaneQb5TNVwyDz3jSZXS6jdW2ARw1Dgf84XCG");
 }
 
+const LENDING_MARKET_PACK_VERSION: u8 = 1;
+
 /// Processes an instruction
 pub fn process_instruction(
     program_id: &Pubkey,
@@ -206,7 +208,11 @@ fn process_init_lending_market(
         oracle_program_id: *oracle_program_id.key,
         switchboard_oracle_program_id: *switchboard_oracle_program_id.key,
     });
-    LendingMarket::smart_pack(lending_market, lending_market_info)?;
+    LendingMarket::smart_pack(
+        lending_market,
+        LENDING_MARKET_PACK_VERSION,
+        lending_market_info,
+    )?;
 
     Ok(())
 }
@@ -236,7 +242,11 @@ fn process_set_lending_market_owner(
     }
 
     lending_market.owner = new_owner;
-    LendingMarket::smart_pack(lending_market, lending_market_info)?;
+    LendingMarket::smart_pack(
+        lending_market,
+        LENDING_MARKET_PACK_VERSION,
+        lending_market_info,
+    )?;
 
     Ok(())
 }
