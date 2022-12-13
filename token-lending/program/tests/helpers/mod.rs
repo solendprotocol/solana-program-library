@@ -816,7 +816,6 @@ impl TestLendingMarket {
             .await
             .unwrap()
             .unwrap();
-        println!("{:?}", lending_market_account.data);
         LendingMarket::smart_unpack(&lending_market_account.data[..]).unwrap()
     }
 
