@@ -109,7 +109,7 @@ const SWITCHBOARD_PROGRAM_ID_DEV: &str = "7azgmy1pFXHikv36q1zZASvFq5vFa39TT9NweV
 fn main() {
     solana_logger::setup_with_default("solana=info");
 
-    let default_lending_program_id: &str = &solend_sdk::id().to_string();
+    let default_lending_program_id: &str = &solend_sdk::solend_mainnet::id().to_string();
 
     let matches = App::new(crate_name!())
         .about(crate_description!())

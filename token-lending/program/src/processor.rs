@@ -30,22 +30,13 @@ use solana_program::{
         Sysvar,
     },
 };
+use solend_sdk::{switchboard_v2_devnet, switchboard_v2_mainnet};
 use spl_token::state::Mint;
 use std::{cmp::min, result::Result};
 use switchboard_program::{
     get_aggregator, get_aggregator_result, AggregatorState, RoundResult, SwitchboardAccountType,
 };
 use switchboard_v2::AggregatorAccountData;
-
-/// Mainnet program id for Switchboard v2.
-pub mod switchboard_v2_mainnet {
-    solana_program::declare_id!("SW1TCH7qEPTdLsDHRgPuMQjbQxKdH2aBStViMFnt64f");
-}
-
-/// Devnet program id for Switchboard v2.
-pub mod switchboard_v2_devnet {
-    solana_program::declare_id!("2TfB33aLaneQb5TNVwyDz3jSZXS6jdW2ARw1Dgf84XCG");
-}
 
 /// Processes an instruction
 pub fn process_instruction(
