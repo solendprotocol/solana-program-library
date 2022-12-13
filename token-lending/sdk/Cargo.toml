@@ -1,15 +1,11 @@
 [package]
-name = "solend-program"
+name = "solend-sdk"
 version = "0.1.0"
-description = "Solend Program"
+description = "Solend Sdk"
 authors = ["Solend Maintainers <maintainers@solend.fi>"]
 repository = "https://github.com/solendprotocol/solana-program-library"
 license = "Apache-2.0"
 edition = "2018"
-
-[features]
-no-entrypoint = []
-test-bpf = []
 
 [dependencies]
 arrayref = "0.3.6"
@@ -19,7 +15,6 @@ num-traits = "0.2"
 pyth-sdk-solana = "0.7.0"
 solana-program = "=1.9.18"
 spl-token = { version = "3.2.0", features=["no-entrypoint"] }
-solend-sdk = { path = "../sdk/" }
 static_assertions = "1.1.0"
 switchboard-program = "0.2.0"
 switchboard-v2 = "0.1.3"
