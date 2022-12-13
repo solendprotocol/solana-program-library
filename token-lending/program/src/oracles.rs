@@ -14,7 +14,7 @@ pub fn get_pyth_price(
     pyth_price_info: &AccountInfo,
     clock: &Clock,
 ) -> Result<Decimal, ProgramError> {
-    const MAX_PYTH_CONFIDENCE_RATIO: u64 = 10;
+    const PYTH_CONFIDENCE_RATIO: u64 = 10;
     const STALE_AFTER_SLOTS_ELAPSED: u64 = 240; // roughly 2 min
 
     if *pyth_price_info.key == solend_program::NULL_PUBKEY {
@@ -41,7 +41,7 @@ pub fn get_pyth_price(
     // Perhaps confidence_ratio should exist as a per reserve config
     // 100/confidence_ratio = maximum size of confidence range as a percent of price
     // confidence_ratio of 10 filters out pyth prices with conf > 10% of price
-    if pyth_price.conf.saturating_mul(MAX_PYTH_CONFIDENCE_RATIO) > price {
+    if pyth_price.conf.saturating_mul(PYTH_CONFIDENCE_RATIO) > price {
         msg!(
             "Oracle price confidence is too wide. price: {}, conf: {}",
             price,
