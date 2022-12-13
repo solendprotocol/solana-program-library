@@ -25,7 +25,7 @@ use solend_program::{
     pyth,
     smart_pack::SmartPack,
     state::{
-        InitLendingMarketParams, InitObligationParams, InitReserveParams, LendingMarket,
+        InitObligationParams, InitReserveParams, LendingMarket,
         LendingMarketV1, NewReserveCollateralParams, NewReserveLiquidityParams, Obligation,
         ObligationCollateral, ObligationLiquidity, Reserve, ReserveCollateral, ReserveConfig,
         ReserveFees, ReserveLiquidity, INITIAL_COLLATERAL_RATIO, PROGRAM_VERSION,
