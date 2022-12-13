@@ -14,8 +14,8 @@ use crate::{
 /// Wrapper trait that can deserialize multiple versions of an object, and can re-alloc space if
 /// needed
 pub trait SmartPack<
-    V0: Pack + IsInitialized + From<V1>,
-    V1: BorshSerialize + BorshDeserialize + From<V0> + ValidateTag,
+    V1: Pack + IsInitialized + From<V2>,
+    V2: BorshSerialize + BorshDeserialize + From<V1> + ValidateTag,
 >
 {
     /// Find version of the object from the bytes representation
@@ -33,17 +33,17 @@ pub trait SmartPack<
     }
 
     /// Unpack object from slice and check if initialized
-    fn smart_unpack(src: &[u8]) -> Result<V1, LendingError> {
+    fn smart_unpack(src: &[u8]) -> Result<V2, LendingError> {
         match Self::version(src) {
             UNINITIALIZED_VERSION => {
                 // msg!("Can't unpack an uninitialized object!");
                 Err(LendingError::FailedToDeserialize)
             }
-            1 => match V0::unpack(src) {
+            1 => match V1::unpack(src) {
                 Err(e) => Err(LendingError::FailedToDeserialize),
                 Ok(object) => Ok(object.into()),
             },
-            2 => match V1::try_from_slice(src) {
+            2 => match V2::try_from_slice(src) {
                 Ok(object) => {
                     object.validate_tag()?;
                     Ok(object)
@@ -61,11 +61,11 @@ pub trait SmartPack<
     }
 
     /// Pack into slice. Re-alloc if the AccountInfo's data buffer is too small.
-    fn smart_pack(object: V1, dst_account_info: &AccountInfo) -> Result<(), ProgramError> {
+    fn smart_pack(object: V2, dst_account_info: &AccountInfo) -> Result<(), ProgramError> {
         // object.version = PROGRAM_VERSION;
 
         match PROGRAM_VERSION {
-            1 => V0::pack(object.into(), &mut dst_account_info.try_borrow_mut_data()?),
+            1 => V1::pack(object.into(), &mut dst_account_info.try_borrow_mut_data()?),
             2 => {
                 // serialize into a vector first
                 let serialized = object.try_to_vec().map_err(|e| {

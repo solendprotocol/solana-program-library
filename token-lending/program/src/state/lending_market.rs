@@ -1,4 +1,4 @@
-use super::{lending_market_v0::LendingMarketV0, *};
+use super::{lending_market_v1::LendingMarketV1, *};
 use crate::{
     error::LendingError,
     smart_pack::{AccountTag, SmartPack, ValidateTag},
@@ -7,7 +7,7 @@ use borsh::{BorshDeserialize, BorshSerialize};
 use solana_program::pubkey::Pubkey;
 
 /// Lending market state
-#[derive(Clone, Debug, Default, PartialEq, BorshSerialize, BorshDeserialize)]
+#[derive(Clone, Debug, Default, PartialEq, Eq, BorshSerialize, BorshDeserialize)]
 pub struct LendingMarket {
     /// Version of lending market
     pub version: u8,
@@ -75,19 +75,55 @@ impl ValidateTag for LendingMarket {
     }
 }
 
-impl SmartPack<LendingMarketV0, LendingMarket> for LendingMarket {}
+impl SmartPack<LendingMarketV1, LendingMarket> for LendingMarket {}
 
-impl From<LendingMarketV0> for LendingMarket {
-    fn from(lending_market_v0: LendingMarketV0) -> Self {
+impl From<LendingMarketV1> for LendingMarket {
+    fn from(lending_market_v1: LendingMarketV1) -> Self {
         LendingMarket {
-            version: lending_market_v0.version,
+            version: 2,
             tag: AccountTag::LendingMarket, // this field doesn't exist in V1
-            bump_seed: lending_market_v0.bump_seed,
-            owner: lending_market_v0.owner,
-            quote_currency: lending_market_v0.quote_currency,
-            token_program_id: lending_market_v0.token_program_id,
-            oracle_program_id: lending_market_v0.oracle_program_id,
-            switchboard_oracle_program_id: lending_market_v0.switchboard_oracle_program_id,
+            bump_seed: lending_market_v1.bump_seed,
+            owner: lending_market_v1.owner,
+            quote_currency: lending_market_v1.quote_currency,
+            token_program_id: lending_market_v1.token_program_id,
+            oracle_program_id: lending_market_v1.oracle_program_id,
+            switchboard_oracle_program_id: lending_market_v1.switchboard_oracle_program_id,
         }
     }
+}
+
+#[cfg(test)]
+mod test {
+    use solana_program::pubkey::Pubkey;
+
+    use crate::{state::LendingMarketV1, pyth, smart_pack::AccountTag};
+
+    use super::LendingMarket;
+
+    /* from/to LendingMarket tests */
+    #[test]
+    fn from_lending_market_v1() {
+        let v1 = LendingMarketV1 {
+            version: 2,
+            bump_seed: 1,
+            owner: Pubkey::new_rand(),
+            quote_currency: [1; 32],
+            token_program_id: spl_token::id(),
+            oracle_program_id: Pubkey::new_unique(),
+            switchboard_oracle_program_id: Pubkey::new_unique(),
+        };
+
+        let v1: LendingMarket = v1.clone().into();
+        assert_eq!(v1.version, v1.version);
+        assert_eq!(v1.tag, AccountTag::LendingMarket);
+        assert_eq!(v1.bump_seed, v1.bump_seed);
+        assert_eq!(v1.owner, v1.owner);
+        assert_eq!(v1.quote_currency, v1.quote_currency);
+        assert_eq!(v1.token_program_id, v1.token_program_id);
+        assert_eq!(v1.oracle_program_id, v1.oracle_program_id);
+        assert_eq!(v1.switchboard_oracle_program_id, v1.switchboard_oracle_program_id);
+    }
+
+
+    /* smart pack tests */
 }

@@ -26,7 +26,7 @@ use solend_program::{
     smart_pack::SmartPack,
     state::{
         InitLendingMarketParams, InitObligationParams, InitReserveParams, LendingMarket,
-        LendingMarketV0, NewReserveCollateralParams, NewReserveLiquidityParams, Obligation,
+        LendingMarketV1, NewReserveCollateralParams, NewReserveLiquidityParams, Obligation,
         ObligationCollateral, ObligationLiquidity, Reserve, ReserveCollateral, ReserveConfig,
         ReserveFees, ReserveLiquidity, INITIAL_COLLATERAL_RATIO, PROGRAM_VERSION,
     },
@@ -118,7 +118,7 @@ pub fn add_lending_market(test: &mut ProgramTest) -> TestLendingMarket {
     test.add_packable_account(
         lending_market_pubkey,
         u32::MAX as u64,
-        &LendingMarketV0 {
+        &LendingMarketV1 {
             version: 1,
             bump_seed,
             owner: lending_market_owner.pubkey(),
@@ -518,8 +518,8 @@ impl TestLendingMarket {
                 create_account(
                     &payer.pubkey(),
                     &lending_market_pubkey,
-                    rent.minimum_balance(LendingMarketV0::LEN),
-                    LendingMarketV0::LEN as u64,
+                    rent.minimum_balance(LendingMarketV1::LEN),
+                    LendingMarketV1::LEN as u64,
                     &solend_program::id(),
                 ),
                 init_lending_market(

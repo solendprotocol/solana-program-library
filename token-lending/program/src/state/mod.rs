@@ -2,13 +2,13 @@
 
 mod last_update;
 mod lending_market;
-mod lending_market_v0;
+mod lending_market_v1;
 mod obligation;
 mod reserve;
 
 pub use last_update::*;
 pub use lending_market::*;
-pub use lending_market_v0::*;
+pub use lending_market_v1::*;
 pub use obligation::*;
 pub use reserve::*;
 
