@@ -48,7 +48,8 @@ use {
     system_instruction::create_account,
 };
 
-use spl_associated_token_account::{create_associated_token_account, get_associated_token_address};
+use spl_associated_token_account::get_associated_token_address;
+use spl_associated_token_account::instruction::create_associated_token_account;
 
 struct Config {
     rpc_client: RpcClient,
@@ -1768,6 +1769,7 @@ fn get_or_create_associated_token_address(config: &Config, mint: &Pubkey) -> Pub
                     &config.fee_payer.pubkey(),
                     &config.fee_payer.pubkey(),
                     mint,
+                    &spl_associated_token_account::id(),
                 )],
                 Some(&config.fee_payer.pubkey()),
                 &recent_blockhash,
