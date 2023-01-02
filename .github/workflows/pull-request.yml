@@ -76,7 +76,7 @@ jobs:
         uses: actions-rs/cargo@v1
         with:
           command: clippy
-          args: -Zunstable-options --workspace --all-targets -- --deny=warnings
+          args: --workspace --all-targets -- --deny=warnings
 
   cargo-build-test:
     runs-on: ubuntu-latest
