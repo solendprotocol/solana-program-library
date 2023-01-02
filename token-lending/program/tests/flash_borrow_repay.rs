@@ -1301,7 +1301,6 @@ async fn test_fail_repay_from_diff_reserve() {
         .unwrap_err();
     match err {
         BanksClientError::RpcError(..) => (),
-        // BanksClientError::Io(..) => (),
         BanksClientError::TransactionError(TransactionError::InstructionError(
             1,
             InstructionError::PrivilegeEscalation,
