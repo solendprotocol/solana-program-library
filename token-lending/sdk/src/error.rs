@@ -192,6 +192,12 @@ pub enum LendingError {
     /// Deprecated instruction
     #[error("Instruction is deprecated")]
     DeprecatedInstruction,
+    /// Failed to Deserialize
+    #[error("Failed to Deserialize")]
+    FailedToDeserialize,
+    /// Failed to Serialize
+    #[error("Failed to Serialize")]
+    FailedToSerialize,
 }
 
 impl From<LendingError> for ProgramError {

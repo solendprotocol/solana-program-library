@@ -2,6 +2,7 @@ use super::*;
 use crate::{
     error::LendingError,
     math::{Decimal, Rate, TryAdd, TryDiv, TryMul, TrySub},
+    smart_pack::SmartPack,
 };
 use arrayref::{array_mut_ref, array_ref, array_refs, mut_array_refs};
 use solana_program::{
@@ -1599,3 +1600,5 @@ mod test {
         }
     }
 }
+
+impl SmartPack<ReserveV1> for ReserveV1 {}
