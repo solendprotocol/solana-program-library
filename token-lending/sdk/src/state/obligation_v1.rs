@@ -22,7 +22,7 @@ pub const MAX_OBLIGATION_RESERVES: usize = 10;
 
 /// Lending market obligation state
 #[derive(Clone, Debug, Default, PartialEq)]
-pub struct Obligation {
+pub struct ObligationV1 {
     /// Version of the struct
     pub version: u8,
     /// Last update to collateral, liquidity, or their market values
@@ -45,7 +45,7 @@ pub struct Obligation {
     pub unhealthy_borrow_value: Decimal,
 }
 
-impl Obligation {
+impl ObligationV1 {
     /// Create a new obligation
     pub fn new(params: InitObligationParams) -> Self {
         let mut obligation = Self::default();
@@ -239,8 +239,8 @@ pub struct InitObligationParams {
     pub borrows: Vec<ObligationLiquidity>,
 }
 
-impl Sealed for Obligation {}
-impl IsInitialized for Obligation {
+impl Sealed for ObligationV1 {}
+impl IsInitialized for ObligationV1 {
     fn is_initialized(&self) -> bool {
         self.version != UNINITIALIZED_VERSION
     }
@@ -350,7 +350,7 @@ const OBLIGATION_COLLATERAL_LEN: usize = 88; // 32 + 8 + 16 + 32
 const OBLIGATION_LIQUIDITY_LEN: usize = 112; // 32 + 16 + 16 + 16 + 32
 const OBLIGATION_LEN: usize = 1300; // 1 + 8 + 1 + 32 + 32 + 16 + 16 + 16 + 16 + 64 + 1 + 1 + (88 * 1) + (112 * 9)
                                     // @TODO: break this up by obligation / collateral / liquidity https://git.io/JOCca
-impl Pack for Obligation {
+impl Pack for ObligationV1 {
     const LEN: usize = OBLIGATION_LEN;
 
     fn pack_into_slice(&self, dst: &mut [u8]) {
@@ -609,12 +609,12 @@ mod test {
         ) {
             let borrowed_amount_wads = Decimal::from_scaled_val(borrowed_amount);
             let repay_amount_wads = Decimal::from_scaled_val(repay_amount);
-            let mut obligation = Obligation {
+            let mut obligation = ObligationV1 {
                 borrows: vec![ObligationLiquidity {
                     borrowed_amount_wads,
                     ..ObligationLiquidity::default()
                 }],
-                ..Obligation::default()
+                ..ObligationV1::default()
             };
 
             obligation.repay(repay_amount_wads, 0)?;
@@ -628,12 +628,12 @@ mod test {
         ) {
             let borrowed_amount_wads = Decimal::from_scaled_val(borrowed_amount);
             let repay_amount_wads = Decimal::from_scaled_val(repay_amount);
-            let mut obligation = Obligation {
+            let mut obligation = ObligationV1 {
                 borrows: vec![ObligationLiquidity {
                     borrowed_amount_wads,
                     ..ObligationLiquidity::default()
                 }],
-                ..Obligation::default()
+                ..ObligationV1::default()
             };
 
             obligation.repay(repay_amount_wads, 0)?;
@@ -672,11 +672,11 @@ mod test {
             ..ObligationLiquidity::default()
         };
 
-        let obligation = Obligation {
+        let obligation = ObligationV1 {
             deposited_value: Decimal::from(100u64),
             borrowed_value: Decimal::from(100u64),
             borrows: vec![obligation_liquidity.clone()],
-            ..Obligation::default()
+            ..ObligationV1::default()
         };
 
         let expected_collateral = Decimal::from(50u64)
@@ -701,11 +701,11 @@ mod test {
             ..ObligationLiquidity::default()
         };
 
-        let obligation = Obligation {
+        let obligation = ObligationV1 {
             deposited_value: Decimal::from(100u64),
             borrowed_value: Decimal::from(100u64),
             borrows: vec![obligation_liquidity.clone()],
-            ..Obligation::default()
+            ..ObligationV1::default()
         };
 
         assert_eq!(
@@ -724,11 +724,11 @@ mod test {
             ..ObligationLiquidity::default()
         };
 
-        let obligation = Obligation {
+        let obligation = ObligationV1 {
             deposited_value: Decimal::from(1_000_000_000u64),
             borrowed_value: Decimal::from(1_000_000_000u64),
             borrows: vec![obligation_liquidity.clone()],
-            ..Obligation::default()
+            ..ObligationV1::default()
         };
 
         assert_eq!(

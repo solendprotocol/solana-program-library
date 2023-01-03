@@ -2,7 +2,7 @@ use solana_program::instruction::Instruction;
 use solend_sdk::instruction::{
     refresh_obligation, refresh_reserve, withdraw_obligation_collateral,
 };
-use solend_sdk::state::{Obligation, Reserve};
+use solend_sdk::state::{ObligationV1, ReserveV1};
 
 use solana_client::rpc_client::RpcClient;
 use solana_program::program_pack::Pack;
@@ -13,8 +13,8 @@ use std::collections::HashSet;
 pub struct SolendState {
     lending_program_id: Pubkey,
     obligation_pubkey: Pubkey,
-    obligation: Obligation,
-    reserves: Vec<(Pubkey, Reserve)>,
+    obligation: ObligationV1,
+    reserves: Vec<(Pubkey, ReserveV1)>,
 }
 
 impl SolendState {
@@ -25,7 +25,7 @@ impl SolendState {
     ) -> Self {
         let obligation = {
             let data = rpc_client.get_account(&obligation_pubkey).unwrap();
-            Obligation::unpack(&data.data).unwrap()
+            ObligationV1::unpack(&data.data).unwrap()
         };
 
         // get reserve pubkeys
@@ -37,12 +37,12 @@ impl SolendState {
         };
 
         // get reserve accounts
-        let reserves: Vec<(Pubkey, Reserve)> = rpc_client
+        let reserves: Vec<(Pubkey, ReserveV1)> = rpc_client
             .get_multiple_accounts(&reserve_pubkeys)
             .unwrap()
             .into_iter()
             .zip(reserve_pubkeys.iter())
-            .map(|(account, pubkey)| (*pubkey, Reserve::unpack(&account.unwrap().data).unwrap()))
+            .map(|(account, pubkey)| (*pubkey, ReserveV1::unpack(&account.unwrap().data).unwrap()))
             .collect();
 
         assert!(reserve_pubkeys.len() == reserves.len());
@@ -55,7 +55,7 @@ impl SolendState {
         }
     }
 
-    pub fn find_reserve_by_key(&self, pubkey: Pubkey) -> Option<&Reserve> {
+    pub fn find_reserve_by_key(&self, pubkey: Pubkey) -> Option<&ReserveV1> {
         self.reserves.iter().find_map(
             |(p, reserve)| {
                 if pubkey == *p {

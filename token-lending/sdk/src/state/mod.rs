@@ -1,14 +1,14 @@
 //! State types
 
 mod last_update;
-mod lending_market;
-mod obligation;
-mod reserve;
+mod lending_market_v1;
+mod obligation_v1;
+mod reserve_v1;
 
 pub use last_update::*;
-pub use lending_market::*;
-pub use obligation::*;
-pub use reserve::*;
+pub use lending_market_v1::*;
+pub use obligation_v1::*;
+pub use reserve_v1::*;
 
 use crate::math::{Decimal, WAD};
 use solana_program::{msg, program_error::ProgramError};

@@ -24,10 +24,10 @@ use solend_program::{
     },
     math::{Decimal, Rate, TryAdd, TryMul},
     state::{
-        InitLendingMarketParams, InitObligationParams, InitReserveParams, LendingMarket,
-        NewReserveCollateralParams, NewReserveLiquidityParams, Obligation, ObligationCollateral,
-        ObligationLiquidity, Reserve, ReserveCollateral, ReserveConfig, ReserveFees,
-        ReserveLiquidity, INITIAL_COLLATERAL_RATIO, PROGRAM_VERSION,
+        InitLendingMarketParams, InitObligationParams, InitReserveParams, LendingMarketV1,
+        NewReserveCollateralParams, NewReserveLiquidityParams, ObligationCollateral,
+        ObligationLiquidity, ObligationV1, ReserveCollateral, ReserveConfig, ReserveFees,
+        ReserveLiquidity, ReserveV1, INITIAL_COLLATERAL_RATIO, PROGRAM_VERSION,
     },
 };
 use solend_sdk::switchboard_v2_mainnet;
@@ -122,7 +122,7 @@ pub fn add_lending_market(test: &mut ProgramTest) -> TestLendingMarket {
     test.add_packable_account(
         lending_market_pubkey,
         u32::MAX as u64,
-        &LendingMarket::new(InitLendingMarketParams {
+        &LendingMarketV1::new(InitLendingMarketParams {
             bump_seed,
             owner: lending_market_owner.pubkey(),
             quote_currency: QUOTE_CURRENCY,
@@ -205,7 +205,7 @@ pub fn add_obligation(
 
     let current_slot = slots_elapsed + 1;
 
-    let mut obligation = Obligation::new(InitObligationParams {
+    let mut obligation = ObligationV1::new(InitObligationParams {
         // intentionally wrapped to simulate elapsed slots
         current_slot,
         lending_market: lending_market.pubkey,
@@ -364,7 +364,7 @@ pub fn add_reserve(
 
     let reserve_keypair = Keypair::new();
     let reserve_pubkey = reserve_keypair.pubkey();
-    let mut reserve = Reserve::new(InitReserveParams {
+    let mut reserve = ReserveV1::new(InitReserveParams {
         current_slot,
         lending_market: lending_market.pubkey,
         liquidity: ReserveLiquidity::new(NewReserveLiquidityParams {
@@ -521,8 +521,8 @@ impl TestLendingMarket {
                 create_account(
                     &payer.pubkey(),
                     &lending_market_pubkey,
-                    rent.minimum_balance(LendingMarket::LEN),
-                    LendingMarket::LEN as u64,
+                    rent.minimum_balance(LendingMarketV1::LEN),
+                    LendingMarketV1::LEN as u64,
                     &solend_program::id(),
                 ),
                 init_lending_market(
@@ -813,13 +813,13 @@ impl TestLendingMarket {
         assert_matches!(banks_client.process_transaction(transaction).await, Ok(()));
     }
 
-    pub async fn get_state(&self, banks_client: &mut BanksClient) -> LendingMarket {
+    pub async fn get_state(&self, banks_client: &mut BanksClient) -> LendingMarketV1 {
         let lending_market_account: Account = banks_client
             .get_account(self.pubkey)
             .await
             .unwrap()
             .unwrap();
-        LendingMarket::unpack(&lending_market_account.data[..]).unwrap()
+        LendingMarketV1::unpack(&lending_market_account.data[..]).unwrap()
     }
 
     pub async fn validate_state(&self, banks_client: &mut BanksClient) {
@@ -937,8 +937,8 @@ impl TestReserve {
                 create_account(
                     &payer.pubkey(),
                     &reserve_pubkey,
-                    rent.minimum_balance(Reserve::LEN),
-                    Reserve::LEN as u64,
+                    rent.minimum_balance(ReserveV1::LEN),
+                    ReserveV1::LEN as u64,
                     &solend_program::id(),
                 ),
                 init_reserve(
@@ -1002,13 +1002,13 @@ impl TestReserve {
             .map_err(|e| e.unwrap())
     }
 
-    pub async fn get_state(&self, banks_client: &mut BanksClient) -> Reserve {
+    pub async fn get_state(&self, banks_client: &mut BanksClient) -> ReserveV1 {
         let reserve_account: Account = banks_client
             .get_account(self.pubkey)
             .await
             .unwrap()
             .unwrap();
-        Reserve::unpack(&reserve_account.data[..]).unwrap()
+        ReserveV1::unpack(&reserve_account.data[..]).unwrap()
     }
 
     pub async fn validate_state(&self, banks_client: &mut BanksClient) {
@@ -1080,8 +1080,8 @@ impl TestObligation {
                 create_account(
                     &payer.pubkey(),
                     &obligation.keypair.pubkey(),
-                    rent.minimum_balance(Obligation::LEN),
-                    Obligation::LEN as u64,
+                    rent.minimum_balance(ObligationV1::LEN),
+                    ObligationV1::LEN as u64,
                     &solend_program::id(),
                 ),
                 init_obligation(
@@ -1108,13 +1108,13 @@ impl TestObligation {
         Ok(obligation)
     }
 
-    pub async fn get_state(&self, banks_client: &mut BanksClient) -> Obligation {
+    pub async fn get_state(&self, banks_client: &mut BanksClient) -> ObligationV1 {
         let obligation_account: Account = banks_client
             .get_account(self.pubkey)
             .await
             .unwrap()
             .unwrap();
-        Obligation::unpack(&obligation_account.data[..]).unwrap()
+        ObligationV1::unpack(&obligation_account.data[..]).unwrap()
     }
 
     pub async fn validate_state(&self, banks_client: &mut BanksClient) {
@@ -1133,13 +1133,13 @@ pub struct TestObligationCollateral {
 }
 
 impl TestObligationCollateral {
-    pub async fn get_state(&self, banks_client: &mut BanksClient) -> Obligation {
+    pub async fn get_state(&self, banks_client: &mut BanksClient) -> ObligationV1 {
         let obligation_account: Account = banks_client
             .get_account(self.obligation_pubkey)
             .await
             .unwrap()
             .unwrap();
-        Obligation::unpack(&obligation_account.data[..]).unwrap()
+        ObligationV1::unpack(&obligation_account.data[..]).unwrap()
     }
 
     pub async fn validate_state(&self, banks_client: &mut BanksClient) {
@@ -1161,13 +1161,13 @@ pub struct TestObligationLiquidity {
 }
 
 impl TestObligationLiquidity {
-    pub async fn get_state(&self, banks_client: &mut BanksClient) -> Obligation {
+    pub async fn get_state(&self, banks_client: &mut BanksClient) -> ObligationV1 {
         let obligation_account: Account = banks_client
             .get_account(self.obligation_pubkey)
             .await
             .unwrap()
             .unwrap();
-        Obligation::unpack(&obligation_account.data[..]).unwrap()
+        ObligationV1::unpack(&obligation_account.data[..]).unwrap()
     }
 
     pub async fn validate_state(&self, banks_client: &mut BanksClient) {

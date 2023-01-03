@@ -18,7 +18,7 @@ use solend_program::{
     },
     math::Decimal,
     processor::process_instruction,
-    state::{Obligation, INITIAL_COLLATERAL_RATIO},
+    state::{ObligationV1, INITIAL_COLLATERAL_RATIO},
 };
 use spl_token::{instruction::approve, solana_program::program_pack::Pack};
 
@@ -118,8 +118,8 @@ async fn test_success() {
             create_account(
                 &payer.pubkey(),
                 &obligation_keypair.pubkey(),
-                rent.minimum_balance(Obligation::LEN),
-                Obligation::LEN as u64,
+                rent.minimum_balance(ObligationV1::LEN),
+                ObligationV1::LEN as u64,
                 &solend_program::id(),
             ),
             // 1
@@ -252,7 +252,7 @@ async fn test_success() {
             .await
             .unwrap()
             .unwrap();
-        Obligation::unpack(&obligation_account.data[..]).unwrap()
+        ObligationV1::unpack(&obligation_account.data[..]).unwrap()
     };
 
     let collateral_supply_balance =
@@ -377,8 +377,8 @@ async fn test_success2() {
             create_account(
                 &payer.pubkey(),
                 &obligation_keypair.pubkey(),
-                rent.minimum_balance(Obligation::LEN),
-                Obligation::LEN as u64,
+                rent.minimum_balance(ObligationV1::LEN),
+                ObligationV1::LEN as u64,
                 &solend_program::id(),
             ),
             // 1
@@ -511,7 +511,7 @@ async fn test_success2() {
             .await
             .unwrap()
             .unwrap();
-        Obligation::unpack(&obligation_account.data[..]).unwrap()
+        ObligationV1::unpack(&obligation_account.data[..]).unwrap()
     };
 
     let collateral_supply_balance =

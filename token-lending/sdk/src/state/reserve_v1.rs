@@ -28,7 +28,7 @@ pub const MAX_LIQUIDATABLE_VALUE_AT_ONCE: u64 = 500_000;
 
 /// Lending market reserve state
 #[derive(Clone, Debug, Default, PartialEq)]
-pub struct Reserve {
+pub struct ReserveV1 {
     /// Version of the struct
     pub version: u8,
     /// Last slot when supply and rates updated
@@ -43,7 +43,7 @@ pub struct Reserve {
     pub config: ReserveConfig,
 }
 
-impl Reserve {
+impl ReserveV1 {
     /// Create a new reserve
     pub fn new(params: InitReserveParams) -> Self {
         let mut reserve = Self::default();
@@ -235,7 +235,7 @@ impl Reserve {
     pub fn calculate_liquidation(
         &self,
         amount_to_liquidate: u64,
-        obligation: &Obligation,
+        obligation: &ObligationV1,
         liquidity: &ObligationLiquidity,
         collateral: &ObligationCollateral,
     ) -> Result<CalculateLiquidationResult, ProgramError> {
@@ -803,15 +803,15 @@ pub enum FeeCalculation {
     Inclusive,
 }
 
-impl Sealed for Reserve {}
-impl IsInitialized for Reserve {
+impl Sealed for ReserveV1 {}
+impl IsInitialized for ReserveV1 {
     fn is_initialized(&self) -> bool {
         self.version != UNINITIALIZED_VERSION
     }
 }
 
 const RESERVE_LEN: usize = 619; // 1 + 8 + 1 + 32 + 32 + 1 + 32 + 32 + 32 + 8 + 16 + 16 + 16 + 32 + 8 + 32 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 8 + 8 + 1 + 8 + 8 + 32 + 1 + 1 + 16 + 230
-impl Pack for Reserve {
+impl Pack for ReserveV1 {
     const LEN: usize = RESERVE_LEN;
 
     // @TODO: break this up by reserve / liquidity / collateral / config https://git.io/JOCca
@@ -1134,14 +1134,14 @@ mod test {
             (min_borrow_rate, optimal_borrow_rate, max_borrow_rate) in borrow_rates(),
         ) {
             let borrowed_amount_wads = Decimal::from(total_liquidity).try_mul(Rate::from_scaled_val(borrowed_percent))?;
-            let reserve = Reserve {
+            let reserve = ReserveV1 {
                 liquidity: ReserveLiquidity {
                     borrowed_amount_wads,
                     available_amount: total_liquidity - borrowed_amount_wads.try_round_u64()?,
                     ..ReserveLiquidity::default()
                 },
                 config: ReserveConfig { optimal_utilization_rate, min_borrow_rate, optimal_borrow_rate, max_borrow_rate, ..ReserveConfig::default() },
-                ..Reserve::default()
+                ..ReserveV1::default()
             };
 
             if !(optimal_borrow_rate > 246 && optimal_borrow_rate == max_borrow_rate) {
@@ -1198,7 +1198,7 @@ mod test {
             let available_liquidity = total_liquidity - borrowed_liquidity_wads.try_round_u64()?;
             let mint_total_supply = Decimal::from(total_liquidity).try_mul(Rate::from_scaled_val(collateral_multiplier))?.try_round_u64()?;
 
-            let mut reserve = Reserve {
+            let mut reserve = ReserveV1 {
                 collateral: ReserveCollateral {
                     mint_total_supply,
                     ..ReserveCollateral::default()
@@ -1214,7 +1214,7 @@ mod test {
                     optimal_utilization_rate: 100,
                     ..ReserveConfig::default()
                 },
-                ..Reserve::default()
+                ..ReserveV1::default()
             };
 
             let exchange_rate = reserve.collateral_exchange_rate()?;
@@ -1237,7 +1237,7 @@ mod test {
             borrow_rate in 0..=u8::MAX,
             take_rate in 0..=100u8,
         ) {
-            let mut reserve = Reserve::default();
+            let mut reserve = ReserveV1::default();
             let borrow_rate = Rate::from_percent(borrow_rate);
             let take_rate = Rate::from_percent(take_rate);
 
@@ -1257,7 +1257,7 @@ mod test {
             borrow_rate in 0..=u8::MAX,
         ) {
             let borrowed_amount_wads = Decimal::from(borrowed_liquidity);
-            let mut reserve = Reserve {
+            let mut reserve = ReserveV1 {
                 liquidity: ReserveLiquidity {
                     borrowed_amount_wads,
                     ..ReserveLiquidity::default()
@@ -1266,7 +1266,7 @@ mod test {
                     max_borrow_rate: borrow_rate,
                     ..ReserveConfig::default()
                 },
-                ..Reserve::default()
+                ..ReserveV1::default()
             };
 
             reserve.accrue_interest(slots_elapsed)?;
@@ -1568,15 +1568,15 @@ mod test {
     proptest! {
         #[test]
         fn calculate_liquidation(test_case in calculate_liquidation_test_cases()) {
-            let reserve = Reserve {
+            let reserve = ReserveV1 {
                 config: ReserveConfig {
                     liquidation_bonus: 5,
                     ..ReserveConfig::default()
                 },
-                ..Reserve::default()
+                ..ReserveV1::default()
             };
 
-            let obligation = Obligation {
+            let obligation = ObligationV1 {
                 deposits: vec![ObligationCollateral {
                     deposit_reserve: Pubkey::new_unique(),
                     deposited_amount: test_case.deposit_amount,
@@ -1589,7 +1589,7 @@ mod test {
                     market_value: Decimal::from(test_case.borrow_market_value),
                 }],
                 borrowed_value: Decimal::from(test_case.borrow_market_value),
-                ..Obligation::default()
+                ..ObligationV1::default()
             };
 
             assert_eq!(

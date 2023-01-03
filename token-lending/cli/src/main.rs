@@ -6,7 +6,7 @@ use solend_sdk::{
         liquidate_obligation_and_redeem_reserve_collateral, redeem_reserve_collateral,
         refresh_obligation, refresh_reserve,
     },
-    state::Obligation,
+    state::ObligationV1,
 };
 
 mod lending_state;
@@ -36,7 +36,7 @@ use {
         self,
         instruction::{init_lending_market, init_reserve, update_reserve_config},
         math::WAD,
-        state::{LendingMarket, Reserve, ReserveConfig, ReserveFees},
+        state::{LendingMarketV1, ReserveConfig, ReserveFees, ReserveV1},
     },
     spl_token::{
         amount_to_ui_amount,
@@ -964,7 +964,7 @@ fn command_create_lending_market(
 
     let lending_market_balance = config
         .rpc_client
-        .get_minimum_balance_for_rent_exemption(LendingMarket::LEN)?;
+        .get_minimum_balance_for_rent_exemption(LendingMarketV1::LEN)?;
 
     let recent_blockhash = config.rpc_client.get_latest_blockhash()?;
 
@@ -975,7 +975,7 @@ fn command_create_lending_market(
                 &config.fee_payer.pubkey(),
                 &lending_market_keypair.pubkey(),
                 lending_market_balance,
-                LendingMarket::LEN as u64,
+                LendingMarketV1::LEN as u64,
                 &config.lending_program_id,
             ),
             // Initialize lending market account
@@ -1006,7 +1006,7 @@ fn command_create_lending_market(
 
     let lending_market_pubkey = lending_market_keypair.pubkey();
     let lending_market_account = config.rpc_client.get_account(&lending_market_pubkey)?;
-    let lending_market = LendingMarket::unpack_from_slice(lending_market_account.data.borrow())?;
+    let lending_market = LendingMarketV1::unpack_from_slice(lending_market_account.data.borrow())?;
     let authority_signer_seeds = &[lending_market_pubkey.as_ref(), &[lending_market.bump_seed]];
     println!(
         "Authority Address {}",
@@ -1026,7 +1026,7 @@ fn command_redeem_collateral(
             .rpc_client
             .get_account(redeem_reserve_pubkey)
             .unwrap();
-        Reserve::unpack(&data.data).unwrap()
+        ReserveV1::unpack(&data.data).unwrap()
     };
 
     let source_ata =
@@ -1108,7 +1108,7 @@ fn command_liquidate_obligation(
 ) -> CommandResult {
     let obligation_state = {
         let data = config.rpc_client.get_account(&obligation_pubkey)?;
-        Obligation::unpack(&data.data)?
+        ObligationV1::unpack(&data.data)?
     };
 
     // get reserve pubkeys
@@ -1120,12 +1120,12 @@ fn command_liquidate_obligation(
     };
 
     // get reserve accounts
-    let reserves: Vec<(Pubkey, Reserve)> = config
+    let reserves: Vec<(Pubkey, ReserveV1)> = config
         .rpc_client
         .get_multiple_accounts(&reserve_pubkeys)?
         .into_iter()
         .zip(reserve_pubkeys.iter())
-        .map(|(account, pubkey)| (*pubkey, Reserve::unpack(&account.unwrap().data).unwrap()))
+        .map(|(account, pubkey)| (*pubkey, ReserveV1::unpack(&account.unwrap().data).unwrap()))
         .collect();
 
     assert!(reserve_pubkeys.len() == reserves.len());
@@ -1276,7 +1276,7 @@ fn command_add_reserve(
 
     let reserve_balance = config
         .rpc_client
-        .get_minimum_balance_for_rent_exemption(Reserve::LEN)?;
+        .get_minimum_balance_for_rent_exemption(ReserveV1::LEN)?;
     let collateral_mint_balance = config
         .rpc_client
         .get_minimum_balance_for_rent_exemption(Mint::LEN)?;
@@ -1302,7 +1302,7 @@ fn command_add_reserve(
                 &config.fee_payer.pubkey(),
                 &reserve_keypair.pubkey(),
                 reserve_balance,
-                Reserve::LEN as u64,
+                ReserveV1::LEN as u64,
                 &config.lending_program_id,
             ),
             create_account(
@@ -1449,7 +1449,7 @@ fn command_update_reserve(
     lending_market_owner_keypair: Keypair,
 ) -> CommandResult {
     let reserve_info = config.rpc_client.get_account(&reserve_pubkey)?;
-    let mut reserve = Reserve::unpack_from_slice(reserve_info.data.borrow())?;
+    let mut reserve = ReserveV1::unpack_from_slice(reserve_info.data.borrow())?;
     let mut no_change = true;
     if reserve_config.optimal_utilization_rate.is_some()
         && reserve.config.optimal_utilization_rate

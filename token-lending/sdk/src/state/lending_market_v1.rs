@@ -9,7 +9,7 @@ use solana_program::{
 
 /// Lending market state
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
-pub struct LendingMarket {
+pub struct LendingMarketV1 {
     /// Version of lending market
     pub version: u8,
     /// Bump seed for derived authority address
@@ -27,7 +27,7 @@ pub struct LendingMarket {
     pub switchboard_oracle_program_id: Pubkey,
 }
 
-impl LendingMarket {
+impl LendingMarketV1 {
     /// Create a new lending market
     pub fn new(params: InitLendingMarketParams) -> Self {
         let mut lending_market = Self::default();
@@ -64,15 +64,15 @@ pub struct InitLendingMarketParams {
     pub switchboard_oracle_program_id: Pubkey,
 }
 
-impl Sealed for LendingMarket {}
-impl IsInitialized for LendingMarket {
+impl Sealed for LendingMarketV1 {}
+impl IsInitialized for LendingMarketV1 {
     fn is_initialized(&self) -> bool {
         self.version != UNINITIALIZED_VERSION
     }
 }
 
 const LENDING_MARKET_LEN: usize = 290; // 1 + 1 + 32 + 32 + 32 + 32 + 32 + 128
-impl Pack for LendingMarket {
+impl Pack for LendingMarketV1 {
     const LEN: usize = LENDING_MARKET_LEN;
 
     fn pack_into_slice(&self, output: &mut [u8]) {
