@@ -3,6 +3,8 @@
 pub mod flash_loan_proxy;
 pub mod flash_loan_receiver;
 pub mod genesis;
+pub mod mock_pyth;
+pub mod solend_program_test;
 
 use assert_matches::*;
 use bytemuck::{cast_slice_mut, from_bytes_mut, try_cast_slice_mut, Pod, PodCastError};
@@ -30,6 +32,7 @@ use solend_program::{
         ReserveLiquidity, INITIAL_COLLATERAL_RATIO, PROGRAM_VERSION,
     },
 };
+
 use solend_sdk::switchboard_v2_mainnet;
 use spl_token::{
     instruction::approve,
@@ -83,6 +86,15 @@ pub const SRM_SWITCHBOARD_FEED: &str = "BAoygKcKN7wk8yKzLD6sxzUQUqLvhBV1rjMA4UJq
 pub const SRM_SWITCHBOARDV2_FEED: &str = "CUgoqwiQ4wCt6Tthkrgx5saAEpLBjPCdHshVa4Pbfcx2";
 
 pub const USDC_MINT: &str = "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v";
+
+pub mod usdc_mint {
+    solana_program::declare_id!("EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v");
+}
+
+pub mod wsol_mint {
+    // fake mint, not the real wsol bc i can't mint wsol programmatically
+    solana_program::declare_id!("So1m5eppzgokXLBt9Cg8KCMPWhHfTzVaGh26Y415MRG");
+}
 
 trait AddPacked {
     fn add_packable_account<T: Pack>(
@@ -1486,4 +1498,18 @@ pub async fn get_token_balance(banks_client: &mut BanksClient, pubkey: Pubkey) -
     spl_token::state::Account::unpack(&token.data[..])
         .unwrap()
         .amount
+}
+
+fn add_mint(test: &mut ProgramTest, mint: Pubkey, decimals: u8, authority: Pubkey) {
+    test.add_packable_account(
+        mint,
+        u32::MAX as u64,
+        &Mint {
+            is_initialized: true,
+            mint_authority: COption::Some(authority),
+            decimals,
+            ..Mint::default()
+        },
+        &spl_token::id(),
+    );
 }
