@@ -8,7 +8,10 @@ use helpers::solend_program_test::{
     BalanceChange, BalanceChecker, Info, PriceArgs, SolendProgramTest, User,
 };
 use helpers::*;
+use solana_program::instruction::InstructionError;
 use solana_program_test::*;
+use solana_sdk::transaction::TransactionError;
+use solend_program::error::LendingError;
 use solend_program::state::{
     LastUpdate, LendingMarket, Reserve, ReserveCollateral, ReserveLiquidity,
 };
@@ -60,7 +63,7 @@ async fn setup() -> (
     let user = User::new_with_balances(
         &mut test,
         &[
-            (&usdc_mint::id(), 1_000_000),
+            (&usdc_mint::id(), 1_000_000_000_000),        // 1M USDC
             (&reserve.account.collateral.mint_pubkey, 0), // cUSDC
         ],
     )
@@ -70,7 +73,7 @@ async fn setup() -> (
 }
 
 #[tokio::test]
-async fn test_success_new() {
+async fn test_success() {
     let (mut test, lending_market, usdc_reserve, _lending_market_owner, user) = setup().await;
 
     let balance_checker = BalanceChecker::start(&mut test, &[&usdc_reserve, &user]).await;
@@ -133,5 +136,25 @@ async fn test_success_new() {
             },
             ..usdc_reserve.account
         }
+    );
+}
+
+#[tokio::test]
+async fn test_fail_exceed_deposit_limit() {
+    let (mut test, lending_market, usdc_reserve, _lending_market_owner, user) = setup().await;
+
+    let res = lending_market
+        .deposit(&mut test, &usdc_reserve, &user, 200_000_000_000)
+        .await
+        .err()
+        .unwrap()
+        .unwrap();
+
+    assert_eq!(
+        res,
+        TransactionError::InstructionError(
+            0,
+            InstructionError::Custom(LendingError::InvalidAmount as u32)
+        )
     );
 }

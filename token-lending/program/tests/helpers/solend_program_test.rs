@@ -24,7 +24,10 @@ use solend_program::{
 };
 
 use spl_token::state::{Account as Token, Mint};
-use std::{collections::{HashMap, HashSet}, str::FromStr};
+use std::{
+    collections::{HashMap, HashSet},
+    str::FromStr,
+};
 
 use super::mock_pyth::{init, mock_pyth_program, set_price};
 
@@ -36,8 +39,6 @@ pub struct SolendProgramTest {
     authority: Keypair,
 
     mints: HashMap<Pubkey, Option<Oracle>>,
-    // sol_oracle: TestOracle,
-    // usdc_oracle: TestOracle,
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -477,7 +478,7 @@ impl Info<LendingMarket> {
         reserve: &Info<Reserve>,
         user: &User,
         liquidity_amount: u64,
-    ) {
+    ) -> Result<(), BanksClientError> {
         let instructions = [deposit_reserve_liquidity(
             solend_program::id(),
             liquidity_amount,
@@ -496,7 +497,6 @@ impl Info<LendingMarket> {
 
         test.process_transaction(&instructions, Some(&[&user.keypair]))
             .await
-            .unwrap();
     }
 }
 
@@ -509,7 +509,7 @@ pub struct BalanceChecker {
 pub struct BalanceChange {
     pub token_account: Pubkey,
     pub mint: Pubkey,
-    pub diff: i128
+    pub diff: i128,
 }
 
 impl BalanceChecker {
@@ -530,7 +530,10 @@ impl BalanceChecker {
         }
     }
 
-    pub async fn find_balance_changes(&self, test: &mut SolendProgramTest) -> HashSet<BalanceChange> {
+    pub async fn find_balance_changes(
+        &self,
+        test: &mut SolendProgramTest,
+    ) -> HashSet<BalanceChange> {
         let mut balance_changes = HashSet::new();
         for token_account in &self.token_accounts {
             let refreshed_token_account = test.load_account::<Token>(token_account.pubkey).await;
@@ -539,7 +542,8 @@ impl BalanceChecker {
                 balance_changes.insert(BalanceChange {
                     token_account: token_account.pubkey,
                     mint: token_account.account.mint,
-                    diff: (refreshed_token_account.amount as i128) - (token_account.account.amount as i128)
+                    diff: (refreshed_token_account.amount as i128)
+                        - (token_account.account.amount as i128),
                 });
             }
         }
@@ -563,7 +567,8 @@ impl GetTokenAccounts for Info<Reserve> {
     fn get_token_accounts(&self) -> Vec<Pubkey> {
         vec![
             self.account.liquidity.supply_pubkey,
-            self.account.collateral.supply_pubkey
+            self.account.collateral.supply_pubkey,
+            self.account.config.fee_receiver,
         ]
     }
 }
