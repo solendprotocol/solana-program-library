@@ -150,10 +150,8 @@ impl SolendProgramTest {
     /// forward.
     pub async fn advance_clock_by_slots(&mut self, slots: u64) {
         let mut clock: Clock = self.get_clock().await;
-        println!("clock slot before: {}", clock.slot);
         self.context.warp_to_slot(clock.slot + slots).unwrap();
         clock = self.get_clock().await;
-        println!("clock slot after: {}", clock.slot);
     }
 
     pub async fn create_account(&mut self, size: usize, owner: &Pubkey) -> Pubkey {
@@ -397,13 +395,6 @@ pub struct User {
 }
 
 impl User {
-    pub fn new() -> Self {
-        User {
-            keypair: Keypair::new(),
-            token_accounts: Vec::new(),
-        }
-    }
-
     pub fn new_with_keypair(keypair: Keypair) -> Self {
         User {
             keypair,
@@ -417,7 +408,10 @@ impl User {
         test: &mut SolendProgramTest,
         mints_and_balances: &[(&Pubkey, u64)],
     ) -> Self {
-        let mut user = User::new();
+        let mut user = User {
+            keypair: Keypair::new(),
+            token_accounts: Vec::new(),
+        };
 
         for (mint, balance) in mints_and_balances {
             let token_account = user.create_token_account(mint, test).await;
@@ -461,6 +455,28 @@ impl User {
             }
             Some(_) => panic!("Token account already exists!"),
         }
+    }
+
+    pub async fn transfer(
+        &self,
+        mint: &Pubkey,
+        destination_pubkey: Pubkey,
+        amount: u64,
+        test: &mut SolendProgramTest,
+    ) {
+        let instruction = [spl_token::instruction::transfer(
+            &spl_token::id(),
+            &self.get_account(mint).await.unwrap(),
+            &destination_pubkey,
+            &self.keypair.pubkey(),
+            &[],
+            amount,
+        )
+        .unwrap()];
+
+        test.process_transaction(&instruction, Some(&[&self.keypair]))
+            .await
+            .unwrap();
     }
 }
 

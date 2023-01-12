@@ -4,7 +4,7 @@ mod helpers;
 
 use std::collections::HashSet;
 
-use helpers::solend_program_test::{setup_world, BalanceChange, BalanceChecker};
+use helpers::solend_program_test::{setup_world, BalanceChange, BalanceChecker, User};
 use helpers::*;
 use solana_program::instruction::InstructionError;
 use solana_program_test::*;
@@ -99,5 +99,36 @@ async fn test_fail_exceed_deposit_limit() {
             0,
             InstructionError::Custom(LendingError::InvalidAmount as u32)
         )
+    );
+}
+
+#[tokio::test]
+async fn test_fail_deposit_too_much() {
+    let (mut test, lending_market, usdc_reserve, _, _, user) = setup_world().await;
+
+    // drain original user's funds first
+    {
+        let new_user = User::new_with_balances(&mut test, &[(&usdc_mint::id(), 0)]).await;
+        user.transfer(
+            &usdc_mint::id(),
+            new_user.get_account(&usdc_mint::id()).await.unwrap(),
+            1_000_000_000_000,
+            &mut test,
+        )
+        .await;
+    }
+
+    // deposit more than user owns
+    let res = lending_market
+        .deposit(&mut test, &usdc_reserve, &user, 1)
+        .await
+        .err()
+        .unwrap()
+        .unwrap();
+
+    assert_eq!(
+        res,
+        // TokenError::InsufficientFunds
+        TransactionError::InstructionError(0, InstructionError::Custom(1))
     );
 }

@@ -12,17 +12,13 @@ use solana_program::instruction::InstructionError;
 use solana_program_test::*;
 use solana_sdk::transaction::TransactionError;
 use solana_sdk::{
-    signature::{Keypair, Signer},
-    transaction::Transaction,
+    signature::{Signer},
 };
 use solend_program::state::{
     LastUpdate, LendingMarket, Reserve, ReserveCollateral, ReserveLiquidity,
 };
-use solend_program::{
-    instruction::redeem_reserve_collateral, processor::process_instruction,
-    state::INITIAL_COLLATERAL_RATIO,
-};
-use spl_token::error::TokenError;
+
+
 
 pub async fn setup() -> (SolendProgramTest, Info<LendingMarket>, Info<Reserve>, User) {
     let (mut test, lending_market, usdc_reserve, _, _, user) = setup_world().await;
