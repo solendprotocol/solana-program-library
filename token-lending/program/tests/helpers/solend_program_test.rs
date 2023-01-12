@@ -18,7 +18,9 @@ use solana_sdk::{
     transaction::Transaction,
 };
 use solend_program::{
-    instruction::{deposit_reserve_liquidity, init_lending_market, init_reserve},
+    instruction::{
+        deposit_reserve_liquidity, init_lending_market, init_reserve, redeem_reserve_collateral,
+    },
     processor::process_instruction,
     state::{LendingMarket, Reserve, ReserveConfig},
 };
@@ -109,7 +111,7 @@ impl SolendProgramTest {
             .await
     }
 
-    pub async fn load_account<T: Pack + IsInitialized>(&mut self, acc_pk: Pubkey) -> T {
+    pub async fn load_account<T: Pack + IsInitialized>(&mut self, acc_pk: Pubkey) -> Info<T> {
         let acc = self
             .context
             .banks_client
@@ -117,7 +119,11 @@ impl SolendProgramTest {
             .await
             .unwrap()
             .unwrap();
-        T::unpack(&acc.data).unwrap()
+
+        Info {
+            pubkey: acc_pk,
+            account: T::unpack(&acc.data).unwrap(),
+        }
     }
 
     pub async fn get_bincode_account<T: serde::de::DeserializeOwned>(
@@ -276,12 +282,8 @@ impl SolendProgramTest {
         .await
         .unwrap();
 
-        Info {
-            pubkey: lending_market_key.pubkey(),
-            account: self
-                .load_account::<LendingMarket>(lending_market_key.pubkey())
-                .await,
-        }
+        self.load_account::<LendingMarket>(lending_market_key.pubkey())
+            .await
     }
 
     pub async fn init_pyth_feed(&mut self, mint: &Pubkey) {
@@ -383,10 +385,7 @@ impl SolendProgramTest {
         .await
         .unwrap();
 
-        Info {
-            pubkey: reserve_pubkey,
-            account: self.load_account::<Reserve>(reserve_pubkey).await,
-        }
+        self.load_account::<Reserve>(reserve_pubkey).await
     }
 }
 
@@ -456,9 +455,9 @@ impl User {
                     .await;
                 let account = test.load_account::<Token>(pubkey).await;
 
-                self.token_accounts.push(Info { pubkey, account });
+                self.token_accounts.push(account.clone());
 
-                Info { pubkey, account }
+                account
             }
             Some(_) => panic!("Token account already exists!"),
         }
@@ -498,6 +497,33 @@ impl Info<LendingMarket> {
         test.process_transaction(&instructions, Some(&[&user.keypair]))
             .await
     }
+
+    pub async fn redeem(
+        &self,
+        test: &mut SolendProgramTest,
+        reserve: &Info<Reserve>,
+        user: &User,
+        collateral_amount: u64,
+    ) -> Result<(), BanksClientError> {
+        let instructions = [redeem_reserve_collateral(
+            solend_program::id(),
+            collateral_amount,
+            user.get_account(&reserve.account.collateral.mint_pubkey)
+                .await
+                .unwrap(),
+            user.get_account(&reserve.account.liquidity.mint_pubkey)
+                .await
+                .unwrap(),
+            reserve.pubkey,
+            reserve.account.collateral.mint_pubkey,
+            reserve.account.liquidity.supply_pubkey,
+            self.pubkey,
+            user.keypair.pubkey(),
+        )];
+
+        test.process_transaction(&instructions, Some(&[&user.keypair]))
+            .await
+    }
 }
 
 /// Track token balance changes across transactions.
@@ -518,10 +544,7 @@ impl BalanceChecker {
         for obj in objs {
             for pubkey in obj.get_token_accounts() {
                 let refreshed_account = test.load_account::<Token>(pubkey).await;
-                refreshed_accounts.push(Info {
-                    pubkey,
-                    account: refreshed_account,
-                });
+                refreshed_accounts.push(refreshed_account);
             }
         }
 
@@ -538,11 +561,11 @@ impl BalanceChecker {
         for token_account in &self.token_accounts {
             let refreshed_token_account = test.load_account::<Token>(token_account.pubkey).await;
 
-            if refreshed_token_account.amount != token_account.account.amount {
+            if refreshed_token_account.account.amount != token_account.account.amount {
                 balance_changes.insert(BalanceChange {
                     token_account: token_account.pubkey,
                     mint: token_account.account.mint,
-                    diff: (refreshed_token_account.amount as i128)
+                    diff: (refreshed_token_account.account.amount as i128)
                         - (token_account.account.amount as i128),
                 });
             }
@@ -571,4 +594,88 @@ impl GetTokenAccounts for Info<Reserve> {
             self.account.config.fee_receiver,
         ]
     }
+}
+
+pub async fn setup_world() -> (
+    SolendProgramTest,
+    Info<LendingMarket>,
+    Info<Reserve>,
+    Info<Reserve>,
+    User,
+    User,
+) {
+    let mut test = SolendProgramTest::start_new().await;
+
+    let lending_market_owner = User::new_with_balances(
+        &mut test,
+        &[
+            (&usdc_mint::id(), 1_000_000),
+            (&wsol_mint::id(), LAMPORTS_TO_SOL),
+        ],
+    )
+    .await;
+
+    let lending_market = test.init_lending_market(&lending_market_owner).await;
+
+    test.advance_clock_by_slots(999).await;
+
+    test.init_pyth_feed(&usdc_mint::id()).await;
+    test.set_price(
+        &usdc_mint::id(),
+        PriceArgs {
+            price: 1,
+            conf: 0,
+            expo: 0,
+        },
+    )
+    .await;
+
+    test.init_pyth_feed(&wsol_mint::id()).await;
+    test.set_price(
+        &wsol_mint::id(),
+        PriceArgs {
+            price: 10,
+            conf: 0,
+            expo: 0,
+        },
+    )
+    .await;
+
+    let usdc_reserve = test
+        .init_reserve(
+            &lending_market,
+            &lending_market_owner,
+            &usdc_mint::id(),
+            &test_reserve_config(),
+            1_000_000,
+        )
+        .await;
+
+    let wsol_reserve = test
+        .init_reserve(
+            &lending_market,
+            &lending_market_owner,
+            &wsol_mint::id(),
+            &test_reserve_config(),
+            1_000_000_000,
+        )
+        .await;
+
+    let user = User::new_with_balances(
+        &mut test,
+        &[
+            (&usdc_mint::id(), 1_000_000_000_000),             // 1M USDC
+            (&usdc_reserve.account.collateral.mint_pubkey, 0), // cUSDC
+        ],
+    )
+    .await;
+
+    (
+        test,
+        lending_market,
+        usdc_reserve,
+        wsol_reserve,
+        lending_market_owner,
+        user,
+    )
 }
