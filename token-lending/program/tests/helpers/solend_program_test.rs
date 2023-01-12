@@ -19,7 +19,8 @@ use solana_sdk::{
 };
 use solend_program::{
     instruction::{
-        deposit_reserve_liquidity, init_lending_market, init_reserve, redeem_reserve_collateral,
+        deposit_obligation_collateral, deposit_reserve_liquidity, init_lending_market,
+        init_reserve, redeem_reserve_collateral,
     },
     processor::process_instruction,
     state::{LendingMarket, Reserve, ReserveConfig},
@@ -49,7 +50,7 @@ struct Oracle {
     pyth_price_pubkey: Pubkey,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Info<T> {
     pub pubkey: Pubkey,
     pub account: T,
@@ -149,9 +150,8 @@ impl SolendProgramTest {
     /// value in Clock, so this function must be explicitly called whenever you want time to move
     /// forward.
     pub async fn advance_clock_by_slots(&mut self, slots: u64) {
-        let mut clock: Clock = self.get_clock().await;
+        let clock: Clock = self.get_clock().await;
         self.context.warp_to_slot(clock.slot + slots).unwrap();
-        clock = self.get_clock().await;
     }
 
     pub async fn create_account(&mut self, size: usize, owner: &Pubkey) -> Pubkey {
@@ -534,6 +534,65 @@ impl Info<LendingMarket> {
             reserve.account.collateral.mint_pubkey,
             reserve.account.liquidity.supply_pubkey,
             self.pubkey,
+            user.keypair.pubkey(),
+        )];
+
+        test.process_transaction(&instructions, Some(&[&user.keypair]))
+            .await
+    }
+
+    pub async fn init_obligation(
+        &self,
+        test: &mut SolendProgramTest,
+        obligation_keypair: Keypair,
+        user: &User,
+    ) -> Result<Info<Obligation>, BanksClientError> {
+        let instructions = [
+            system_instruction::create_account(
+                &test.context.payer.pubkey(),
+                &obligation_keypair.pubkey(),
+                Rent::minimum_balance(&Rent::default(), Obligation::LEN),
+                Obligation::LEN as u64,
+                &solend_program::id(),
+            ),
+            init_obligation(
+                solend_program::id(),
+                obligation_keypair.pubkey(),
+                self.pubkey,
+                user.keypair.pubkey(),
+            ),
+        ];
+
+        match test
+            .process_transaction(&instructions, Some(&[&obligation_keypair, &user.keypair]))
+            .await
+        {
+            Ok(()) => Ok(test
+                .load_account::<Obligation>(obligation_keypair.pubkey())
+                .await),
+            Err(e) => Err(e),
+        }
+    }
+
+    pub async fn deposit_obligation_collateral(
+        &self,
+        test: &mut SolendProgramTest,
+        reserve: &Info<Reserve>,
+        obligation: &Info<Obligation>,
+        user: &User,
+        collateral_amount: u64,
+    ) -> Result<(), BanksClientError> {
+        let instructions = [deposit_obligation_collateral(
+            solend_program::id(),
+            collateral_amount,
+            user.get_account(&reserve.account.collateral.mint_pubkey)
+                .await
+                .unwrap(),
+            reserve.account.collateral.supply_pubkey,
+            reserve.pubkey,
+            obligation.pubkey,
+            self.pubkey,
+            user.keypair.pubkey(),
             user.keypair.pubkey(),
         )];
 
