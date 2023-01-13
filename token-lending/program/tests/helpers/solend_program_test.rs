@@ -9,7 +9,6 @@ use solana_program::{
     rent::Rent,
     system_instruction, sysvar,
 };
-use solana_program_test::*;
 use solana_sdk::{
     commitment_config::CommitmentLevel,
     compute_budget::ComputeBudgetInstruction,
@@ -599,6 +598,130 @@ impl Info<LendingMarket> {
         test.process_transaction(&instructions, Some(&[&user.keypair]))
             .await
     }
+
+    pub async fn refresh_reserve(
+        &self,
+        test: &mut SolendProgramTest,
+        reserve: &Info<Reserve>,
+    ) -> Result<(), BanksClientError> {
+        test.process_transaction(
+            &[refresh_reserve(
+                solend_program::id(),
+                reserve.pubkey,
+                reserve.account.liquidity.pyth_oracle_pubkey,
+                reserve.account.liquidity.switchboard_oracle_pubkey,
+            )],
+            None,
+        )
+        .await
+    }
+
+    pub async fn build_refresh_instructions(
+        &self,
+        test: &mut SolendProgramTest,
+        obligation: &Info<Obligation>,
+        extra_reserve: Option<&Info<Reserve>>,
+    ) -> Vec<Instruction> {
+        let reserve_pubkeys: Vec<Pubkey> = {
+            let mut r = HashSet::new();
+            r.extend(
+                obligation
+                    .account
+                    .deposits
+                    .iter()
+                    .map(|d| d.deposit_reserve),
+            );
+            r.extend(obligation.account.borrows.iter().map(|b| b.borrow_reserve));
+
+            if let Some(reserve) = extra_reserve {
+                r.insert(reserve.pubkey);
+            }
+
+            r.into_iter().collect()
+        };
+
+        let mut reserves = Vec::new();
+        for pubkey in reserve_pubkeys {
+            reserves.push(test.load_account::<Reserve>(pubkey).await);
+        }
+
+        let mut instructions: Vec<Instruction> = reserves
+            .into_iter()
+            .map(|reserve| {
+                refresh_reserve(
+                    solend_program::id(),
+                    reserve.pubkey,
+                    reserve.account.liquidity.pyth_oracle_pubkey,
+                    reserve.account.liquidity.switchboard_oracle_pubkey,
+                )
+            })
+            .collect();
+
+        let reserve_pubkeys: Vec<Pubkey> = {
+            let mut r = Vec::new();
+            r.extend(
+                obligation
+                    .account
+                    .deposits
+                    .iter()
+                    .map(|d| d.deposit_reserve),
+            );
+            r.extend(obligation.account.borrows.iter().map(|b| b.borrow_reserve));
+            r
+        };
+
+        instructions.push(refresh_obligation(
+            solend_program::id(),
+            obligation.pubkey,
+            reserve_pubkeys,
+        ));
+
+        instructions
+    }
+
+    pub async fn refresh_obligation(
+        &self,
+        test: &mut SolendProgramTest,
+        obligation: &Info<Obligation>,
+    ) -> Result<(), BanksClientError> {
+        let instructions = self
+            .build_refresh_instructions(test, obligation, None)
+            .await;
+
+        test.process_transaction(&instructions, None).await
+    }
+
+    pub async fn borrow_obligation_liquidity(
+        &self,
+        test: &mut SolendProgramTest,
+        borrow_reserve: &Info<Reserve>,
+        obligation: &Info<Obligation>,
+        user: &User,
+        host_fee_receiver_pubkey: &Pubkey,
+        liquidity_amount: u64,
+    ) -> Result<(), BanksClientError> {
+        let mut instructions = self
+            .build_refresh_instructions(test, obligation, Some(borrow_reserve))
+            .await;
+
+        instructions.push(borrow_obligation_liquidity(
+            solend_program::id(),
+            liquidity_amount,
+            borrow_reserve.account.liquidity.supply_pubkey,
+            user.get_account(&borrow_reserve.account.liquidity.mint_pubkey)
+                .await
+                .unwrap(),
+            borrow_reserve.pubkey,
+            borrow_reserve.account.config.fee_receiver,
+            obligation.pubkey,
+            self.pubkey,
+            user.keypair.pubkey(),
+            Some(*host_fee_receiver_pubkey),
+        ));
+
+        test.process_transaction(&instructions, Some(&[&user.keypair]))
+            .await
+    }
 }
 
 /// Track token balance changes across transactions.
@@ -741,6 +864,7 @@ pub async fn setup_world() -> (
         &[
             (&usdc_mint::id(), 1_000_000_000_000),             // 1M USDC
             (&usdc_reserve.account.collateral.mint_pubkey, 0), // cUSDC
+            (&wsol_mint::id(), 0),
         ],
     )
     .await;

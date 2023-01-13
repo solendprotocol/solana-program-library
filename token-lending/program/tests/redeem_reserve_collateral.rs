@@ -72,6 +72,7 @@ async fn test_success() {
         balance_changes
     );
 
+    // check program state changes
     let lending_market_post = test
         .load_account::<LendingMarket>(lending_market.pubkey)
         .await;
