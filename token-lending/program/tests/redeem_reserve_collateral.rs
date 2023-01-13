@@ -16,7 +16,8 @@ use solend_program::state::{
 };
 
 pub async fn setup() -> (SolendProgramTest, Info<LendingMarket>, Info<Reserve>, User) {
-    let (mut test, lending_market, usdc_reserve, _, _, user) = setup_world().await;
+    let (mut test, lending_market, usdc_reserve, _, _, user) =
+        setup_world(&test_reserve_config(), &test_reserve_config()).await;
 
     lending_market
         .deposit(&mut test, &usdc_reserve, &user, 1_000_000)

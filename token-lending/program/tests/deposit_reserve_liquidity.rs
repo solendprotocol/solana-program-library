@@ -4,7 +4,9 @@ mod helpers;
 
 use std::collections::HashSet;
 
-use helpers::solend_program_test::{setup_world, BalanceChange, BalanceChecker, User};
+use helpers::solend_program_test::{
+    setup_world, BalanceChange, BalanceChecker, Info, SolendProgramTest, User,
+};
 use helpers::*;
 use solana_program::instruction::InstructionError;
 use solana_program_test::*;
@@ -14,9 +16,16 @@ use solend_program::state::{
     LastUpdate, LendingMarket, Reserve, ReserveCollateral, ReserveLiquidity,
 };
 
+async fn setup() -> (SolendProgramTest, Info<LendingMarket>, Info<Reserve>, User) {
+    let (test, lending_market, usdc_reserve, _, _, user) =
+        setup_world(&test_reserve_config(), &test_reserve_config()).await;
+
+    (test, lending_market, usdc_reserve, user)
+}
+
 #[tokio::test]
 async fn test_success() {
-    let (mut test, lending_market, usdc_reserve, _, _, user) = setup_world().await;
+    let (mut test, lending_market, usdc_reserve, user) = setup().await;
 
     let balance_checker = BalanceChecker::start(&mut test, &[&usdc_reserve, &user]).await;
 
@@ -84,7 +93,7 @@ async fn test_success() {
 
 #[tokio::test]
 async fn test_fail_exceed_deposit_limit() {
-    let (mut test, lending_market, usdc_reserve, _, _, user) = setup_world().await;
+    let (mut test, lending_market, usdc_reserve, user) = setup().await;
 
     let res = lending_market
         .deposit(&mut test, &usdc_reserve, &user, 200_000_000_000)
@@ -104,7 +113,7 @@ async fn test_fail_exceed_deposit_limit() {
 
 #[tokio::test]
 async fn test_fail_deposit_too_much() {
-    let (mut test, lending_market, usdc_reserve, _, _, user) = setup_world().await;
+    let (mut test, lending_market, usdc_reserve, user) = setup().await;
 
     // drain original user's funds first
     {

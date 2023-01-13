@@ -794,7 +794,7 @@ impl GetTokenAccounts for Info<Reserve> {
     }
 }
 
-pub async fn setup_world() -> (
+pub async fn setup_world(usdc_reserve_config: &ReserveConfig, wsol_reserve_config: &ReserveConfig) -> (
     SolendProgramTest,
     Info<LendingMarket>,
     Info<Reserve>,
@@ -844,7 +844,7 @@ pub async fn setup_world() -> (
             &lending_market,
             &lending_market_owner,
             &usdc_mint::id(),
-            &test_reserve_config(),
+            usdc_reserve_config,
             1_000_000,
         )
         .await;
@@ -854,7 +854,7 @@ pub async fn setup_world() -> (
             &lending_market,
             &lending_market_owner,
             &wsol_mint::id(),
-            &test_reserve_config(),
+            wsol_reserve_config,
             1_000_000_000,
         )
         .await;
