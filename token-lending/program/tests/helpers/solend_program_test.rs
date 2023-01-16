@@ -20,6 +20,7 @@ use solend_program::{
     instruction::{
         deposit_obligation_collateral, deposit_reserve_liquidity, init_lending_market,
         init_reserve, redeem_reserve_collateral, repay_obligation_liquidity,
+        withdraw_obligation_collateral,
     },
     processor::process_instruction,
     state::{LendingMarket, Reserve, ReserveConfig},
@@ -746,6 +747,34 @@ impl Info<LendingMarket> {
             self.pubkey,
             user.keypair.pubkey(),
         )];
+
+        test.process_transaction(&instructions, Some(&[&user.keypair]))
+            .await
+    }
+
+    pub async fn withdraw_obligation_collateral(
+        &self,
+        test: &mut SolendProgramTest,
+        withdraw_reserve: &Info<Reserve>,
+        obligation: &Info<Obligation>,
+        user: &User,
+        collateral_amount: u64,
+    ) -> Result<(), BanksClientError> {
+        let mut instructions = self
+            .build_refresh_instructions(test, obligation, Some(withdraw_reserve))
+            .await;
+
+        instructions.push(withdraw_obligation_collateral(
+            solend_program::id(),
+            collateral_amount,
+            withdraw_reserve.account.collateral.supply_pubkey,
+            user.get_account(&withdraw_reserve.account.collateral.mint_pubkey)
+                .unwrap(),
+            withdraw_reserve.pubkey,
+            obligation.pubkey,
+            self.pubkey,
+            user.keypair.pubkey(),
+        ));
 
         test.process_transaction(&instructions, Some(&[&user.keypair]))
             .await

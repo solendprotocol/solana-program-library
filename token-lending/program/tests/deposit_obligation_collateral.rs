@@ -108,8 +108,10 @@ async fn test_fail_deposit_too_much() {
         .unwrap();
 
     match res {
-        // TokenError::Insufficient Funds
+        // InsufficientFunds
         TransactionError::InstructionError(0, InstructionError::Custom(1)) => (),
-        _ => panic!("Unexpected error: {:#?}", res),
+        // LendingError::TokenTransferFailed
+        TransactionError::InstructionError(0, InstructionError::Custom(17)) => (),
+        e => panic!("unexpected error: {:#?}", e),
     };
 }

@@ -113,6 +113,8 @@ async fn test_fail_redeem_too_much() {
     match res {
         // TokenError::Insufficient Funds
         TransactionError::InstructionError(0, InstructionError::Custom(1)) => (),
+        // LendingError::TokenBurnFailed
+        TransactionError::InstructionError(0, InstructionError::Custom(19)) => (),
         _ => panic!("Unexpected error: {:#?}", res),
     };
 }

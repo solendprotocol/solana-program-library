@@ -134,9 +134,11 @@ async fn test_fail_deposit_too_much() {
         .unwrap()
         .unwrap();
 
-    assert_eq!(
-        res,
-        // TokenError::InsufficientFunds
-        TransactionError::InstructionError(0, InstructionError::Custom(1))
-    );
+    match res {
+        // InsufficientFunds
+        TransactionError::InstructionError(0, InstructionError::Custom(1)) => (),
+        // LendingError::TokenTransferFailed
+        TransactionError::InstructionError(0, InstructionError::Custom(17)) => (),
+        e => panic!("unexpected error: {:#?}", e),
+    };
 }

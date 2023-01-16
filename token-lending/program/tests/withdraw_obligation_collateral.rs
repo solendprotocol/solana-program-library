@@ -2,356 +2,270 @@
 
 mod helpers;
 
+use helpers::solend_program_test::{
+    setup_world, BalanceChange, BalanceChecker, Info, SolendProgramTest, User,
+};
 use helpers::*;
+use solana_program::native_token::LAMPORTS_PER_SOL;
 use solana_program_test::*;
 use solana_sdk::{
     instruction::InstructionError,
     signature::{Keypair, Signer},
     transaction::{Transaction, TransactionError},
 };
+use solend_program::state::{
+    LastUpdate, LendingMarket, Obligation, ObligationCollateral, ObligationLiquidity, Reserve,
+    ReserveConfig, ReserveFees, ReserveLiquidity, SLOTS_PER_YEAR,
+};
 use solend_program::{
     error::LendingError,
     instruction::{refresh_obligation, withdraw_obligation_collateral},
     processor::process_instruction,
-    state::INITIAL_COLLATERAL_RATIO,
 };
+use std::collections::HashSet;
 use std::u64;
 
-#[tokio::test]
-async fn test_withdraw_fixed_amount() {
-    let mut test = ProgramTest::new(
-        "solend_program",
-        solend_program::id(),
-        processor!(process_instruction),
-    );
+async fn setup() -> (
+    SolendProgramTest,
+    Info<LendingMarket>,
+    Info<Reserve>,
+    Info<Reserve>,
+    User,
+    Info<Obligation>,
+) {
+    let (mut test, lending_market, usdc_reserve, wsol_reserve, lending_market_owner, user) =
+        setup_world(
+            &ReserveConfig {
+                deposit_limit: u64::MAX,
+                ..test_reserve_config()
+            },
+            &ReserveConfig {
+                fees: ReserveFees {
+                    borrow_fee_wad: 0,
+                    host_fee_percentage: 0,
+                    flash_loan_fee_wad: 0,
+                },
+                protocol_take_rate: 0,
+                ..test_reserve_config()
+            },
+        )
+        .await;
 
-    // limit to track compute unit increase
-    test.set_compute_max_units(40_000);
+    // init obligation
+    let obligation = lending_market
+        .init_obligation(&mut test, Keypair::new(), &user)
+        .await
+        .expect("This should succeed");
 
-    const SOL_DEPOSIT_AMOUNT_LAMPORTS: u64 = 200 * LAMPORTS_TO_SOL * INITIAL_COLLATERAL_RATIO;
-    const USDC_BORROW_AMOUNT_FRACTIONAL: u64 = 1_000 * FRACTIONAL_TO_USDC;
-    const SOL_RESERVE_COLLATERAL_LAMPORTS: u64 = 2 * SOL_DEPOSIT_AMOUNT_LAMPORTS;
-    const WITHDRAW_AMOUNT: u64 = 100 * LAMPORTS_TO_SOL * INITIAL_COLLATERAL_RATIO;
+    // deposit 100k USDC
+    lending_market
+        .deposit(&mut test, &usdc_reserve, &user, 100_000_000_000)
+        .await
+        .expect("This should succeed");
 
-    let user_accounts_owner = Keypair::new();
-    let lending_market = add_lending_market(&mut test);
+    let usdc_reserve = test.load_account(usdc_reserve.pubkey).await;
 
-    let mut reserve_config = test_reserve_config();
-    reserve_config.loan_to_value_ratio = 50;
+    // deposit 100k cUSDC
+    lending_market
+        .deposit_obligation_collateral(
+            &mut test,
+            &usdc_reserve,
+            &obligation,
+            &user,
+            100_000_000_000,
+        )
+        .await
+        .expect("This should succeed");
 
-    let sol_oracle = add_sol_oracle(&mut test);
-    let sol_test_reserve = add_reserve(
+    let wsol_depositor = User::new_with_balances(
         &mut test,
-        &lending_market,
-        &sol_oracle,
-        &user_accounts_owner,
-        AddReserveArgs {
-            collateral_amount: SOL_RESERVE_COLLATERAL_LAMPORTS,
-            liquidity_mint_pubkey: spl_token::native_mint::id(),
-            liquidity_mint_decimals: 9,
-            config: reserve_config,
-            mark_fresh: true,
-            ..AddReserveArgs::default()
-        },
-    );
-
-    let usdc_mint = add_usdc_mint(&mut test);
-    let usdc_oracle = add_usdc_oracle(&mut test);
-    let usdc_test_reserve = add_reserve(
-        &mut test,
-        &lending_market,
-        &usdc_oracle,
-        &user_accounts_owner,
-        AddReserveArgs {
-            borrow_amount: USDC_BORROW_AMOUNT_FRACTIONAL,
-            liquidity_amount: USDC_BORROW_AMOUNT_FRACTIONAL,
-            liquidity_mint_pubkey: usdc_mint.pubkey,
-            liquidity_mint_decimals: usdc_mint.decimals,
-            config: reserve_config,
-            mark_fresh: true,
-            ..AddReserveArgs::default()
-        },
-    );
-
-    let test_obligation = add_obligation(
-        &mut test,
-        &lending_market,
-        &user_accounts_owner,
-        AddObligationArgs {
-            deposits: &[(&sol_test_reserve, SOL_DEPOSIT_AMOUNT_LAMPORTS)],
-            borrows: &[(&usdc_test_reserve, USDC_BORROW_AMOUNT_FRACTIONAL)],
-            ..AddObligationArgs::default()
-        },
-    );
-
-    let test_collateral = &test_obligation.deposits[0];
-    let test_liquidity = &test_obligation.borrows[0];
-
-    let (mut banks_client, payer, recent_blockhash) = test.start().await;
-
-    test_obligation.validate_state(&mut banks_client).await;
-    test_collateral.validate_state(&mut banks_client).await;
-    test_liquidity.validate_state(&mut banks_client).await;
-
-    let initial_collateral_supply_balance =
-        get_token_balance(&mut banks_client, sol_test_reserve.collateral_supply_pubkey).await;
-    let initial_user_collateral_balance =
-        get_token_balance(&mut banks_client, sol_test_reserve.user_collateral_pubkey).await;
-
-    let mut transaction = Transaction::new_with_payer(
         &[
-            refresh_obligation(
-                solend_program::id(),
-                test_obligation.pubkey,
-                vec![sol_test_reserve.pubkey, usdc_test_reserve.pubkey],
-            ),
-            withdraw_obligation_collateral(
-                solend_program::id(),
-                WITHDRAW_AMOUNT,
-                sol_test_reserve.collateral_supply_pubkey,
-                sol_test_reserve.user_collateral_pubkey,
-                sol_test_reserve.pubkey,
-                test_obligation.pubkey,
-                lending_market.pubkey,
-                test_obligation.owner,
-            ),
+            (&wsol_mint::id(), 5 * LAMPORTS_PER_SOL),
+            (&wsol_reserve.account.collateral.mint_pubkey, 0),
         ],
-        Some(&payer.pubkey()),
-    );
+    )
+    .await;
 
-    transaction.sign(&[&payer, &user_accounts_owner], recent_blockhash);
-    assert!(banks_client.process_transaction(transaction).await.is_ok());
+    // deposit 5SOL. wSOL reserve now has 6 SOL.
+    lending_market
+        .deposit(
+            &mut test,
+            &wsol_reserve,
+            &wsol_depositor,
+            5 * LAMPORTS_PER_SOL,
+        )
+        .await
+        .unwrap();
 
-    // check that collateral tokens were transferred
-    let collateral_supply_balance =
-        get_token_balance(&mut banks_client, sol_test_reserve.collateral_supply_pubkey).await;
-    assert_eq!(
-        collateral_supply_balance,
-        initial_collateral_supply_balance - WITHDRAW_AMOUNT
-    );
-    let user_collateral_balance =
-        get_token_balance(&mut banks_client, sol_test_reserve.user_collateral_pubkey).await;
-    assert_eq!(
-        user_collateral_balance,
-        initial_user_collateral_balance + WITHDRAW_AMOUNT
-    );
+    // borrow 6 SOL against 100k cUSDC.
+    let obligation = test.load_account::<Obligation>(obligation.pubkey).await;
+    lending_market
+        .borrow_obligation_liquidity(
+            &mut test,
+            &wsol_reserve,
+            &obligation,
+            &user,
+            &lending_market_owner.get_account(&wsol_mint::id()).unwrap(),
+            u64::MAX,
+        )
+        .await
+        .unwrap();
 
-    let obligation = test_obligation.get_state(&mut banks_client).await;
-    let collateral = &obligation.deposits[0];
+    // populate market price correctly
+    lending_market
+        .refresh_reserve(&mut test, &wsol_reserve)
+        .await
+        .unwrap();
+
+    // populate deposit value correctly.
+    let obligation = test.load_account::<Obligation>(obligation.pubkey).await;
+    lending_market
+        .refresh_obligation(&mut test, &obligation)
+        .await
+        .unwrap();
+
+    let lending_market = test.load_account(lending_market.pubkey).await;
+    let usdc_reserve = test.load_account(usdc_reserve.pubkey).await;
+    let wsol_reserve = test.load_account(wsol_reserve.pubkey).await;
+    let obligation = test.load_account::<Obligation>(obligation.pubkey).await;
+
+    (
+        test,
+        lending_market,
+        usdc_reserve,
+        wsol_reserve,
+        user,
+        obligation,
+    )
+}
+
+#[tokio::test]
+async fn test_success_withdraw_fixed_amount() {
+    let (mut test, lending_market, usdc_reserve, wsol_reserve, user, obligation) = setup().await;
+
+    let balance_checker =
+        BalanceChecker::start(&mut test, &[&usdc_reserve, &user, &wsol_reserve]).await;
+
+    lending_market
+        .withdraw_obligation_collateral(&mut test, &usdc_reserve, &obligation, &user, 1_000_000)
+        .await
+        .unwrap();
+
+    let balance_changes = balance_checker.find_balance_changes(&mut test).await;
+    let expected_balance_changes = HashSet::from([
+        BalanceChange {
+            token_account: user
+                .get_account(&usdc_reserve.account.collateral.mint_pubkey)
+                .unwrap(),
+            mint: usdc_reserve.account.collateral.mint_pubkey,
+            diff: 1_000_000,
+        },
+        BalanceChange {
+            token_account: usdc_reserve.account.collateral.supply_pubkey,
+            mint: usdc_reserve.account.collateral.mint_pubkey,
+            diff: -1_000_000,
+        },
+    ]);
+    assert_eq!(balance_changes, expected_balance_changes);
+
+    let usdc_reserve_post = test.load_account::<Reserve>(usdc_reserve.pubkey).await;
+    assert_eq!(usdc_reserve_post.account, usdc_reserve.account);
+
+    let obligation_post = test.load_account::<Obligation>(obligation.pubkey).await;
     assert_eq!(
-        collateral.deposited_amount,
-        SOL_DEPOSIT_AMOUNT_LAMPORTS - WITHDRAW_AMOUNT
+        obligation_post.account,
+        Obligation {
+            last_update: LastUpdate {
+                slot: 1000,
+                stale: true
+            },
+            deposits: [ObligationCollateral {
+                deposit_reserve: usdc_reserve.pubkey,
+                deposited_amount: 100_000_000_000 - 1_000_000,
+                ..obligation.account.deposits[0]
+            }]
+            .to_vec(),
+            ..obligation.account
+        }
     );
 }
 
 #[tokio::test]
-async fn test_withdraw_max_amount() {
-    let mut test = ProgramTest::new(
-        "solend_program",
-        solend_program::id(),
-        processor!(process_instruction),
-    );
+async fn test_success_withdraw_max() {
+    let (mut test, lending_market, usdc_reserve, wsol_reserve, user, obligation) = setup().await;
 
-    // limit to track compute unit increase
-    test.set_compute_max_units(33_000);
+    let balance_checker =
+        BalanceChecker::start(&mut test, &[&usdc_reserve, &user, &wsol_reserve]).await;
 
-    const USDC_DEPOSIT_AMOUNT_FRACTIONAL: u64 =
-        1_000 * FRACTIONAL_TO_USDC * INITIAL_COLLATERAL_RATIO;
-    const USDC_RESERVE_COLLATERAL_FRACTIONAL: u64 = 2 * USDC_DEPOSIT_AMOUNT_FRACTIONAL;
-    const WITHDRAW_AMOUNT: u64 = u64::MAX;
+    lending_market
+        .withdraw_obligation_collateral(&mut test, &usdc_reserve, &obligation, &user, u64::MAX)
+        .await
+        .unwrap();
 
-    let user_accounts_owner = Keypair::new();
-    let lending_market = add_lending_market(&mut test);
-
-    let mut reserve_config = test_reserve_config();
-    reserve_config.loan_to_value_ratio = 50;
-
-    let usdc_mint = add_usdc_mint(&mut test);
-    let usdc_oracle = add_usdc_oracle(&mut test);
-    let usdc_test_reserve = add_reserve(
-        &mut test,
-        &lending_market,
-        &usdc_oracle,
-        &user_accounts_owner,
-        AddReserveArgs {
-            collateral_amount: USDC_RESERVE_COLLATERAL_FRACTIONAL,
-            liquidity_mint_pubkey: usdc_mint.pubkey,
-            liquidity_mint_decimals: usdc_mint.decimals,
-            config: reserve_config,
-            mark_fresh: true,
-            ..AddReserveArgs::default()
+    // we are borrowing 6 SOL @ $10 with an ltv of 0.5, so the debt has to be collateralized by
+    // exactly 120cUSDC.
+    let balance_changes = balance_checker.find_balance_changes(&mut test).await;
+    let expected_balance_changes = HashSet::from([
+        BalanceChange {
+            token_account: user
+                .get_account(&usdc_reserve.account.collateral.mint_pubkey)
+                .unwrap(),
+            mint: usdc_reserve.account.collateral.mint_pubkey,
+            diff: 100_000_000_000 - 120_000_000,
         },
-    );
-
-    let test_obligation = add_obligation(
-        &mut test,
-        &lending_market,
-        &user_accounts_owner,
-        AddObligationArgs {
-            deposits: &[(&usdc_test_reserve, USDC_DEPOSIT_AMOUNT_FRACTIONAL)],
-            ..AddObligationArgs::default()
+        BalanceChange {
+            token_account: usdc_reserve.account.collateral.supply_pubkey,
+            mint: usdc_reserve.account.collateral.mint_pubkey,
+            diff: -(100_000_000_000 - 120_000_000),
         },
-    );
+    ]);
+    assert_eq!(balance_changes, expected_balance_changes);
 
-    let test_collateral = &test_obligation.deposits[0];
+    let usdc_reserve_post = test.load_account::<Reserve>(usdc_reserve.pubkey).await;
+    assert_eq!(usdc_reserve_post.account, usdc_reserve.account);
 
-    let (mut banks_client, payer, recent_blockhash) = test.start().await;
-
-    test_obligation.validate_state(&mut banks_client).await;
-    test_collateral.validate_state(&mut banks_client).await;
-
-    let initial_collateral_supply_balance = get_token_balance(
-        &mut banks_client,
-        usdc_test_reserve.collateral_supply_pubkey,
-    )
-    .await;
-    let initial_user_collateral_balance =
-        get_token_balance(&mut banks_client, usdc_test_reserve.user_collateral_pubkey).await;
-
-    let mut transaction = Transaction::new_with_payer(
-        &[
-            refresh_obligation(
-                solend_program::id(),
-                test_obligation.pubkey,
-                vec![usdc_test_reserve.pubkey],
-            ),
-            withdraw_obligation_collateral(
-                solend_program::id(),
-                WITHDRAW_AMOUNT,
-                usdc_test_reserve.collateral_supply_pubkey,
-                usdc_test_reserve.user_collateral_pubkey,
-                usdc_test_reserve.pubkey,
-                test_obligation.pubkey,
-                lending_market.pubkey,
-                test_obligation.owner,
-            ),
-        ],
-        Some(&payer.pubkey()),
-    );
-
-    transaction.sign(&[&payer, &user_accounts_owner], recent_blockhash);
-    assert!(banks_client.process_transaction(transaction).await.is_ok());
-
-    // check that collateral tokens were transferred
-    let collateral_supply_balance = get_token_balance(
-        &mut banks_client,
-        usdc_test_reserve.collateral_supply_pubkey,
-    )
-    .await;
+    let obligation_post = test.load_account::<Obligation>(obligation.pubkey).await;
     assert_eq!(
-        collateral_supply_balance,
-        initial_collateral_supply_balance - USDC_DEPOSIT_AMOUNT_FRACTIONAL
+        obligation_post.account,
+        Obligation {
+            last_update: LastUpdate {
+                slot: 1000,
+                stale: true
+            },
+            deposits: [ObligationCollateral {
+                deposit_reserve: usdc_reserve.pubkey,
+                deposited_amount: 120_000_000,
+                ..obligation.account.deposits[0]
+            }]
+            .to_vec(),
+            ..obligation.account
+        }
     );
-    let user_collateral_balance =
-        get_token_balance(&mut banks_client, usdc_test_reserve.user_collateral_pubkey).await;
-    assert_eq!(
-        user_collateral_balance,
-        initial_user_collateral_balance + USDC_DEPOSIT_AMOUNT_FRACTIONAL
-    );
-
-    let obligation = test_obligation.get_state(&mut banks_client).await;
-    assert_eq!(obligation.deposits.len(), 0);
 }
 
 #[tokio::test]
-async fn test_withdraw_too_large() {
-    let mut test = ProgramTest::new(
-        "solend_program",
-        solend_program::id(),
-        processor!(process_instruction),
-    );
+async fn test_fail_withdraw_too_much() {
+    let (mut test, lending_market, usdc_reserve, _wsol_reserve, user, obligation) = setup().await;
 
-    const SOL_DEPOSIT_AMOUNT_LAMPORTS: u64 = 200 * LAMPORTS_TO_SOL * INITIAL_COLLATERAL_RATIO;
-    const USDC_BORROW_AMOUNT_FRACTIONAL: u64 = 1_000 * FRACTIONAL_TO_USDC;
-    const SOL_RESERVE_COLLATERAL_LAMPORTS: u64 = 2 * SOL_DEPOSIT_AMOUNT_LAMPORTS;
-    const WITHDRAW_AMOUNT: u64 = (100 * LAMPORTS_TO_SOL * INITIAL_COLLATERAL_RATIO) + 1;
+    let res = lending_market
+        .withdraw_obligation_collateral(
+            &mut test,
+            &usdc_reserve,
+            &obligation,
+            &user,
+            100_000_000_000 - 120_000_000 + 1,
+        )
+        .await
+        .err()
+        .unwrap()
+        .unwrap();
 
-    let user_accounts_owner = Keypair::new();
-    let lending_market = add_lending_market(&mut test);
-
-    let mut reserve_config = test_reserve_config();
-    reserve_config.loan_to_value_ratio = 50;
-
-    let sol_oracle = add_sol_oracle(&mut test);
-    let sol_test_reserve = add_reserve(
-        &mut test,
-        &lending_market,
-        &sol_oracle,
-        &user_accounts_owner,
-        AddReserveArgs {
-            collateral_amount: SOL_RESERVE_COLLATERAL_LAMPORTS,
-            liquidity_mint_pubkey: spl_token::native_mint::id(),
-            liquidity_mint_decimals: 9,
-            config: reserve_config,
-            mark_fresh: true,
-            ..AddReserveArgs::default()
-        },
-    );
-
-    let usdc_mint = add_usdc_mint(&mut test);
-    let usdc_oracle = add_usdc_oracle(&mut test);
-    let usdc_test_reserve = add_reserve(
-        &mut test,
-        &lending_market,
-        &usdc_oracle,
-        &user_accounts_owner,
-        AddReserveArgs {
-            borrow_amount: USDC_BORROW_AMOUNT_FRACTIONAL,
-            liquidity_amount: USDC_BORROW_AMOUNT_FRACTIONAL,
-            liquidity_mint_pubkey: usdc_mint.pubkey,
-            liquidity_mint_decimals: usdc_mint.decimals,
-            config: reserve_config,
-            mark_fresh: true,
-            ..AddReserveArgs::default()
-        },
-    );
-
-    let test_obligation = add_obligation(
-        &mut test,
-        &lending_market,
-        &user_accounts_owner,
-        AddObligationArgs {
-            deposits: &[(&sol_test_reserve, SOL_DEPOSIT_AMOUNT_LAMPORTS)],
-            borrows: &[(&usdc_test_reserve, USDC_BORROW_AMOUNT_FRACTIONAL)],
-            ..AddObligationArgs::default()
-        },
-    );
-
-    let (mut banks_client, payer, recent_blockhash) = test.start().await;
-
-    let mut transaction = Transaction::new_with_payer(
-        &[
-            refresh_obligation(
-                solend_program::id(),
-                test_obligation.pubkey,
-                vec![sol_test_reserve.pubkey, usdc_test_reserve.pubkey],
-            ),
-            withdraw_obligation_collateral(
-                solend_program::id(),
-                WITHDRAW_AMOUNT,
-                sol_test_reserve.collateral_supply_pubkey,
-                sol_test_reserve.user_collateral_pubkey,
-                sol_test_reserve.pubkey,
-                test_obligation.pubkey,
-                lending_market.pubkey,
-                test_obligation.owner,
-            ),
-        ],
-        Some(&payer.pubkey()),
-    );
-
-    transaction.sign(&[&payer, &user_accounts_owner], recent_blockhash);
-
-    // check that transaction fails
     assert_eq!(
-        banks_client
-            .process_transaction(transaction)
-            .await
-            .unwrap_err()
-            .unwrap(),
+        res,
         TransactionError::InstructionError(
-            1,
+            3,
             InstructionError::Custom(LendingError::WithdrawTooLarge as u32)
         )
     );
 }
+

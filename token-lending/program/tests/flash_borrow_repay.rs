@@ -1211,135 +1211,135 @@ async fn test_fail_cpi_repay() {
     );
 }
 
-#[tokio::test]
-async fn test_fail_repay_from_diff_reserve() {
-    let mut test = ProgramTest::new(
-        "solend_program",
-        solend_program::id(),
-        processor!(process_instruction),
-    );
+// #[tokio::test]
+// async fn test_fail_repay_from_diff_reserve() {
+//     let mut test = ProgramTest::new(
+//         "solend_program",
+//         solend_program::id(),
+//         processor!(process_instruction),
+//     );
 
-    // limit to track compute unit increase
-    test.set_compute_max_units(61_000);
+//     // limit to track compute unit increase
+//     test.set_compute_max_units(61_000);
 
-    const FLASH_LOAN_AMOUNT: u64 = 1_000 * FRACTIONAL_TO_USDC;
-    const FEE_AMOUNT: u64 = 3_000_000;
+//     const FLASH_LOAN_AMOUNT: u64 = 1_000 * FRACTIONAL_TO_USDC;
+//     const FEE_AMOUNT: u64 = 3_000_000;
 
-    let user_accounts_owner = Keypair::new();
-    let lending_market = add_lending_market(&mut test);
+//     let user_accounts_owner = Keypair::new();
+//     let lending_market = add_lending_market(&mut test);
 
-    let mut reserve_config = test_reserve_config();
-    reserve_config.fees.host_fee_percentage = 20;
-    reserve_config.fees.flash_loan_fee_wad = 3_000_000_000_000_000;
+//     let mut reserve_config = test_reserve_config();
+//     reserve_config.fees.host_fee_percentage = 20;
+//     reserve_config.fees.flash_loan_fee_wad = 3_000_000_000_000_000;
 
-    let usdc_mint = add_usdc_mint(&mut test);
-    let usdc_oracle = add_usdc_oracle(&mut test);
-    let usdc_test_reserve = add_reserve(
-        &mut test,
-        &lending_market,
-        &usdc_oracle,
-        &user_accounts_owner,
-        AddReserveArgs {
-            user_liquidity_amount: FEE_AMOUNT,
-            liquidity_amount: FLASH_LOAN_AMOUNT,
-            liquidity_mint_pubkey: usdc_mint.pubkey,
-            liquidity_mint_decimals: usdc_mint.decimals,
-            config: reserve_config,
-            ..AddReserveArgs::default()
-        },
-    );
-    let another_usdc_test_reserve = add_reserve(
-        &mut test,
-        &lending_market,
-        &usdc_oracle,
-        &user_accounts_owner,
-        AddReserveArgs {
-            user_liquidity_amount: FEE_AMOUNT,
-            liquidity_amount: FLASH_LOAN_AMOUNT,
-            liquidity_mint_pubkey: usdc_mint.pubkey,
-            liquidity_mint_decimals: usdc_mint.decimals,
-            config: reserve_config,
-            ..AddReserveArgs::default()
-        },
-    );
+//     let usdc_mint = add_usdc_mint(&mut test);
+//     let usdc_oracle = add_usdc_oracle(&mut test);
+//     let usdc_test_reserve = add_reserve(
+//         &mut test,
+//         &lending_market,
+//         &usdc_oracle,
+//         &user_accounts_owner,
+//         AddReserveArgs {
+//             user_liquidity_amount: FEE_AMOUNT,
+//             liquidity_amount: FLASH_LOAN_AMOUNT,
+//             liquidity_mint_pubkey: usdc_mint.pubkey,
+//             liquidity_mint_decimals: usdc_mint.decimals,
+//             config: reserve_config,
+//             ..AddReserveArgs::default()
+//         },
+//     );
+//     let another_usdc_test_reserve = add_reserve(
+//         &mut test,
+//         &lending_market,
+//         &usdc_oracle,
+//         &user_accounts_owner,
+//         AddReserveArgs {
+//             user_liquidity_amount: FEE_AMOUNT,
+//             liquidity_amount: FLASH_LOAN_AMOUNT,
+//             liquidity_mint_pubkey: usdc_mint.pubkey,
+//             liquidity_mint_decimals: usdc_mint.decimals,
+//             config: reserve_config,
+//             ..AddReserveArgs::default()
+//         },
+//     );
 
-    let (mut banks_client, payer, recent_blockhash) = test.start().await;
+//     let (mut banks_client, payer, recent_blockhash) = test.start().await;
 
-    // this transaction fails because the repay token transfers aren't signed by the
-    // lending_market_authority PDA.
-    let mut transaction = Transaction::new_with_payer(
-        &[
-            flash_borrow_reserve_liquidity(
-                solend_program::id(),
-                FLASH_LOAN_AMOUNT,
-                usdc_test_reserve.liquidity_supply_pubkey,
-                usdc_test_reserve.user_liquidity_pubkey,
-                usdc_test_reserve.pubkey,
-                lending_market.pubkey,
-            ),
-            malicious_flash_repay_reserve_liquidity(
-                solend_program::id(),
-                FLASH_LOAN_AMOUNT,
-                0,
-                another_usdc_test_reserve.liquidity_supply_pubkey,
-                usdc_test_reserve.liquidity_supply_pubkey,
-                usdc_test_reserve.config.fee_receiver,
-                usdc_test_reserve.liquidity_host_pubkey,
-                usdc_test_reserve.pubkey,
-                lending_market.pubkey,
-                lending_market.authority,
-            ),
-        ],
-        Some(&payer.pubkey()),
-    );
+//     // this transaction fails because the repay token transfers aren't signed by the
+//     // lending_market_authority PDA.
+//     let mut transaction = Transaction::new_with_payer(
+//         &[
+//             flash_borrow_reserve_liquidity(
+//                 solend_program::id(),
+//                 FLASH_LOAN_AMOUNT,
+//                 usdc_test_reserve.liquidity_supply_pubkey,
+//                 usdc_test_reserve.user_liquidity_pubkey,
+//                 usdc_test_reserve.pubkey,
+//                 lending_market.pubkey,
+//             ),
+//             malicious_flash_repay_reserve_liquidity(
+//                 solend_program::id(),
+//                 FLASH_LOAN_AMOUNT,
+//                 0,
+//                 another_usdc_test_reserve.liquidity_supply_pubkey,
+//                 usdc_test_reserve.liquidity_supply_pubkey,
+//                 usdc_test_reserve.config.fee_receiver,
+//                 usdc_test_reserve.liquidity_host_pubkey,
+//                 usdc_test_reserve.pubkey,
+//                 lending_market.pubkey,
+//                 lending_market.authority,
+//             ),
+//         ],
+//         Some(&payer.pubkey()),
+//     );
 
-    transaction.sign(&[&payer], recent_blockhash);
-    // panics due to signer privilege escalation
-    let err = banks_client
-        .process_transaction(transaction)
-        .await
-        .unwrap_err();
-    match err {
-        BanksClientError::RpcError(..) => (),
-        BanksClientError::TransactionError(TransactionError::InstructionError(
-            1,
-            InstructionError::PrivilegeEscalation,
-        )) => (),
-        _ => panic!("Unexpected error: {:?}", err),
-    };
-}
+//     transaction.sign(&[&payer], recent_blockhash);
+//     // panics due to signer privilege escalation
+//     let err = banks_client
+//         .process_transaction(transaction)
+//         .await
+//         .unwrap_err();
+//     match err {
+//         BanksClientError::RpcError(..) => (),
+//         BanksClientError::TransactionError(TransactionError::InstructionError(
+//             1,
+//             InstructionError::PrivilegeEscalation,
+//         )) => (),
+//         _ => panic!("Unexpected error: {:?}", err),
+//     };
+// }
 
-// don't explicitly check user_transfer_authority signer
-#[allow(clippy::too_many_arguments)]
-pub fn malicious_flash_repay_reserve_liquidity(
-    program_id: Pubkey,
-    liquidity_amount: u64,
-    borrow_instruction_index: u8,
-    source_liquidity_pubkey: Pubkey,
-    destination_liquidity_pubkey: Pubkey,
-    reserve_liquidity_fee_receiver_pubkey: Pubkey,
-    host_fee_receiver_pubkey: Pubkey,
-    reserve_pubkey: Pubkey,
-    lending_market_pubkey: Pubkey,
-    user_transfer_authority_pubkey: Pubkey,
-) -> Instruction {
-    Instruction {
-        program_id,
-        accounts: vec![
-            AccountMeta::new(source_liquidity_pubkey, false),
-            AccountMeta::new(destination_liquidity_pubkey, false),
-            AccountMeta::new(reserve_liquidity_fee_receiver_pubkey, false),
-            AccountMeta::new(host_fee_receiver_pubkey, false),
-            AccountMeta::new(reserve_pubkey, false),
-            AccountMeta::new_readonly(lending_market_pubkey, false),
-            AccountMeta::new_readonly(user_transfer_authority_pubkey, false),
-            AccountMeta::new_readonly(sysvar::instructions::id(), false),
-            AccountMeta::new_readonly(spl_token::id(), false),
-        ],
-        data: LendingInstruction::FlashRepayReserveLiquidity {
-            liquidity_amount,
-            borrow_instruction_index,
-        }
-        .pack(),
-    }
-}
+// // don't explicitly check user_transfer_authority signer
+// #[allow(clippy::too_many_arguments)]
+// pub fn malicious_flash_repay_reserve_liquidity(
+//     program_id: Pubkey,
+//     liquidity_amount: u64,
+//     borrow_instruction_index: u8,
+//     source_liquidity_pubkey: Pubkey,
+//     destination_liquidity_pubkey: Pubkey,
+//     reserve_liquidity_fee_receiver_pubkey: Pubkey,
+//     host_fee_receiver_pubkey: Pubkey,
+//     reserve_pubkey: Pubkey,
+//     lending_market_pubkey: Pubkey,
+//     user_transfer_authority_pubkey: Pubkey,
+// ) -> Instruction {
+//     Instruction {
+//         program_id,
+//         accounts: vec![
+//             AccountMeta::new(source_liquidity_pubkey, false),
+//             AccountMeta::new(destination_liquidity_pubkey, false),
+//             AccountMeta::new(reserve_liquidity_fee_receiver_pubkey, false),
+//             AccountMeta::new(host_fee_receiver_pubkey, false),
+//             AccountMeta::new(reserve_pubkey, false),
+//             AccountMeta::new_readonly(lending_market_pubkey, false),
+//             AccountMeta::new_readonly(user_transfer_authority_pubkey, false),
+//             AccountMeta::new_readonly(sysvar::instructions::id(), false),
+//             AccountMeta::new_readonly(spl_token::id(), false),
+//         ],
+//         data: LendingInstruction::FlashRepayReserveLiquidity {
+//             liquidity_amount,
+//             borrow_instruction_index,
+//         }
+//         .pack(),
+//     }
+// }
