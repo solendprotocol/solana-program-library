@@ -19,7 +19,7 @@ use solana_sdk::{
 use solend_program::{
     instruction::{
         deposit_obligation_collateral, deposit_reserve_liquidity, init_lending_market,
-        init_reserve, redeem_reserve_collateral,
+        init_reserve, redeem_reserve_collateral, repay_obligation_liquidity,
     },
     processor::process_instruction,
     state::{LendingMarket, Reserve, ReserveConfig},
@@ -432,6 +432,16 @@ impl User {
         })
     }
 
+    pub async fn get_balance(&self, test: &mut SolendProgramTest, mint: &Pubkey) -> Option<u64> {
+        match self.get_account(mint).await {
+            None => None,
+            Some(pubkey) => {
+                let token_account = test.load_account::<Token>(pubkey).await;
+                Some(token_account.account.amount)
+            }
+        }
+    }
+
     pub async fn create_token_account(
         &mut self,
         mint: &Pubkey,
@@ -722,6 +732,31 @@ impl Info<LendingMarket> {
         test.process_transaction(&instructions, Some(&[&user.keypair]))
             .await
     }
+
+    pub async fn repay_obligation_liquidity(
+        &self,
+        test: &mut SolendProgramTest,
+        repay_reserve: &Info<Reserve>,
+        obligation: &Info<Obligation>,
+        user: &User,
+        liquidity_amount: u64,
+    ) -> Result<(), BanksClientError> {
+        let instructions = [repay_obligation_liquidity(
+            solend_program::id(),
+            liquidity_amount,
+            user.get_account(&repay_reserve.account.liquidity.mint_pubkey)
+                .await
+                .unwrap(),
+            repay_reserve.account.liquidity.supply_pubkey,
+            repay_reserve.pubkey,
+            obligation.pubkey,
+            self.pubkey,
+            user.keypair.pubkey(),
+        )];
+
+        test.process_transaction(&instructions, Some(&[&user.keypair]))
+            .await
+    }
 }
 
 /// Track token balance changes across transactions.
@@ -794,7 +829,10 @@ impl GetTokenAccounts for Info<Reserve> {
     }
 }
 
-pub async fn setup_world(usdc_reserve_config: &ReserveConfig, wsol_reserve_config: &ReserveConfig) -> (
+pub async fn setup_world(
+    usdc_reserve_config: &ReserveConfig,
+    wsol_reserve_config: &ReserveConfig,
+) -> (
     SolendProgramTest,
     Info<LendingMarket>,
     Info<Reserve>,

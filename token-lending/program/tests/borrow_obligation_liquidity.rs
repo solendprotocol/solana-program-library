@@ -11,13 +11,9 @@ use helpers::{test_reserve_config, wsol_mint};
 use solana_program::native_token::LAMPORTS_PER_SOL;
 use solana_program_test::*;
 use solana_sdk::{
-    instruction::InstructionError,
-    signature::{Keypair, Signer},
-    transaction::{TransactionError},
+    instruction::InstructionError, signature::Keypair, transaction::TransactionError,
 };
-use solend_program::state::{
-    LastUpdate, ObligationLiquidity, ReserveConfig, ReserveLiquidity,
-};
+use solend_program::state::{LastUpdate, ObligationLiquidity, ReserveConfig, ReserveLiquidity};
 use solend_program::{
     error::LendingError,
     math::Decimal,

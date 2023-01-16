@@ -7,7 +7,7 @@ use std::collections::HashSet;
 use helpers::solend_program_test::{
     setup_world, BalanceChange, BalanceChecker, Info, SolendProgramTest, User,
 };
-use helpers::{test_reserve_config};
+use helpers::test_reserve_config;
 
 use solana_program::instruction::InstructionError;
 use solana_program_test::*;
@@ -23,7 +23,8 @@ async fn setup() -> (
     User,
     Info<Obligation>,
 ) {
-    let (mut test, lending_market, usdc_reserve, _, _, user) = setup_world(&test_reserve_config(), &test_reserve_config()).await;
+    let (mut test, lending_market, usdc_reserve, _, _, user) =
+        setup_world(&test_reserve_config(), &test_reserve_config()).await;
 
     let obligation = lending_market
         .init_obligation(&mut test, Keypair::new(), &user)
