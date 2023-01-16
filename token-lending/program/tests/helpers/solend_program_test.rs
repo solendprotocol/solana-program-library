@@ -362,7 +362,7 @@ impl SolendProgramTest {
                         fee_receiver: reserve_liquidity_fee_receiver,
                         ..*reserve_config
                     },
-                    lending_market_owner.get_account(mint).await.unwrap(),
+                    lending_market_owner.get_account(mint).unwrap(),
                     destination_collateral_pubkey,
                     reserve_pubkey,
                     *mint,
@@ -422,7 +422,7 @@ impl User {
         user
     }
 
-    pub async fn get_account(&self, mint: &Pubkey) -> Option<Pubkey> {
+    pub fn get_account(&self, mint: &Pubkey) -> Option<Pubkey> {
         self.token_accounts.iter().find_map(|ta| {
             if ta.account.mint == *mint {
                 Some(ta.pubkey)
@@ -433,7 +433,7 @@ impl User {
     }
 
     pub async fn get_balance(&self, test: &mut SolendProgramTest, mint: &Pubkey) -> Option<u64> {
-        match self.get_account(mint).await {
+        match self.get_account(mint) {
             None => None,
             Some(pubkey) => {
                 let token_account = test.load_account::<Token>(pubkey).await;
@@ -475,7 +475,7 @@ impl User {
     ) {
         let instruction = [spl_token::instruction::transfer(
             &spl_token::id(),
-            &self.get_account(mint).await.unwrap(),
+            &self.get_account(mint).unwrap(),
             &destination_pubkey,
             &self.keypair.pubkey(),
             &[],
@@ -507,10 +507,8 @@ impl Info<LendingMarket> {
             solend_program::id(),
             liquidity_amount,
             user.get_account(&reserve.account.liquidity.mint_pubkey)
-                .await
                 .unwrap(),
             user.get_account(&reserve.account.collateral.mint_pubkey)
-                .await
                 .unwrap(),
             reserve.pubkey,
             reserve.account.liquidity.supply_pubkey,
@@ -534,10 +532,8 @@ impl Info<LendingMarket> {
             solend_program::id(),
             collateral_amount,
             user.get_account(&reserve.account.collateral.mint_pubkey)
-                .await
                 .unwrap(),
             user.get_account(&reserve.account.liquidity.mint_pubkey)
-                .await
                 .unwrap(),
             reserve.pubkey,
             reserve.account.collateral.mint_pubkey,
@@ -595,7 +591,6 @@ impl Info<LendingMarket> {
             solend_program::id(),
             collateral_amount,
             user.get_account(&reserve.account.collateral.mint_pubkey)
-                .await
                 .unwrap(),
             reserve.account.collateral.supply_pubkey,
             reserve.pubkey,
@@ -719,7 +714,6 @@ impl Info<LendingMarket> {
             liquidity_amount,
             borrow_reserve.account.liquidity.supply_pubkey,
             user.get_account(&borrow_reserve.account.liquidity.mint_pubkey)
-                .await
                 .unwrap(),
             borrow_reserve.pubkey,
             borrow_reserve.account.config.fee_receiver,
@@ -745,7 +739,6 @@ impl Info<LendingMarket> {
             solend_program::id(),
             liquidity_amount,
             user.get_account(&repay_reserve.account.liquidity.mint_pubkey)
-                .await
                 .unwrap(),
             repay_reserve.account.liquidity.supply_pubkey,
             repay_reserve.pubkey,

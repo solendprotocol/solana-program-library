@@ -117,10 +117,7 @@ async fn test_success() {
             &wsol_reserve,
             &obligation,
             &user,
-            &host_fee_receiver
-                .get_account(&wsol_mint::id())
-                .await
-                .unwrap(),
+            &host_fee_receiver.get_account(&wsol_mint::id()).unwrap(),
             4 * LAMPORTS_PER_SOL,
         )
         .await
@@ -136,7 +133,7 @@ async fn test_success() {
             diff: -((4 * LAMPORTS_PER_SOL + 400) as i128),
         },
         BalanceChange {
-            token_account: user.get_account(&wsol_mint::id()).await.unwrap(),
+            token_account: user.get_account(&wsol_mint::id()).unwrap(),
             mint: wsol_mint::id(),
             diff: (4 * LAMPORTS_PER_SOL) as i128,
         },
@@ -146,10 +143,7 @@ async fn test_success() {
             diff: 320,
         },
         BalanceChange {
-            token_account: host_fee_receiver
-                .get_account(&wsol_mint::id())
-                .await
-                .unwrap(),
+            token_account: host_fee_receiver.get_account(&wsol_mint::id()).unwrap(),
             mint: wsol_mint::id(),
             diff: 80,
         },
@@ -230,10 +224,7 @@ async fn test_borrow_max() {
             &wsol_reserve,
             &obligation,
             &user,
-            &host_fee_receiver
-                .get_account(&wsol_mint::id())
-                .await
-                .unwrap(),
+            &host_fee_receiver.get_account(&wsol_mint::id()).unwrap(),
             u64::MAX,
         )
         .await
@@ -249,7 +240,7 @@ async fn test_borrow_max() {
             diff: -((5 * LAMPORTS_PER_SOL) as i128),
         },
         BalanceChange {
-            token_account: user.get_account(&wsol_mint::id()).await.unwrap(),
+            token_account: user.get_account(&wsol_mint::id()).unwrap(),
             mint: wsol_mint::id(),
             diff: (5 * LAMPORTS_PER_SOL as i128) - 500,
         },
@@ -259,10 +250,7 @@ async fn test_borrow_max() {
             diff: 400,
         },
         BalanceChange {
-            token_account: host_fee_receiver
-                .get_account(&wsol_mint::id())
-                .await
-                .unwrap(),
+            token_account: host_fee_receiver.get_account(&wsol_mint::id()).unwrap(),
             mint: wsol_mint::id(),
             diff: 100,
         },
@@ -290,10 +278,7 @@ async fn test_fail_borrow_over_reserve_borrow_limit() {
             &wsol_reserve,
             &obligation,
             &user,
-            &host_fee_receiver
-                .get_account(&wsol_mint::id())
-                .await
-                .unwrap(),
+            &host_fee_receiver.get_account(&wsol_mint::id()).unwrap(),
             LAMPORTS_PER_SOL + 1,
         )
         .await

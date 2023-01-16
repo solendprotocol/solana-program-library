@@ -100,10 +100,7 @@ async fn setup() -> (
             &wsol_reserve,
             &obligation,
             &user,
-            &lending_market_owner
-                .get_account(&wsol_mint::id())
-                .await
-                .unwrap(),
+            &lending_market_owner.get_account(&wsol_mint::id()).unwrap(),
             u64::MAX,
         )
         .await
@@ -161,7 +158,7 @@ async fn test_success() {
     let balance_changes = balance_checker.find_balance_changes(&mut test).await;
     let expected_balance_changes = HashSet::from([
         BalanceChange {
-            token_account: user.get_account(&wsol_mint::id()).await.unwrap(),
+            token_account: user.get_account(&wsol_mint::id()).unwrap(),
             mint: wsol_mint::id(),
             diff: -(6 * LAMPORTS_PER_SOL as i128),
         },

@@ -58,7 +58,6 @@ async fn test_success() {
         BalanceChange {
             token_account: user
                 .get_account(&usdc_reserve.account.collateral.mint_pubkey)
-                .await
                 .unwrap(),
             mint: usdc_reserve.account.collateral.mint_pubkey,
             diff: -1_000_000,

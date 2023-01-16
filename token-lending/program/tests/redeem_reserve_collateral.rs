@@ -51,14 +51,13 @@ async fn test_success() {
         balance_changes,
         HashSet::from([
             BalanceChange {
-                token_account: user.get_account(&usdc_mint::id()).await.unwrap(),
+                token_account: user.get_account(&usdc_mint::id()).unwrap(),
                 mint: usdc_mint::id(),
                 diff: 1_000_000,
             },
             BalanceChange {
                 token_account: user
                     .get_account(&usdc_reserve.account.collateral.mint_pubkey)
-                    .await
                     .unwrap(),
                 mint: usdc_reserve.account.collateral.mint_pubkey,
                 diff: -1_000_000,
