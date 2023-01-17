@@ -4,7 +4,6 @@ mod helpers;
 
 use helpers::*;
 
-
 use solana_program_test::*;
 use solana_sdk::{
     instruction::InstructionError,
@@ -14,9 +13,7 @@ use solana_sdk::{
 };
 use solend_program::{
     error::LendingError,
-    instruction::{
-        flash_borrow_reserve_liquidity, flash_repay_reserve_liquidity,
-    },
+    instruction::{flash_borrow_reserve_liquidity, flash_repay_reserve_liquidity},
     processor::process_instruction,
 };
 use spl_token::error::TokenError;

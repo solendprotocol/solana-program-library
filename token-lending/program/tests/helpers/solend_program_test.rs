@@ -521,6 +521,37 @@ impl Info<LendingMarket> {
             .await
     }
 
+    pub async fn deposit_reserve_liquidity_and_obligation_collateral(
+        &self,
+        test: &mut SolendProgramTest,
+        reserve: &Info<Reserve>,
+        obligation: &Info<Obligation>,
+        user: &User,
+        liquidity_amount: u64,
+    ) -> Result<(), BanksClientError> {
+        let instructions = [deposit_reserve_liquidity_and_obligation_collateral(
+            solend_program::id(),
+            liquidity_amount,
+            user.get_account(&reserve.account.liquidity.mint_pubkey)
+                .unwrap(),
+            user.get_account(&reserve.account.collateral.mint_pubkey)
+                .unwrap(),
+            reserve.pubkey,
+            reserve.account.liquidity.supply_pubkey,
+            reserve.account.collateral.mint_pubkey,
+            self.pubkey,
+            reserve.account.collateral.supply_pubkey,
+            obligation.pubkey,
+            user.keypair.pubkey(),
+            reserve.account.liquidity.pyth_oracle_pubkey,
+            reserve.account.liquidity.switchboard_oracle_pubkey,
+            user.keypair.pubkey(),
+        )];
+
+        test.process_transaction(&instructions, Some(&[&user.keypair]))
+            .await
+    }
+
     pub async fn redeem(
         &self,
         test: &mut SolendProgramTest,
