@@ -10,7 +10,6 @@ use solana_program::{
     system_instruction, sysvar,
 };
 use solana_sdk::{
-    commitment_config::CommitmentLevel,
     compute_budget::ComputeBudgetInstruction,
     signature::{Keypair, Signer},
     system_instruction::create_account,
@@ -108,7 +107,7 @@ impl SolendProgramTest {
 
         self.context
             .banks_client
-            .process_transaction_with_commitment(transaction, CommitmentLevel::Finalized)
+            .process_transaction(transaction)
             .await
     }
 

@@ -3,8 +3,8 @@
 mod helpers;
 
 use helpers::*;
-use solana_program::instruction::{AccountMeta, Instruction};
-use solana_program::sysvar;
+
+
 use solana_program_test::*;
 use solana_sdk::{
     instruction::InstructionError,
@@ -15,7 +15,7 @@ use solana_sdk::{
 use solend_program::{
     error::LendingError,
     instruction::{
-        flash_borrow_reserve_liquidity, flash_repay_reserve_liquidity, LendingInstruction,
+        flash_borrow_reserve_liquidity, flash_repay_reserve_liquidity,
     },
     processor::process_instruction,
 };

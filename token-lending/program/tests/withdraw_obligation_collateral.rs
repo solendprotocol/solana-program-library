@@ -11,16 +11,14 @@ use solana_program_test::*;
 use solana_sdk::{
     instruction::InstructionError,
     signature::{Keypair, Signer},
-    transaction::{Transaction, TransactionError},
+    transaction::{TransactionError},
 };
 use solend_program::state::{
-    LastUpdate, LendingMarket, Obligation, ObligationCollateral, ObligationLiquidity, Reserve,
-    ReserveConfig, ReserveFees, ReserveLiquidity, SLOTS_PER_YEAR,
+    LastUpdate, LendingMarket, Obligation, ObligationCollateral, Reserve,
+    ReserveConfig, ReserveFees,
 };
 use solend_program::{
     error::LendingError,
-    instruction::{refresh_obligation, withdraw_obligation_collateral},
-    processor::process_instruction,
 };
 use std::collections::HashSet;
 use std::u64;
@@ -268,4 +266,3 @@ async fn test_fail_withdraw_too_much() {
         )
     );
 }
-
