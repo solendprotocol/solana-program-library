@@ -251,36 +251,43 @@ impl SolendProgramTest {
     // security of an instruction (eg what happens if im not the lending market owner but i try to
     // add a reserve anyways).
 
-    pub async fn init_lending_market(&mut self, owner: &User) -> Info<LendingMarket> {
-        let lending_market_key = Keypair::new();
+    pub async fn init_lending_market(
+        &mut self,
+        owner: &User,
+        lending_market_key: &Keypair,
+    ) -> Result<Info<LendingMarket>, BanksClientError> {
         let payer = self.context.payer.pubkey();
         let lamports = Rent::minimum_balance(&self.rent, LendingMarket::LEN);
 
-        self.process_transaction(
-            &[
-                create_account(
-                    &payer,
-                    &lending_market_key.pubkey(),
-                    lamports,
-                    LendingMarket::LEN as u64,
-                    &solend_program::id(),
-                ),
-                init_lending_market(
-                    solend_program::id(),
-                    owner.keypair.pubkey(),
-                    QUOTE_CURRENCY,
-                    lending_market_key.pubkey(),
-                    mock_pyth_program::id(),
-                    mock_pyth_program::id(), // TODO suspicious
-                ),
-            ],
-            Some(&[&lending_market_key]),
-        )
-        .await
-        .unwrap();
+        let res = self
+            .process_transaction(
+                &[
+                    create_account(
+                        &payer,
+                        &lending_market_key.pubkey(),
+                        lamports,
+                        LendingMarket::LEN as u64,
+                        &solend_program::id(),
+                    ),
+                    init_lending_market(
+                        solend_program::id(),
+                        owner.keypair.pubkey(),
+                        QUOTE_CURRENCY,
+                        lending_market_key.pubkey(),
+                        mock_pyth_program::id(),
+                        mock_pyth_program::id(), // TODO suspicious
+                    ),
+                ],
+                Some(&[lending_market_key]),
+            )
+            .await;
 
-        self.load_account::<LendingMarket>(lending_market_key.pubkey())
-            .await
+        match res {
+            Ok(()) => Ok(self
+                .load_account::<LendingMarket>(lending_market_key.pubkey())
+                .await),
+            Err(e) => Err(e),
+        }
     }
 
     pub async fn init_pyth_feed(&mut self, mint: &Pubkey) {
@@ -903,7 +910,10 @@ pub async fn setup_world(
     )
     .await;
 
-    let lending_market = test.init_lending_market(&lending_market_owner).await;
+    let lending_market = test
+        .init_lending_market(&lending_market_owner, &Keypair::new())
+        .await
+        .unwrap();
 
     test.advance_clock_by_slots(999).await;
 
