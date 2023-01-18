@@ -19,7 +19,7 @@ use solend_program::{
     instruction::{
         deposit_obligation_collateral, deposit_reserve_liquidity, init_lending_market,
         init_reserve, redeem_reserve_collateral, repay_obligation_liquidity,
-        withdraw_obligation_collateral,
+        set_lending_market_owner, withdraw_obligation_collateral,
     },
     processor::process_instruction,
     state::{LendingMarket, Reserve, ReserveConfig},
@@ -857,6 +857,23 @@ impl Info<LendingMarket> {
         ));
 
         test.process_transaction(&instructions, Some(&[&user.keypair]))
+            .await
+    }
+
+    pub async fn set_lending_market_owner(
+        &self,
+        test: &mut SolendProgramTest,
+        lending_market_owner: &User,
+        new_owner: &Pubkey,
+    ) -> Result<(), BanksClientError> {
+        let instructions = [set_lending_market_owner(
+            solend_program::id(),
+            self.pubkey,
+            lending_market_owner.keypair.pubkey(),
+            *new_owner,
+        )];
+
+        test.process_transaction(&instructions, Some(&[&lending_market_owner.keypair]))
             .await
     }
 }
