@@ -55,6 +55,11 @@ pub struct Info<T> {
     pub account: T,
 }
 
+pub mod proxy_program {
+    use solana_sdk::declare_id;
+    declare_id!("proGcH2t31EsUC2bCZUqZDJ74V6LAB1DCjeYDLfrGYa");
+}
+
 impl SolendProgramTest {
     pub async fn start_new() -> Self {
         let mut test = ProgramTest::new(
@@ -68,6 +73,12 @@ impl SolendProgramTest {
             "mock_pyth",
             mock_pyth_program::id(),
             processor!(mock_pyth::process_instruction),
+        );
+
+        test.add_program(
+            "flash_loan_proxy",
+            proxy_program::id(),
+            processor!(flash_loan_proxy::process_instruction),
         );
 
         let authority = Keypair::new();
@@ -904,7 +915,7 @@ pub async fn setup_world(
     let lending_market_owner = User::new_with_balances(
         &mut test,
         &[
-            (&usdc_mint::id(), 1_000_000),
+            (&usdc_mint::id(), 2_000_000),
             (&wsol_mint::id(), LAMPORTS_TO_SOL),
         ],
     )
