@@ -800,6 +800,38 @@ impl Info<LendingMarket> {
             .await
     }
 
+    pub async fn liquidate_obligation(
+        &self,
+        test: &mut SolendProgramTest,
+        repay_reserve: &Info<Reserve>,
+        withdraw_reserve: &Info<Reserve>,
+        obligation: &Info<Obligation>,
+        user: &User,
+        liquidity_amount: u64,
+    ) -> Result<(), BanksClientError> {
+        let mut instructions = self
+            .build_refresh_instructions(test, obligation, None)
+            .await;
+
+        instructions.push(liquidate_obligation(
+            solend_program::id(),
+            liquidity_amount,
+            user.get_account(&repay_reserve.account.liquidity.mint_pubkey)
+                .unwrap(),
+            user.get_account(&withdraw_reserve.account.collateral.mint_pubkey)
+                .unwrap(),
+            repay_reserve.pubkey,
+            repay_reserve.account.liquidity.supply_pubkey,
+            withdraw_reserve.pubkey,
+            withdraw_reserve.account.collateral.supply_pubkey,
+            obligation.pubkey,
+            self.pubkey,
+            user.keypair.pubkey(),
+        ));
+
+        test.process_transaction(&instructions, Some(&[&user.keypair]))
+            .await
+    }
     pub async fn withdraw_obligation_collateral(
         &self,
         test: &mut SolendProgramTest,
