@@ -22,8 +22,7 @@ use thiserror::Error;
 use super::{load_mut, QUOTE_CURRENCY};
 
 pub mod mock_pyth_program {
-    use solana_sdk::declare_id;
-    declare_id!("FsJ3A3u2vn5cTVofAjvy6y5kwABJAqYWpe4975bi2epH");
+    solana_program::declare_id!("SW1TCH7qEPTdLsDHRgPuMQjbQxKdH2aBStViMFnt64f");
 }
 
 #[derive(BorshSerialize, BorshDeserialize)]
@@ -129,7 +128,7 @@ impl Processor {
                 Ok(())
             }
             MockPythInstruction::InitSwitchboard => {
-                msg!("Mock Pyth: Set Switchboard price");
+                msg!("Mock Pyth: Init Switchboard");
                 let switchboard_feed = next_account_info(account_info_iter)?;
                 let mut data = switchboard_feed.try_borrow_mut_data()?;
 

@@ -299,17 +299,14 @@ async fn test_update_reserve_config() {
         .await
         .unwrap();
 
-    let oracle = test.mints.get(&wsol_mint::id()).unwrap().unwrap();
-
     let new_reserve_config = test_reserve_config();
-
     lending_market
         .update_reserve_config(
             &mut test,
             &lending_market_owner,
             &wsol_reserve,
             new_reserve_config,
-            &oracle,
+            None,
         )
         .await
         .unwrap();
@@ -351,11 +348,11 @@ async fn test_update_invalid_oracle_config() {
             &lending_market_owner,
             &wsol_reserve,
             new_reserve_config,
-            &Oracle {
+            Some(&Oracle {
                 pyth_product_pubkey: oracle.pyth_product_pubkey,
                 pyth_price_pubkey: NULL_PUBKEY,
                 switchboard_feed_pubkey: Some(NULL_PUBKEY),
-            },
+            }),
         )
         .await
         .unwrap_err()

@@ -393,8 +393,12 @@ impl SolendProgramTest {
         .await
         .unwrap();
 
-        let mut oracle = self.mints.get_mut(mint).unwrap().unwrap();
-        oracle.switchboard_feed_pubkey = Some(switchboard_feed_pubkey);
+        let oracle = self.mints.get_mut(mint).unwrap();
+        if let Some(ref mut oracle) = oracle {
+            oracle.switchboard_feed_pubkey = Some(switchboard_feed_pubkey);
+        } else {
+            panic!("oracle not initialized");
+        }
     }
 
     pub async fn set_switchboard_price(&mut self, mint: &Pubkey, price: PriceArgs) {
@@ -626,8 +630,16 @@ impl Info<LendingMarket> {
         lending_market_owner: &User,
         reserve: &Info<Reserve>,
         config: ReserveConfig,
-        oracle: &Oracle,
+        oracle: Option<&Oracle>,
     ) -> Result<(), BanksClientError> {
+        let default_oracle = test
+            .mints
+            .get(&reserve.account.liquidity.mint_pubkey)
+            .unwrap()
+            .unwrap();
+        let oracle = oracle.unwrap_or(&default_oracle);
+        println!("{:?}", oracle);
+
         let instructions = [update_reserve_config(
             solend_program::id(),
             config,
