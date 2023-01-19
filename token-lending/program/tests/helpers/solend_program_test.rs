@@ -1,4 +1,6 @@
-use super::*;
+use super::mock_pyth::{init_switchboard, set_switchboard_price};
+use crate::helpers::*;
+use solend_sdk::instruction::update_reserve_config;
 
 use pyth_sdk_solana::state::PROD_ACCT_SIZE;
 use solana_program::{
@@ -40,13 +42,14 @@ pub struct SolendProgramTest {
     // authority of all mints
     authority: Keypair,
 
-    mints: HashMap<Pubkey, Option<Oracle>>,
+    pub mints: HashMap<Pubkey, Option<Oracle>>,
 }
 
 #[derive(Debug, Clone, Copy)]
-struct Oracle {
-    pyth_product_pubkey: Pubkey,
-    pyth_price_pubkey: Pubkey,
+pub struct Oracle {
+    pub pyth_product_pubkey: Pubkey,
+    pub pyth_price_pubkey: Pubkey,
+    pub switchboard_feed_pubkey: Option<Pubkey>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -122,6 +125,21 @@ impl SolendProgramTest {
             .await
     }
 
+    pub async fn load_optional_account<T: Pack + IsInitialized>(
+        &mut self,
+        acc_pk: Pubkey,
+    ) -> Info<Option<T>> {
+        self.context
+            .banks_client
+            .get_account(acc_pk)
+            .await
+            .unwrap()
+            .map(|acc| Info {
+                pubkey: acc_pk,
+                account: T::unpack(&acc.data).ok(),
+            })
+            .unwrap()
+    }
     pub async fn load_account<T: Pack + IsInitialized>(&mut self, acc_pk: Pubkey) -> Info<T> {
         let acc = self
             .context
@@ -164,9 +182,19 @@ impl SolendProgramTest {
         self.context.warp_to_slot(clock.slot + slots).unwrap();
     }
 
-    pub async fn create_account(&mut self, size: usize, owner: &Pubkey) -> Pubkey {
-        let keypair = Keypair::new();
+    pub async fn create_account(
+        &mut self,
+        size: usize,
+        owner: &Pubkey,
+        keypair: Option<&Keypair>,
+    ) -> Pubkey {
         let rent = self.rent.minimum_balance(size);
+
+        let new_keypair = Keypair::new();
+        let keypair = match keypair {
+            None => &new_keypair,
+            Some(kp) => kp,
+        };
 
         let instructions = [system_instruction::create_account(
             &self.context.payer.pubkey(),
@@ -176,7 +204,7 @@ impl SolendProgramTest {
             owner,
         )];
 
-        self.process_transaction(&instructions, Some(&[&keypair]))
+        self.process_transaction(&instructions, Some(&[keypair]))
             .await
             .unwrap();
 
@@ -302,9 +330,11 @@ impl SolendProgramTest {
     }
 
     pub async fn init_pyth_feed(&mut self, mint: &Pubkey) {
-        let pyth_price_pubkey = self.create_account(3312, &mock_pyth_program::id()).await;
+        let pyth_price_pubkey = self
+            .create_account(3312, &mock_pyth_program::id(), None)
+            .await;
         let pyth_product_pubkey = self
-            .create_account(PROD_ACCT_SIZE, &mock_pyth_program::id())
+            .create_account(PROD_ACCT_SIZE, &mock_pyth_program::id(), None)
             .await;
 
         self.process_transaction(
@@ -323,6 +353,7 @@ impl SolendProgramTest {
             Some(Oracle {
                 pyth_product_pubkey,
                 pyth_price_pubkey,
+                switchboard_feed_pubkey: None,
             }),
         );
     }
@@ -343,64 +374,114 @@ impl SolendProgramTest {
         .unwrap();
     }
 
+    pub async fn init_switchboard_feed(&mut self, mint: &Pubkey) {
+        let switchboard_feed_pubkey = self
+            .create_account(
+                std::mem::size_of::<AggregatorAccountData>() + 8,
+                &mock_pyth_program::id(),
+                None,
+            )
+            .await;
+
+        self.process_transaction(
+            &[init_switchboard(
+                mock_pyth_program::id(),
+                switchboard_feed_pubkey,
+            )],
+            None,
+        )
+        .await
+        .unwrap();
+
+        let mut oracle = self.mints.get_mut(mint).unwrap().unwrap();
+        oracle.switchboard_feed_pubkey = Some(switchboard_feed_pubkey);
+    }
+
+    pub async fn set_switchboard_price(&mut self, mint: &Pubkey, price: PriceArgs) {
+        let oracle = self.mints.get(mint).unwrap().unwrap();
+        self.process_transaction(
+            &[set_switchboard_price(
+                mock_pyth_program::id(),
+                oracle.switchboard_feed_pubkey.unwrap(),
+                price.price,
+                price.expo,
+            )],
+            None,
+        )
+        .await
+        .unwrap();
+    }
+
     pub async fn init_reserve(
         &mut self,
         lending_market: &Info<LendingMarket>,
         lending_market_owner: &User,
         mint: &Pubkey,
         reserve_config: &ReserveConfig,
+        reserve_keypair: &Keypair,
         liquidity_amount: u64,
-    ) -> Info<Reserve> {
-        // let payer = self.context.payer.pubkey();
-        // let authority = Keypair::from_bytes(&self.authority.to_bytes()).unwrap(); // hack
-
-        let destination_collateral_pubkey = self.create_account(Token::LEN, &spl_token::id()).await;
-        let reserve_pubkey = self
-            .create_account(Reserve::LEN, &solend_program::id())
+        oracle: Option<Oracle>,
+    ) -> Result<Info<Reserve>, BanksClientError> {
+        let destination_collateral_pubkey = self
+            .create_account(Token::LEN, &spl_token::id(), None)
             .await;
-        let reserve_liquidity_supply_pubkey =
-            self.create_account(Token::LEN, &spl_token::id()).await;
+        let reserve_liquidity_supply_pubkey = self
+            .create_account(Token::LEN, &spl_token::id(), None)
+            .await;
+        let reserve_pubkey = self
+            .create_account(Reserve::LEN, &solend_program::id(), Some(reserve_keypair))
+            .await;
 
-        let reserve_liquidity_fee_receiver =
-            self.create_account(Token::LEN, &spl_token::id()).await;
+        let reserve_liquidity_fee_receiver = self
+            .create_account(Token::LEN, &spl_token::id(), None)
+            .await;
 
-        let reserve_collateral_mint_pubkey = self.create_account(Mint::LEN, &spl_token::id()).await;
-        let reserve_collateral_supply_pubkey =
-            self.create_account(Token::LEN, &spl_token::id()).await;
+        let reserve_collateral_mint_pubkey =
+            self.create_account(Mint::LEN, &spl_token::id(), None).await;
+        let reserve_collateral_supply_pubkey = self
+            .create_account(Token::LEN, &spl_token::id(), None)
+            .await;
 
-        let oracle = self.mints.get(mint).unwrap().unwrap();
+        let oracle = if let Some(o) = oracle {
+            o
+        } else {
+            self.mints.get(mint).unwrap().unwrap()
+        };
 
-        self.process_transaction(
-            &[
-                ComputeBudgetInstruction::set_compute_unit_limit(70_000),
-                init_reserve(
-                    solend_program::id(),
-                    liquidity_amount,
-                    ReserveConfig {
-                        fee_receiver: reserve_liquidity_fee_receiver,
-                        ..*reserve_config
-                    },
-                    lending_market_owner.get_account(mint).unwrap(),
-                    destination_collateral_pubkey,
-                    reserve_pubkey,
-                    *mint,
-                    reserve_liquidity_supply_pubkey,
-                    reserve_collateral_mint_pubkey,
-                    reserve_collateral_supply_pubkey,
-                    oracle.pyth_product_pubkey,
-                    oracle.pyth_price_pubkey,
-                    Pubkey::from_str("nu11111111111111111111111111111111111111111").unwrap(),
-                    lending_market.pubkey,
-                    lending_market_owner.keypair.pubkey(),
-                    lending_market_owner.keypair.pubkey(),
-                ),
-            ],
-            Some(&[&lending_market_owner.keypair]),
-        )
-        .await
-        .unwrap();
+        let res = self
+            .process_transaction(
+                &[
+                    ComputeBudgetInstruction::set_compute_unit_limit(70_000),
+                    init_reserve(
+                        solend_program::id(),
+                        liquidity_amount,
+                        ReserveConfig {
+                            fee_receiver: reserve_liquidity_fee_receiver,
+                            ..*reserve_config
+                        },
+                        lending_market_owner.get_account(mint).unwrap(),
+                        destination_collateral_pubkey,
+                        reserve_pubkey,
+                        *mint,
+                        reserve_liquidity_supply_pubkey,
+                        reserve_collateral_mint_pubkey,
+                        reserve_collateral_supply_pubkey,
+                        oracle.pyth_product_pubkey,
+                        oracle.pyth_price_pubkey,
+                        Pubkey::from_str("nu11111111111111111111111111111111111111111").unwrap(),
+                        lending_market.pubkey,
+                        lending_market_owner.keypair.pubkey(),
+                        lending_market_owner.keypair.pubkey(),
+                    ),
+                ],
+                Some(&[&lending_market_owner.keypair]),
+            )
+            .await;
 
-        self.load_account::<Reserve>(reserve_pubkey).await
+        match res {
+            Ok(()) => Ok(self.load_account::<Reserve>(reserve_pubkey).await),
+            Err(e) => Err(e),
+        }
     }
 }
 
@@ -536,6 +617,31 @@ impl Info<LendingMarket> {
         )];
 
         test.process_transaction(&instructions, Some(&[&user.keypair]))
+            .await
+    }
+
+    pub async fn update_reserve_config(
+        &self,
+        test: &mut SolendProgramTest,
+        lending_market_owner: &User,
+        reserve: &Info<Reserve>,
+        config: ReserveConfig,
+        oracle: &Oracle,
+    ) -> Result<(), BanksClientError> {
+        let instructions = [update_reserve_config(
+            solend_program::id(),
+            config,
+            reserve.pubkey,
+            self.pubkey,
+            lending_market_owner.keypair.pubkey(),
+            oracle.pyth_product_pubkey,
+            oracle.pyth_price_pubkey,
+            oracle
+                .switchboard_feed_pubkey
+                .unwrap_or_else(|| Pubkey::from_str(NULL_PUBKEY).unwrap()),
+        )];
+
+        test.process_transaction(&instructions, Some(&[&lending_market_owner.keypair]))
             .await
     }
 
@@ -880,7 +986,7 @@ impl Info<LendingMarket> {
 
 /// Track token balance changes across transactions.
 pub struct BalanceChecker {
-    token_accounts: Vec<Info<Token>>,
+    token_accounts: Vec<Info<Option<Token>>>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -895,7 +1001,7 @@ impl BalanceChecker {
         let mut refreshed_accounts = Vec::new();
         for obj in objs {
             for pubkey in obj.get_token_accounts() {
-                let refreshed_account = test.load_account::<Token>(pubkey).await;
+                let refreshed_account = test.load_optional_account::<Token>(pubkey).await;
                 refreshed_accounts.push(refreshed_account);
             }
         }
@@ -913,14 +1019,27 @@ impl BalanceChecker {
         for token_account in &self.token_accounts {
             let refreshed_token_account = test.load_account::<Token>(token_account.pubkey).await;
 
-            if refreshed_token_account.account.amount != token_account.account.amount {
-                balance_changes.insert(BalanceChange {
-                    token_account: token_account.pubkey,
-                    mint: token_account.account.mint,
-                    diff: (refreshed_token_account.account.amount as i128)
-                        - (token_account.account.amount as i128),
-                });
-            }
+            match token_account.account {
+                None => {
+                    if refreshed_token_account.account.amount > 0 {
+                        balance_changes.insert(BalanceChange {
+                            token_account: refreshed_token_account.pubkey,
+                            mint: refreshed_token_account.account.mint,
+                            diff: refreshed_token_account.account.amount as i128,
+                        });
+                    }
+                }
+                Some(token_account) => {
+                    if refreshed_token_account.account.amount != token_account.amount {
+                        balance_changes.insert(BalanceChange {
+                            token_account: refreshed_token_account.pubkey,
+                            mint: token_account.mint,
+                            diff: (refreshed_token_account.account.amount as i128)
+                                - (token_account.amount as i128),
+                        });
+                    }
+                }
+            };
         }
 
         balance_changes
@@ -948,6 +1067,12 @@ impl GetTokenAccounts for Info<Reserve> {
     }
 }
 
+impl GetTokenAccounts for Pubkey {
+    fn get_token_accounts(&self) -> Vec<Pubkey> {
+        vec![*self]
+    }
+}
+
 pub async fn setup_world(
     usdc_reserve_config: &ReserveConfig,
     wsol_reserve_config: &ReserveConfig,
@@ -965,7 +1090,7 @@ pub async fn setup_world(
         &mut test,
         &[
             (&usdc_mint::id(), 2_000_000),
-            (&wsol_mint::id(), LAMPORTS_TO_SOL),
+            (&wsol_mint::id(), 2 * LAMPORTS_TO_SOL),
         ],
     )
     .await;
@@ -1005,9 +1130,12 @@ pub async fn setup_world(
             &lending_market_owner,
             &usdc_mint::id(),
             usdc_reserve_config,
+            &Keypair::new(),
             1_000_000,
+            None,
         )
-        .await;
+        .await
+        .unwrap();
 
     let wsol_reserve = test
         .init_reserve(
@@ -1015,9 +1143,12 @@ pub async fn setup_world(
             &lending_market_owner,
             &wsol_mint::id(),
             wsol_reserve_config,
+            &Keypair::new(),
             1_000_000_000,
+            None,
         )
-        .await;
+        .await
+        .unwrap();
 
     let user = User::new_with_balances(
         &mut test,

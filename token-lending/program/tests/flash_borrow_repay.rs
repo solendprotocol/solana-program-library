@@ -1038,9 +1038,12 @@ async fn test_fail_repay_from_diff_reserve() {
             &lending_market_owner,
             &usdc_mint::id(),
             &test_reserve_config(),
+            &Keypair::new(),
             10,
+            None,
         )
-        .await;
+        .await
+        .unwrap();
 
     // this transaction fails because the repay token transfers aren't signed by the
     // lending_market_authority PDA.
