@@ -7,7 +7,7 @@ use helpers::solend_program_test::{BalanceChange, BalanceChecker};
 use helpers::*;
 
 use solana_program_test::*;
-use solana_sdk::{instruction::InstructionError, signature::Signer, transaction::TransactionError};
+use solana_sdk::{instruction::InstructionError, transaction::TransactionError};
 use solend_program::error::LendingError;
 use solend_program::state::{LastUpdate, Obligation, ObligationCollateral, Reserve};
 use std::collections::HashSet;
@@ -78,8 +78,15 @@ async fn test_success_withdraw_max() {
         .await
         .unwrap();
 
-    // we are borrowing 6 SOL @ $10 with an ltv of 0.5, so the debt has to be collateralized by
-    // exactly 120cUSDC.
+    // we are borrowing 10 SOL @ $10 with an ltv of 0.5, so the debt has to be collateralized by
+    // exactly 200cUSDC.
+    let sol_borrowed = obligation.account.borrows[0]
+        .borrowed_amount_wads
+        .try_ceil_u64()
+        .unwrap()
+        / LAMPORTS_TO_SOL;
+    let expected_remaining_collateral = sol_borrowed * 10 * 2 * FRACTIONAL_TO_USDC;
+
     let balance_changes = balance_checker.find_balance_changes(&mut test).await;
     let expected_balance_changes = HashSet::from([
         BalanceChange {
@@ -87,12 +94,12 @@ async fn test_success_withdraw_max() {
                 .get_account(&usdc_reserve.account.collateral.mint_pubkey)
                 .unwrap(),
             mint: usdc_reserve.account.collateral.mint_pubkey,
-            diff: 100_000_000_000 - 120_000_000,
+            diff: (100_000 * FRACTIONAL_TO_USDC - expected_remaining_collateral) as i128,
         },
         BalanceChange {
             token_account: usdc_reserve.account.collateral.supply_pubkey,
             mint: usdc_reserve.account.collateral.mint_pubkey,
-            diff: -(100_000_000_000 - 120_000_000),
+            diff: -((100_000_000_000 - expected_remaining_collateral) as i128),
         },
     ]);
     assert_eq!(balance_changes, expected_balance_changes);
@@ -110,7 +117,7 @@ async fn test_success_withdraw_max() {
             },
             deposits: [ObligationCollateral {
                 deposit_reserve: usdc_reserve.pubkey,
-                deposited_amount: 120_000_000,
+                deposited_amount: expected_remaining_collateral,
                 ..obligation.account.deposits[0]
             }]
             .to_vec(),
@@ -130,7 +137,7 @@ async fn test_fail_withdraw_too_much() {
             &usdc_reserve,
             &obligation,
             &user,
-            100_000_000_000 - 120_000_000 + 1,
+            100_000_000_000 - 200_000_000 + 1,
         )
         .await
         .err()

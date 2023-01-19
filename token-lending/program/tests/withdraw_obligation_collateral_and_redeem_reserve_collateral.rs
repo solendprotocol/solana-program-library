@@ -40,7 +40,7 @@ async fn test_success() {
 
     // check token balances
     let balance_changes = balance_checker.find_balance_changes(&mut test).await;
-    let withdraw_amount = (100_000 * FRACTIONAL_TO_USDC - 120 * FRACTIONAL_TO_USDC) as i128;
+    let withdraw_amount = (100_000 * FRACTIONAL_TO_USDC - 200 * FRACTIONAL_TO_USDC) as i128;
 
     let expected_balance_changes = HashSet::from([
         BalanceChange {
@@ -94,7 +94,7 @@ async fn test_success() {
             },
             deposits: [ObligationCollateral {
                 deposit_reserve: usdc_reserve.pubkey,
-                deposited_amount: 120_000_000,
+                deposited_amount: 200 * FRACTIONAL_TO_USDC,
                 ..obligation.account.deposits[0]
             }]
             .to_vec(),

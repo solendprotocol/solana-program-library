@@ -21,8 +21,9 @@ use solana_sdk::{
 use solend_program::{
     instruction::{
         deposit_obligation_collateral, deposit_reserve_liquidity, init_lending_market,
-        init_reserve, redeem_reserve_collateral, repay_obligation_liquidity,
-        set_lending_market_owner, withdraw_obligation_collateral,
+        init_reserve, liquidate_obligation_and_redeem_reserve_collateral,
+        redeem_reserve_collateral, repay_obligation_liquidity, set_lending_market_owner,
+        withdraw_obligation_collateral,
     },
     processor::process_instruction,
     state::{LendingMarket, Reserve, ReserveConfig},
@@ -919,6 +920,44 @@ impl Info<LendingMarket> {
             .await
     }
 
+    pub async fn liquidate_obligation_and_redeem_reserve_collateral(
+        &self,
+        test: &mut SolendProgramTest,
+        repay_reserve: &Info<Reserve>,
+        withdraw_reserve: &Info<Reserve>,
+        obligation: &Info<Obligation>,
+        user: &User,
+        liquidity_amount: u64,
+    ) -> Result<(), BanksClientError> {
+        let mut instructions = self
+            .build_refresh_instructions(test, obligation, None)
+            .await;
+
+        instructions.push(liquidate_obligation_and_redeem_reserve_collateral(
+            solend_program::id(),
+            liquidity_amount,
+            user.get_account(&repay_reserve.account.liquidity.mint_pubkey)
+                .unwrap(),
+            user.get_account(&withdraw_reserve.account.collateral.mint_pubkey)
+                .unwrap(),
+            user.get_account(&withdraw_reserve.account.liquidity.mint_pubkey)
+                .unwrap(),
+            repay_reserve.pubkey,
+            repay_reserve.account.liquidity.supply_pubkey,
+            withdraw_reserve.pubkey,
+            withdraw_reserve.account.collateral.mint_pubkey,
+            withdraw_reserve.account.collateral.supply_pubkey,
+            withdraw_reserve.account.liquidity.supply_pubkey,
+            withdraw_reserve.account.config.fee_receiver,
+            obligation.pubkey,
+            self.pubkey,
+            user.keypair.pubkey(),
+        ));
+
+        test.process_transaction(&instructions, Some(&[&user.keypair]))
+            .await
+    }
+
     pub async fn liquidate_obligation(
         &self,
         test: &mut SolendProgramTest,
@@ -1234,6 +1273,7 @@ pub async fn scenario_1() -> (
                 ..test_reserve_config()
             },
             &ReserveConfig {
+                deposit_limit: u64::MAX,
                 fees: ReserveFees {
                     borrow_fee_wad: 0,
                     host_fee_percentage: 0,
@@ -1274,24 +1314,24 @@ pub async fn scenario_1() -> (
     let wsol_depositor = User::new_with_balances(
         &mut test,
         &[
-            (&wsol_mint::id(), 5 * LAMPORTS_PER_SOL),
+            (&wsol_mint::id(), 9 * LAMPORTS_PER_SOL),
             (&wsol_reserve.account.collateral.mint_pubkey, 0),
         ],
     )
     .await;
 
-    // deposit 5SOL. wSOL reserve now has 6 SOL.
+    // deposit 9 SOL. wSOL reserve now has 10 SOL.
     lending_market
         .deposit(
             &mut test,
             &wsol_reserve,
             &wsol_depositor,
-            5 * LAMPORTS_PER_SOL,
+            9 * LAMPORTS_PER_SOL,
         )
         .await
         .unwrap();
 
-    // borrow 6 SOL against 100k cUSDC.
+    // borrow 10 SOL against 100k cUSDC.
     let obligation = test.load_account::<Obligation>(obligation.pubkey).await;
     lending_market
         .borrow_obligation_liquidity(

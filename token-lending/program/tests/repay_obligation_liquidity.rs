@@ -33,7 +33,7 @@ async fn test_success() {
             &wsol_reserve,
             &obligation,
             &user,
-            6 * LAMPORTS_PER_SOL,
+            10 * LAMPORTS_PER_SOL,
         )
         .await
         .unwrap();
@@ -44,12 +44,12 @@ async fn test_success() {
         BalanceChange {
             token_account: user.get_account(&wsol_mint::id()).unwrap(),
             mint: wsol_mint::id(),
-            diff: -(6 * LAMPORTS_PER_SOL as i128),
+            diff: -(10 * LAMPORTS_PER_SOL as i128),
         },
         BalanceChange {
             token_account: wsol_reserve.account.liquidity.supply_pubkey,
             mint: wsol_mint::id(),
-            diff: (6 * LAMPORTS_PER_SOL as i128),
+            diff: (10 * LAMPORTS_PER_SOL as i128),
         },
     ]);
     assert_eq!(balance_changes, expected_balance_changes);
@@ -66,9 +66,9 @@ async fn test_success() {
         )
         .unwrap();
     let new_borrowed_amount_wads = new_cumulative_borrow_rate
-        .try_mul(Decimal::from(6 * LAMPORTS_PER_SOL))
+        .try_mul(Decimal::from(10 * LAMPORTS_PER_SOL))
         .unwrap()
-        .try_sub(Decimal::from(6 * LAMPORTS_TO_SOL))
+        .try_sub(Decimal::from(10 * LAMPORTS_TO_SOL))
         .unwrap();
 
     assert_eq!(
@@ -79,7 +79,7 @@ async fn test_success() {
                 stale: true
             },
             liquidity: ReserveLiquidity {
-                available_amount: 6 * LAMPORTS_PER_SOL,
+                available_amount: 10 * LAMPORTS_PER_SOL,
                 borrowed_amount_wads: new_borrowed_amount_wads,
                 cumulative_borrow_rate_wads: new_cumulative_borrow_rate,
                 ..wsol_reserve.account.liquidity
