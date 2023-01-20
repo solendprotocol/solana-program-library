@@ -7,8 +7,9 @@ use std::collections::HashSet;
 use helpers::*;
 
 use helpers::solend_program_test::{
-    proxy_program, setup_world, BalanceChange, BalanceChecker, Info, SolendProgramTest, User,
+    setup_world, BalanceChange, BalanceChecker, Info, SolendProgramTest, User,
 };
+use flash_loan_proxy::proxy_program;
 use solana_program::instruction::{AccountMeta, Instruction};
 use solana_program::sysvar;
 use solana_program_test::*;

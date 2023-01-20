@@ -1,7 +1,7 @@
-use super::mock_pyth::{init_switchboard, set_switchboard_price};
+use super::{mock_pyth::{init_switchboard, set_switchboard_price}, flash_loan_proxy::proxy_program};
 use crate::helpers::*;
 use solana_program::native_token::LAMPORTS_PER_SOL;
-use solend_sdk::instruction::update_reserve_config;
+use solend_sdk::{instruction::update_reserve_config, NULL_PUBKEY};
 
 use pyth_sdk_solana::state::PROD_ACCT_SIZE;
 use solana_program::{
@@ -58,11 +58,6 @@ pub struct Oracle {
 pub struct Info<T> {
     pub pubkey: Pubkey,
     pub account: T,
-}
-
-pub mod proxy_program {
-    use solana_sdk::declare_id;
-    declare_id!("proGcH2t31EsUC2bCZUqZDJ74V6LAB1DCjeYDLfrGYa");
 }
 
 impl SolendProgramTest {
@@ -142,6 +137,7 @@ impl SolendProgramTest {
             })
             .unwrap()
     }
+
     pub async fn load_account<T: Pack + IsInitialized>(&mut self, acc_pk: Pubkey) -> Info<T> {
         let acc = self
             .context
@@ -650,9 +646,7 @@ impl Info<LendingMarket> {
             lending_market_owner.keypair.pubkey(),
             oracle.pyth_product_pubkey,
             oracle.pyth_price_pubkey,
-            oracle
-                .switchboard_feed_pubkey
-                .unwrap_or_else(|| Pubkey::from_str(NULL_PUBKEY).unwrap()),
+            oracle.switchboard_feed_pubkey.unwrap_or(NULL_PUBKEY),
         )];
 
         test.process_transaction(&instructions, Some(&[&lending_market_owner.keypair]))
@@ -1296,20 +1290,6 @@ pub async fn scenario_1(
 ) {
     let (mut test, lending_market, usdc_reserve, wsol_reserve, lending_market_owner, user) =
         setup_world(usdc_reserve_config, wsol_reserve_config).await;
-    // &ReserveConfig {
-    //     deposit_limit: u64::MAX,
-    //     ..test_reserve_config()
-    // },
-    // &ReserveConfig {
-    //     deposit_limit: u64::MAX,
-    //     fees: ReserveFees {
-    //         borrow_fee_wad: 0,
-    //         host_fee_percentage: 0,
-    //         flash_loan_fee_wad: 0,
-    //     },
-    //     protocol_take_rate: 0,
-    //     ..test_reserve_config()
-    // },
 
     // init obligation
     let obligation = lending_market
