@@ -1232,7 +1232,7 @@ pub async fn setup_world(
             &wsol_mint::id(),
             wsol_reserve_config,
             &Keypair::new(),
-            1_000_000_000,
+            LAMPORTS_TO_SOL,
             None,
         )
         .await
@@ -1243,7 +1243,7 @@ pub async fn setup_world(
         &[
             (&usdc_mint::id(), 1_000_000_000_000),             // 1M USDC
             (&usdc_reserve.account.collateral.mint_pubkey, 0), // cUSDC
-            (&wsol_mint::id(), 0),
+            (&wsol_mint::id(), LAMPORTS_TO_SOL),
         ],
     )
     .await;
