@@ -21,7 +21,7 @@ use solana_sdk::{
 use solend_program::{
     instruction::{
         deposit_obligation_collateral, deposit_reserve_liquidity, init_lending_market,
-        init_reserve, liquidate_obligation_and_redeem_reserve_collateral,
+        init_reserve, liquidate_obligation_and_redeem_reserve_collateral, redeem_fees,
         redeem_reserve_collateral, repay_obligation_liquidity, set_lending_market_owner,
         withdraw_obligation_collateral,
     },
@@ -920,6 +920,30 @@ impl Info<LendingMarket> {
             .await
     }
 
+    pub async fn redeem_fees(
+        &self,
+        test: &mut SolendProgramTest,
+        reserve: &Info<Reserve>,
+    ) -> Result<(), BanksClientError> {
+        let instructions = [
+            refresh_reserve(
+                solend_program::id(),
+                reserve.pubkey,
+                reserve.account.liquidity.pyth_oracle_pubkey,
+                reserve.account.liquidity.switchboard_oracle_pubkey,
+            ),
+            redeem_fees(
+                solend_program::id(),
+                reserve.pubkey,
+                reserve.account.config.fee_receiver,
+                reserve.account.liquidity.supply_pubkey,
+                self.pubkey,
+            ),
+        ];
+
+        test.process_transaction(&instructions, None).await
+    }
+
     pub async fn liquidate_obligation_and_redeem_reserve_collateral(
         &self,
         test: &mut SolendProgramTest,
@@ -1243,7 +1267,8 @@ pub async fn setup_world(
         &[
             (&usdc_mint::id(), 1_000_000_000_000),             // 1M USDC
             (&usdc_reserve.account.collateral.mint_pubkey, 0), // cUSDC
-            (&wsol_mint::id(), LAMPORTS_TO_SOL),
+            (&wsol_mint::id(), 10 * LAMPORTS_TO_SOL),
+            (&wsol_reserve.account.collateral.mint_pubkey, 0), // cSOL
         ],
     )
     .await;
@@ -1258,7 +1283,10 @@ pub async fn setup_world(
     )
 }
 
-pub async fn scenario_1() -> (
+pub async fn scenario_1(
+    usdc_reserve_config: &ReserveConfig,
+    wsol_reserve_config: &ReserveConfig,
+) -> (
     SolendProgramTest,
     Info<LendingMarket>,
     Info<Reserve>,
@@ -1267,23 +1295,21 @@ pub async fn scenario_1() -> (
     Info<Obligation>,
 ) {
     let (mut test, lending_market, usdc_reserve, wsol_reserve, lending_market_owner, user) =
-        setup_world(
-            &ReserveConfig {
-                deposit_limit: u64::MAX,
-                ..test_reserve_config()
-            },
-            &ReserveConfig {
-                deposit_limit: u64::MAX,
-                fees: ReserveFees {
-                    borrow_fee_wad: 0,
-                    host_fee_percentage: 0,
-                    flash_loan_fee_wad: 0,
-                },
-                protocol_take_rate: 0,
-                ..test_reserve_config()
-            },
-        )
-        .await;
+        setup_world(usdc_reserve_config, wsol_reserve_config).await;
+    // &ReserveConfig {
+    //     deposit_limit: u64::MAX,
+    //     ..test_reserve_config()
+    // },
+    // &ReserveConfig {
+    //     deposit_limit: u64::MAX,
+    //     fees: ReserveFees {
+    //         borrow_fee_wad: 0,
+    //         host_fee_percentage: 0,
+    //         flash_loan_fee_wad: 0,
+    //     },
+    //     protocol_take_rate: 0,
+    //     ..test_reserve_config()
+    // },
 
     // init obligation
     let obligation = lending_market
