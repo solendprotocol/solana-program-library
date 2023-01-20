@@ -61,15 +61,15 @@ pub fn test_reserve_config() -> ReserveConfig {
         optimal_borrow_rate: 4,
         max_borrow_rate: 30,
         fees: ReserveFees {
-            borrow_fee_wad: 100_000_000_000,
-            flash_loan_fee_wad: 3_000_000_000_000_000,
-            host_fee_percentage: 20,
+            borrow_fee_wad: 0,
+            flash_loan_fee_wad: 0,
+            host_fee_percentage: 0,
         },
-        deposit_limit: 100_000_000_000,
+        deposit_limit: u64::MAX,
         borrow_limit: u64::MAX,
         fee_receiver: Keypair::new().pubkey(),
-        protocol_liquidation_fee: 30,
-        protocol_take_rate: 10,
+        protocol_liquidation_fee: 0,
+        protocol_take_rate: 0,
     }
 }
 

@@ -3,6 +3,8 @@
 use crate::solend_program_test::BalanceChange;
 use solend_program::math::TryMul;
 use solend_program::math::TrySub;
+use solend_program::state::ReserveConfig;
+use solend_program::state::ReserveFees;
 mod helpers;
 
 use std::collections::HashSet;
@@ -26,14 +28,24 @@ async fn setup() -> (
     Info<Reserve>,
     User,
 ) {
-    let (test, lending_market, usdc_reserve, wsol_reserve, _, user) =
-        setup_world(&test_reserve_config(), &test_reserve_config()).await;
+    let (test, lending_market, usdc_reserve, wsol_reserve, _, user) = setup_world(
+        &test_reserve_config(),
+        &ReserveConfig {
+            fees: ReserveFees {
+                borrow_fee_wad: 100_000_000_000,
+                flash_loan_fee_wad: 0,
+                host_fee_percentage: 20,
+            },
+            ..test_reserve_config()
+        },
+    )
+    .await;
 
     (test, lending_market, usdc_reserve, wsol_reserve, user)
 }
 
 #[tokio::test]
-async fn test_success_new() {
+async fn test_success() {
     let (mut test, lending_market, usdc_reserve, wsol_reserve, user) = setup().await;
 
     let host_fee_receiver = User::new_with_balances(&mut test, &[(&wsol_mint::id(), 0)]).await;

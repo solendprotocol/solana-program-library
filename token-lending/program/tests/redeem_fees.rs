@@ -11,29 +11,19 @@ use solend_program::state::LastUpdate;
 use solend_program::state::ReserveLiquidity;
 use solend_program::state::{Reserve, ReserveConfig};
 use std::collections::HashSet;
-use std::str::FromStr;
 
 use helpers::*;
 use solana_program_test::*;
-use solana_sdk::{
-    pubkey::Pubkey,
-    signature::{Keypair, Signer},
-    transaction::Transaction,
-};
+use solana_sdk::signature::Signer;
 use solend_program::{
-    instruction::{redeem_fees, refresh_reserve},
-    math::{Decimal, Rate, TryAdd, TryDiv, TryMul, TrySub},
-    processor::process_instruction,
+    math::{Decimal, TrySub},
     state::SLOTS_PER_YEAR,
 };
 
 #[tokio::test]
 async fn test_success() {
     let (mut test, lending_market, _, wsol_reserve, user, _) = scenario_1(
-        &ReserveConfig {
-            deposit_limit: u64::MAX,
-            ..test_reserve_config()
-        },
+        &test_reserve_config(),
         &ReserveConfig {
             protocol_take_rate: 10,
             ..test_reserve_config()

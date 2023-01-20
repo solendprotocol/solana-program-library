@@ -4,6 +4,7 @@ use solend_program::math::TrySub;
 use solend_program::state::LastUpdate;
 use solend_program::state::ObligationCollateral;
 use solend_program::state::ObligationLiquidity;
+use solend_program::state::ReserveConfig;
 mod helpers;
 
 use crate::solend_program_test::scenario_1;
@@ -26,8 +27,14 @@ use std::collections::HashSet;
 
 #[tokio::test]
 async fn test_success_new() {
-    let (mut test, lending_market, usdc_reserve, wsol_reserve, user, obligation) =
-        scenario_1().await;
+    let (mut test, lending_market, usdc_reserve, wsol_reserve, user, obligation) = scenario_1(
+        &ReserveConfig {
+            protocol_liquidation_fee: 30,
+            ..test_reserve_config()
+        },
+        &test_reserve_config(),
+    )
+    .await;
 
     let liquidator = User::new_with_balances(
         &mut test,
@@ -204,7 +211,7 @@ async fn test_success_new() {
 #[tokio::test]
 async fn test_success_insufficient_liquidity() {
     let (mut test, lending_market, usdc_reserve, wsol_reserve, user, obligation) =
-        scenario_1().await;
+        scenario_1(&test_reserve_config(), &test_reserve_config()).await;
 
     // basically the same test as above, but now someone borrows a lot of USDC so the liquidatior
     // partially receives USDC and cUSDC

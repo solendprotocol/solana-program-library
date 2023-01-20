@@ -16,7 +16,7 @@ use std::u64;
 #[tokio::test]
 async fn test_success_withdraw_fixed_amount() {
     let (mut test, lending_market, usdc_reserve, wsol_reserve, user, obligation) =
-        scenario_1().await;
+        scenario_1(&test_reserve_config(), &test_reserve_config()).await;
 
     let balance_checker =
         BalanceChecker::start(&mut test, &[&usdc_reserve, &user, &wsol_reserve]).await;
@@ -68,7 +68,7 @@ async fn test_success_withdraw_fixed_amount() {
 #[tokio::test]
 async fn test_success_withdraw_max() {
     let (mut test, lending_market, usdc_reserve, wsol_reserve, user, obligation) =
-        scenario_1().await;
+        scenario_1(&test_reserve_config(), &test_reserve_config()).await;
 
     let balance_checker =
         BalanceChecker::start(&mut test, &[&usdc_reserve, &user, &wsol_reserve]).await;
@@ -129,7 +129,7 @@ async fn test_success_withdraw_max() {
 #[tokio::test]
 async fn test_fail_withdraw_too_much() {
     let (mut test, lending_market, usdc_reserve, _wsol_reserve, user, obligation) =
-        scenario_1().await;
+        scenario_1(&test_reserve_config(), &test_reserve_config()).await;
 
     let res = lending_market
         .withdraw_obligation_collateral(

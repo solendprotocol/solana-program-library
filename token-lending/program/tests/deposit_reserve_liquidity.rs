@@ -2,6 +2,7 @@
 
 mod helpers;
 
+use solend_program::state::ReserveConfig;
 use std::collections::HashSet;
 
 use helpers::solend_program_test::{
@@ -17,8 +18,14 @@ use solend_program::state::{
 };
 
 async fn setup() -> (SolendProgramTest, Info<LendingMarket>, Info<Reserve>, User) {
-    let (test, lending_market, usdc_reserve, _, _, user) =
-        setup_world(&test_reserve_config(), &test_reserve_config()).await;
+    let (test, lending_market, usdc_reserve, _, _, user) = setup_world(
+        &ReserveConfig {
+            deposit_limit: 100_000 * FRACTIONAL_TO_USDC,
+            ..test_reserve_config()
+        },
+        &test_reserve_config(),
+    )
+    .await;
 
     (test, lending_market, usdc_reserve, user)
 }

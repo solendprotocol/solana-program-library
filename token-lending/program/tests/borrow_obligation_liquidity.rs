@@ -2,6 +2,7 @@
 
 mod helpers;
 
+use solend_program::state::ReserveFees;
 use std::collections::HashSet;
 
 use helpers::solend_program_test::{
@@ -103,7 +104,15 @@ async fn setup(
 #[tokio::test]
 async fn test_success() {
     let (mut test, lending_market, usdc_reserve, wsol_reserve, user, obligation, host_fee_receiver) =
-        setup(&test_reserve_config()).await;
+        setup(&ReserveConfig {
+            fees: ReserveFees {
+                borrow_fee_wad: 100_000_000_000,
+                flash_loan_fee_wad: 0,
+                host_fee_percentage: 20,
+            },
+            ..test_reserve_config()
+        })
+        .await;
 
     let balance_checker = BalanceChecker::start(
         &mut test,
@@ -210,7 +219,15 @@ async fn test_success() {
 #[tokio::test]
 async fn test_borrow_max() {
     let (mut test, lending_market, usdc_reserve, wsol_reserve, user, obligation, host_fee_receiver) =
-        setup(&test_reserve_config()).await;
+        setup(&ReserveConfig {
+            fees: ReserveFees {
+                borrow_fee_wad: 100_000_000_000,
+                flash_loan_fee_wad: 0,
+                host_fee_percentage: 20,
+            },
+            ..test_reserve_config()
+        })
+        .await;
 
     let balance_checker = BalanceChecker::start(
         &mut test,
