@@ -158,9 +158,9 @@ jobs:
           echo "$HOME/.local/share/solana/install/active_release/bin" >> $GITHUB_PATH
 
       - name: run test coverage
-        run: ./coverage.sh token-lending
+        run: ./coverage.sh
 
       - name: Codecov
         uses: codecov/codecov-action@v3.1.0
         with:
-          file: target/cov/cobertura.xml
+          directory: target/coverage/
