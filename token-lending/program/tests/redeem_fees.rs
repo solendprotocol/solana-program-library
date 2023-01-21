@@ -3,9 +3,9 @@
 mod helpers;
 
 use crate::solend_program_test::scenario_1;
-use crate::solend_program_test::BalanceChange;
 use crate::solend_program_test::BalanceChecker;
 use crate::solend_program_test::PriceArgs;
+use crate::solend_program_test::TokenBalanceChange;
 use solana_program::native_token::LAMPORTS_PER_SOL;
 use solend_program::state::LastUpdate;
 use solend_program::state::ReserveLiquidity;
@@ -14,7 +14,6 @@ use std::collections::HashSet;
 
 use helpers::*;
 use solana_program_test::*;
-use solana_sdk::signature::Signer;
 use solend_program::{
     math::{Decimal, TrySub},
     state::SLOTS_PER_YEAR,
@@ -67,20 +66,22 @@ async fn test_success() {
     let expected_fees = wsol_reserve.account.calculate_redeem_fees().unwrap();
 
     // check token balances
-    let balance_changes = balance_checker.find_balance_changes(&mut test).await;
+    let (balance_changes, mint_supply_changes) =
+        balance_checker.find_balance_changes(&mut test).await;
     let expected_balance_changes = HashSet::from([
-        BalanceChange {
+        TokenBalanceChange {
             token_account: wsol_reserve.account.config.fee_receiver,
             mint: wsol_mint::id(),
             diff: expected_fees as i128,
         },
-        BalanceChange {
+        TokenBalanceChange {
             token_account: wsol_reserve.account.liquidity.supply_pubkey,
             mint: wsol_mint::id(),
             diff: -(expected_fees as i128),
         },
     ]);
     assert_eq!(balance_changes, expected_balance_changes);
+    assert_eq!(mint_supply_changes, HashSet::new());
 
     // check program state
     let wsol_reserve_post = test.load_account::<Reserve>(wsol_reserve.pubkey).await;

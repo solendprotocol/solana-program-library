@@ -5,7 +5,7 @@ mod helpers;
 use std::collections::HashSet;
 
 use helpers::solend_program_test::{
-    setup_world, BalanceChange, BalanceChecker, Info, SolendProgramTest, User,
+    setup_world, BalanceChecker, Info, SolendProgramTest, TokenBalanceChange, User,
 };
 use helpers::test_reserve_config;
 
@@ -53,16 +53,17 @@ async fn test_success() {
         .expect("This should succeed");
 
     // check balance changes
-    let balance_changes = balance_checker.find_balance_changes(&mut test).await;
+    let (balance_changes, mint_supply_changes) =
+        balance_checker.find_balance_changes(&mut test).await;
     let expected_balance_changes = HashSet::from([
-        BalanceChange {
+        TokenBalanceChange {
             token_account: user
                 .get_account(&usdc_reserve.account.collateral.mint_pubkey)
                 .unwrap(),
             mint: usdc_reserve.account.collateral.mint_pubkey,
             diff: -1_000_000,
         },
-        BalanceChange {
+        TokenBalanceChange {
             token_account: usdc_reserve.account.collateral.supply_pubkey,
             mint: usdc_reserve.account.collateral.mint_pubkey,
             diff: 1_000_000,
@@ -70,6 +71,7 @@ async fn test_success() {
     ]);
 
     assert_eq!(balance_changes, expected_balance_changes);
+    assert_eq!(mint_supply_changes, HashSet::new());
 
     // check program state changes
     let lending_market_post = test.load_account(lending_market.pubkey).await;

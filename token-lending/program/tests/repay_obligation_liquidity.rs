@@ -5,7 +5,7 @@ mod helpers;
 use crate::solend_program_test::scenario_1;
 use std::collections::HashSet;
 
-use helpers::solend_program_test::{BalanceChange, BalanceChecker};
+use helpers::solend_program_test::{BalanceChecker, TokenBalanceChange};
 use helpers::*;
 use solana_program::native_token::LAMPORTS_PER_SOL;
 use solana_program_test::*;
@@ -39,20 +39,22 @@ async fn test_success() {
         .unwrap();
 
     // check token balances
-    let balance_changes = balance_checker.find_balance_changes(&mut test).await;
+    let (balance_changes, mint_supply_changes) =
+        balance_checker.find_balance_changes(&mut test).await;
     let expected_balance_changes = HashSet::from([
-        BalanceChange {
+        TokenBalanceChange {
             token_account: user.get_account(&wsol_mint::id()).unwrap(),
             mint: wsol_mint::id(),
             diff: -(10 * LAMPORTS_PER_SOL as i128),
         },
-        BalanceChange {
+        TokenBalanceChange {
             token_account: wsol_reserve.account.liquidity.supply_pubkey,
             mint: wsol_mint::id(),
             diff: (10 * LAMPORTS_PER_SOL as i128),
         },
     ]);
     assert_eq!(balance_changes, expected_balance_changes);
+    assert_eq!(mint_supply_changes, HashSet::new());
 
     // check program state
     let wsol_reserve_post = test.load_account::<Reserve>(wsol_reserve.pubkey).await;

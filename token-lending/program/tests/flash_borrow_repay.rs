@@ -6,10 +6,10 @@ use std::collections::HashSet;
 
 use helpers::*;
 
-use helpers::solend_program_test::{
-    setup_world, BalanceChange, BalanceChecker, Info, SolendProgramTest, User,
-};
 use flash_loan_proxy::proxy_program;
+use helpers::solend_program_test::{
+    setup_world, BalanceChecker, Info, SolendProgramTest, TokenBalanceChange, User,
+};
 use solana_program::instruction::{AccountMeta, Instruction};
 use solana_program::sysvar;
 use solana_program_test::*;
@@ -111,25 +111,27 @@ async fn test_success() {
     .unwrap();
 
     // check balance changes
-    let balance_changes = balance_checker.find_balance_changes(&mut test).await;
+    let (balance_changes, mint_supply_changes) =
+        balance_checker.find_balance_changes(&mut test).await;
     let expected_balance_changes = HashSet::from([
-        BalanceChange {
+        TokenBalanceChange {
             token_account: user.get_account(&usdc_mint::id()).unwrap(),
             mint: usdc_mint::id(),
             diff: -(FEE_AMOUNT as i128),
         },
-        BalanceChange {
+        TokenBalanceChange {
             token_account: usdc_reserve.account.config.fee_receiver,
             mint: usdc_mint::id(),
             diff: (FEE_AMOUNT - HOST_FEE_AMOUNT) as i128,
         },
-        BalanceChange {
+        TokenBalanceChange {
             token_account: host_fee_receiver.get_account(&usdc_mint::id()).unwrap(),
             mint: usdc_mint::id(),
             diff: HOST_FEE_AMOUNT as i128,
         },
     ]);
     assert_eq!(balance_changes, expected_balance_changes);
+    assert_eq!(mint_supply_changes, HashSet::new());
 
     // check program state changes
     let lending_market_post = test

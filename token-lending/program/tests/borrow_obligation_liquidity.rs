@@ -6,7 +6,7 @@ use solend_program::state::ReserveFees;
 use std::collections::HashSet;
 
 use helpers::solend_program_test::{
-    setup_world, BalanceChange, BalanceChecker, Info, SolendProgramTest, User,
+    setup_world, BalanceChecker, Info, SolendProgramTest, TokenBalanceChange, User,
 };
 use helpers::{test_reserve_config, wsol_mint};
 use solana_program::native_token::LAMPORTS_PER_SOL;
@@ -133,25 +133,26 @@ async fn test_success() {
         .unwrap();
 
     // check token balances
-    let balance_changes = balance_checker.find_balance_changes(&mut test).await;
+    let (balance_changes, mint_supply_changes) =
+        balance_checker.find_balance_changes(&mut test).await;
 
     let expected_balance_changes = HashSet::from([
-        BalanceChange {
+        TokenBalanceChange {
             token_account: wsol_reserve.account.liquidity.supply_pubkey,
             mint: wsol_mint::id(),
             diff: -((4 * LAMPORTS_PER_SOL + 400) as i128),
         },
-        BalanceChange {
+        TokenBalanceChange {
             token_account: user.get_account(&wsol_mint::id()).unwrap(),
             mint: wsol_mint::id(),
             diff: (4 * LAMPORTS_PER_SOL) as i128,
         },
-        BalanceChange {
+        TokenBalanceChange {
             token_account: wsol_reserve.account.config.fee_receiver,
             mint: wsol_mint::id(),
             diff: 320,
         },
-        BalanceChange {
+        TokenBalanceChange {
             token_account: host_fee_receiver.get_account(&wsol_mint::id()).unwrap(),
             mint: wsol_mint::id(),
             diff: 80,
@@ -162,6 +163,7 @@ async fn test_success() {
         "{:#?} \n {:#?}",
         balance_changes, expected_balance_changes
     );
+    assert_eq!(mint_supply_changes, HashSet::new());
 
     // check program state
     let lending_market_post = test.load_account(lending_market.pubkey).await;
@@ -248,25 +250,26 @@ async fn test_borrow_max() {
         .unwrap();
 
     // check token balances
-    let balance_changes = balance_checker.find_balance_changes(&mut test).await;
+    let (balance_changes, mint_supply_changes) =
+        balance_checker.find_balance_changes(&mut test).await;
 
     let expected_balance_changes = HashSet::from([
-        BalanceChange {
+        TokenBalanceChange {
             token_account: wsol_reserve.account.liquidity.supply_pubkey,
             mint: wsol_mint::id(),
             diff: -((5 * LAMPORTS_PER_SOL) as i128),
         },
-        BalanceChange {
+        TokenBalanceChange {
             token_account: user.get_account(&wsol_mint::id()).unwrap(),
             mint: wsol_mint::id(),
             diff: (5 * LAMPORTS_PER_SOL as i128) - 500,
         },
-        BalanceChange {
+        TokenBalanceChange {
             token_account: wsol_reserve.account.config.fee_receiver,
             mint: wsol_mint::id(),
             diff: 400,
         },
-        BalanceChange {
+        TokenBalanceChange {
             token_account: host_fee_receiver.get_account(&wsol_mint::id()).unwrap(),
             mint: wsol_mint::id(),
             diff: 100,
@@ -278,6 +281,7 @@ async fn test_borrow_max() {
         "{:#?} \n {:#?}",
         balance_changes, expected_balance_changes
     );
+    assert_eq!(mint_supply_changes, HashSet::new());
 }
 
 #[tokio::test]

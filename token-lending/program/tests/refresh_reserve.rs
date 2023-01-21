@@ -12,10 +12,7 @@ use helpers::*;
 use solana_program::instruction::InstructionError;
 use solana_program::native_token::LAMPORTS_PER_SOL;
 use solana_program_test::*;
-use solana_sdk::{
-    signature::{Keypair, Signer},
-    transaction::TransactionError,
-};
+use solana_sdk::{signature::Keypair, transaction::TransactionError};
 use solend_program::state::LastUpdate;
 use solend_program::state::LendingMarket;
 use solend_program::state::Obligation;
@@ -162,7 +159,7 @@ async fn test_success() {
     // check balances
     assert_eq!(
         balance_checker.find_balance_changes(&mut test).await,
-        HashSet::new()
+        (HashSet::new(), HashSet::new())
     );
 
     // check program state

@@ -2,10 +2,11 @@
 
 mod helpers;
 
+use crate::solend_program_test::MintSupplyChange;
 use std::collections::HashSet;
 
 use helpers::solend_program_test::{
-    setup_world, BalanceChange, BalanceChecker, Info, SolendProgramTest, User,
+    setup_world, BalanceChecker, Info, SolendProgramTest, TokenBalanceChange, User,
 };
 use helpers::*;
 use solana_program::instruction::InstructionError;
@@ -45,24 +46,25 @@ async fn test_success() {
         .expect("This should succeed");
 
     // check token balances
-    let balance_changes = balance_checker.find_balance_changes(&mut test).await;
+    let (balance_changes, mint_supply_changes) =
+        balance_checker.find_balance_changes(&mut test).await;
 
     assert_eq!(
         balance_changes,
         HashSet::from([
-            BalanceChange {
+            TokenBalanceChange {
                 token_account: user.get_account(&usdc_mint::id()).unwrap(),
                 mint: usdc_mint::id(),
                 diff: 1_000_000,
             },
-            BalanceChange {
+            TokenBalanceChange {
                 token_account: user
                     .get_account(&usdc_reserve.account.collateral.mint_pubkey)
                     .unwrap(),
                 mint: usdc_reserve.account.collateral.mint_pubkey,
                 diff: -1_000_000,
             },
-            BalanceChange {
+            TokenBalanceChange {
                 token_account: usdc_reserve.account.liquidity.supply_pubkey,
                 mint: usdc_reserve.account.liquidity.mint_pubkey,
                 diff: -1_000_000,
@@ -70,6 +72,15 @@ async fn test_success() {
         ]),
         "{:#?}",
         balance_changes
+    );
+    assert_eq!(
+        mint_supply_changes,
+        HashSet::from([MintSupplyChange {
+            mint: usdc_reserve.account.collateral.mint_pubkey,
+            diff: -1_000_000,
+        },]),
+        "{:#?}",
+        mint_supply_changes
     );
 
     // check program state changes

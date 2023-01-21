@@ -1,8 +1,11 @@
 #![cfg(feature = "test-bpf")]
 
-use crate::solend_program_test::BalanceChange;
 use crate::solend_program_test::BalanceChecker;
+use crate::solend_program_test::MintAccount;
+use crate::solend_program_test::MintSupplyChange;
 use crate::solend_program_test::Oracle;
+use crate::solend_program_test::TokenAccount;
+use crate::solend_program_test::TokenBalanceChange;
 use std::collections::HashSet;
 use std::str::FromStr;
 mod helpers;
@@ -78,10 +81,11 @@ async fn test_success() {
         &mut test,
         &[
             &lending_market_owner,
-            &destination_collateral_pubkey,
-            &reserve_liquidity_supply_pubkey,
-            &reserve_liquidity_fee_receiver,
-            &reserve_collateral_supply_pubkey,
+            &TokenAccount(destination_collateral_pubkey),
+            &TokenAccount(reserve_liquidity_supply_pubkey),
+            &TokenAccount(reserve_liquidity_fee_receiver),
+            &TokenAccount(reserve_collateral_supply_pubkey),
+            &MintAccount(reserve_collateral_mint_pubkey),
         ],
     )
     .await;
@@ -111,25 +115,34 @@ async fn test_success() {
     .unwrap();
 
     // check token balances
-    let balance_changes = balance_checker.find_balance_changes(&mut test).await;
+    let (balance_changes, mint_supply_changes) =
+        balance_checker.find_balance_changes(&mut test).await;
     let expected_balance_changes = HashSet::from([
-        BalanceChange {
+        TokenBalanceChange {
             token_account: lending_market_owner.get_account(&wsol_mint::id()).unwrap(),
             mint: wsol_mint::id(),
             diff: -1000,
         },
-        BalanceChange {
+        TokenBalanceChange {
             token_account: destination_collateral_pubkey,
             mint: reserve_collateral_mint_pubkey,
             diff: 1000,
         },
-        BalanceChange {
+        TokenBalanceChange {
             token_account: reserve_liquidity_supply_pubkey,
             mint: wsol_mint::id(),
             diff: 1000,
         },
     ]);
     assert_eq!(balance_changes, expected_balance_changes);
+
+    assert_eq!(
+        mint_supply_changes,
+        HashSet::from([MintSupplyChange {
+            mint: reserve_collateral_mint_pubkey,
+            diff: 1000,
+        }])
+    );
 
     // check program state
     let wsol_reserve = test.load_account::<Reserve>(reserve_pubkey).await;

@@ -2,13 +2,14 @@
 
 mod helpers;
 
+use crate::solend_program_test::MintSupplyChange;
 use solend_sdk::state::ObligationCollateral;
 use solend_sdk::state::ReserveCollateral;
 use std::collections::HashSet;
 
 use crate::solend_program_test::scenario_1;
-use crate::solend_program_test::BalanceChange;
 use crate::solend_program_test::BalanceChecker;
+use crate::solend_program_test::TokenBalanceChange;
 use helpers::*;
 
 use solana_program_test::*;
@@ -39,27 +40,35 @@ async fn test_success() {
         .unwrap();
 
     // check token balances
-    let balance_changes = balance_checker.find_balance_changes(&mut test).await;
+    let (balance_changes, mint_supply_changes) =
+        balance_checker.find_balance_changes(&mut test).await;
     let withdraw_amount = (100_000 * FRACTIONAL_TO_USDC - 200 * FRACTIONAL_TO_USDC) as i128;
 
     let expected_balance_changes = HashSet::from([
-        BalanceChange {
+        TokenBalanceChange {
             token_account: user.get_account(&usdc_mint::id()).unwrap(),
             mint: usdc_mint::id(),
             diff: withdraw_amount,
         },
-        BalanceChange {
+        TokenBalanceChange {
             token_account: usdc_reserve.account.liquidity.supply_pubkey,
             mint: usdc_mint::id(),
             diff: -withdraw_amount,
         },
-        BalanceChange {
+        TokenBalanceChange {
             token_account: usdc_reserve.account.collateral.supply_pubkey,
             mint: usdc_reserve.account.collateral.mint_pubkey,
             diff: -withdraw_amount,
         },
     ]);
     assert_eq!(balance_changes, expected_balance_changes);
+    assert_eq!(
+        mint_supply_changes,
+        HashSet::from([MintSupplyChange {
+            mint: usdc_reserve.account.collateral.mint_pubkey,
+            diff: -withdraw_amount
+        }])
+    );
 
     // check program state
     let usdc_reserve_post = test.load_account::<Reserve>(usdc_reserve.pubkey).await;

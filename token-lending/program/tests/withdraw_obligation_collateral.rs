@@ -3,7 +3,7 @@
 mod helpers;
 
 use crate::solend_program_test::scenario_1;
-use helpers::solend_program_test::{BalanceChange, BalanceChecker};
+use helpers::solend_program_test::{BalanceChecker, TokenBalanceChange};
 use helpers::*;
 
 use solana_program_test::*;
@@ -26,22 +26,24 @@ async fn test_success_withdraw_fixed_amount() {
         .await
         .unwrap();
 
-    let balance_changes = balance_checker.find_balance_changes(&mut test).await;
+    let (balance_changes, mint_supply_changes) =
+        balance_checker.find_balance_changes(&mut test).await;
     let expected_balance_changes = HashSet::from([
-        BalanceChange {
+        TokenBalanceChange {
             token_account: user
                 .get_account(&usdc_reserve.account.collateral.mint_pubkey)
                 .unwrap(),
             mint: usdc_reserve.account.collateral.mint_pubkey,
             diff: 1_000_000,
         },
-        BalanceChange {
+        TokenBalanceChange {
             token_account: usdc_reserve.account.collateral.supply_pubkey,
             mint: usdc_reserve.account.collateral.mint_pubkey,
             diff: -1_000_000,
         },
     ]);
     assert_eq!(balance_changes, expected_balance_changes);
+    assert_eq!(mint_supply_changes, HashSet::new());
 
     let usdc_reserve_post = test.load_account::<Reserve>(usdc_reserve.pubkey).await;
     assert_eq!(usdc_reserve_post.account, usdc_reserve.account);
@@ -87,22 +89,24 @@ async fn test_success_withdraw_max() {
         / LAMPORTS_TO_SOL;
     let expected_remaining_collateral = sol_borrowed * 10 * 2 * FRACTIONAL_TO_USDC;
 
-    let balance_changes = balance_checker.find_balance_changes(&mut test).await;
+    let (balance_changes, mint_supply_changes) =
+        balance_checker.find_balance_changes(&mut test).await;
     let expected_balance_changes = HashSet::from([
-        BalanceChange {
+        TokenBalanceChange {
             token_account: user
                 .get_account(&usdc_reserve.account.collateral.mint_pubkey)
                 .unwrap(),
             mint: usdc_reserve.account.collateral.mint_pubkey,
             diff: (100_000 * FRACTIONAL_TO_USDC - expected_remaining_collateral) as i128,
         },
-        BalanceChange {
+        TokenBalanceChange {
             token_account: usdc_reserve.account.collateral.supply_pubkey,
             mint: usdc_reserve.account.collateral.mint_pubkey,
             diff: -((100_000_000_000 - expected_remaining_collateral) as i128),
         },
     ]);
     assert_eq!(balance_changes, expected_balance_changes);
+    assert_eq!(mint_supply_changes, HashSet::new());
 
     let usdc_reserve_post = test.load_account::<Reserve>(usdc_reserve.pubkey).await;
     assert_eq!(usdc_reserve_post.account, usdc_reserve.account);

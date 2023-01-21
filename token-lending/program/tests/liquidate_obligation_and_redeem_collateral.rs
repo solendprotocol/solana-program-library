@@ -1,5 +1,6 @@
 #![cfg(feature = "test-bpf")]
 
+use crate::solend_program_test::MintSupplyChange;
 use solend_program::math::TrySub;
 use solend_program::state::LastUpdate;
 use solend_program::state::ObligationCollateral;
@@ -8,13 +9,13 @@ use solend_program::state::ReserveConfig;
 mod helpers;
 
 use crate::solend_program_test::scenario_1;
-use crate::solend_program_test::BalanceChange;
 use crate::solend_program_test::BalanceChecker;
 use crate::solend_program_test::PriceArgs;
+use crate::solend_program_test::TokenBalanceChange;
 use crate::solend_program_test::User;
 use helpers::*;
 use solana_program_test::*;
-use solana_sdk::signature::{Keypair, Signer};
+use solana_sdk::signature::Keypair;
 use solend_program::math::Decimal;
 use solend_program::state::LendingMarket;
 use solend_program::state::Obligation;
@@ -82,7 +83,8 @@ async fn test_success_new() {
         .await
         .unwrap();
 
-    let balance_changes = balance_checker.find_balance_changes(&mut test).await;
+    let (balance_changes, mint_supply_changes) =
+        balance_checker.find_balance_changes(&mut test).await;
 
     let bonus = usdc_reserve.account.config.liquidation_bonus as u64;
     let protocol_liquidation_fee_pct = usdc_reserve.account.config.protocol_liquidation_fee as u64;
@@ -96,41 +98,48 @@ async fn test_success_new() {
 
     let expected_balance_changes = HashSet::from([
         // liquidator
-        BalanceChange {
+        TokenBalanceChange {
             token_account: liquidator.get_account(&usdc_mint::id()).unwrap(),
             mint: usdc_mint::id(),
             diff: ((expected_usdc_withdrawn - expected_protocol_liquidation_fee)
                 * FRACTIONAL_TO_USDC) as i128,
         },
-        BalanceChange {
+        TokenBalanceChange {
             token_account: liquidator.get_account(&wsol_mint::id()).unwrap(),
             mint: wsol_mint::id(),
             diff: -((expected_borrow_repaid * LAMPORTS_TO_SOL) as i128),
         },
         // usdc reserve
-        BalanceChange {
+        TokenBalanceChange {
             token_account: usdc_reserve.account.collateral.supply_pubkey,
             mint: usdc_reserve.account.collateral.mint_pubkey,
             diff: -((expected_usdc_withdrawn * FRACTIONAL_TO_USDC) as i128),
         },
-        BalanceChange {
+        TokenBalanceChange {
             token_account: usdc_reserve.account.liquidity.supply_pubkey,
             mint: usdc_mint::id(),
             diff: -((expected_usdc_withdrawn * FRACTIONAL_TO_USDC) as i128),
         },
-        BalanceChange {
+        TokenBalanceChange {
             token_account: usdc_reserve.account.config.fee_receiver,
             mint: usdc_mint::id(),
             diff: (expected_protocol_liquidation_fee * FRACTIONAL_TO_USDC) as i128,
         },
         // wsol reserve
-        BalanceChange {
+        TokenBalanceChange {
             token_account: wsol_reserve.account.liquidity.supply_pubkey,
             mint: wsol_mint::id(),
             diff: (expected_borrow_repaid * LAMPORTS_TO_SOL) as i128,
         },
     ]);
     assert_eq!(balance_changes, expected_balance_changes);
+    assert_eq!(
+        mint_supply_changes,
+        HashSet::from([MintSupplyChange {
+            mint: usdc_reserve.account.collateral.mint_pubkey,
+            diff: -((expected_usdc_withdrawn * FRACTIONAL_TO_USDC) as i128)
+        }])
+    );
 
     // check program state
     let lending_market_post = test
@@ -304,7 +313,8 @@ async fn test_success_insufficient_liquidity() {
         .await
         .unwrap();
 
-    let balance_changes = balance_checker.find_balance_changes(&mut test).await;
+    let (balance_changes, mint_supply_changes) =
+        balance_checker.find_balance_changes(&mut test).await;
 
     let bonus = usdc_reserve.account.config.liquidation_bonus as u64;
 
@@ -318,42 +328,42 @@ async fn test_success_insufficient_liquidity() {
 
     let expected_balance_changes = HashSet::from([
         // liquidator
-        BalanceChange {
+        TokenBalanceChange {
             token_account: liquidator.get_account(&usdc_mint::id()).unwrap(),
             mint: usdc_mint::id(),
             diff: (available_amount * FRACTIONAL_TO_USDC - expected_protocol_liquidation_fee)
                 as i128,
         },
-        BalanceChange {
+        TokenBalanceChange {
             token_account: liquidator
                 .get_account(&usdc_reserve.account.collateral.mint_pubkey)
                 .unwrap(),
             mint: usdc_reserve.account.collateral.mint_pubkey,
             diff: (expected_cusdc_withdrawn * FRACTIONAL_TO_USDC) as i128,
         },
-        BalanceChange {
+        TokenBalanceChange {
             token_account: liquidator.get_account(&wsol_mint::id()).unwrap(),
             mint: wsol_mint::id(),
             diff: -((expected_borrow_repaid * LAMPORTS_TO_SOL) as i128),
         },
         // usdc reserve
-        BalanceChange {
+        TokenBalanceChange {
             token_account: usdc_reserve.account.collateral.supply_pubkey,
             mint: usdc_reserve.account.collateral.mint_pubkey,
             diff: -(((expected_cusdc_withdrawn + available_amount) * FRACTIONAL_TO_USDC) as i128),
         },
-        BalanceChange {
+        TokenBalanceChange {
             token_account: usdc_reserve.account.liquidity.supply_pubkey,
             mint: usdc_mint::id(),
             diff: -((available_amount * FRACTIONAL_TO_USDC) as i128),
         },
-        BalanceChange {
+        TokenBalanceChange {
             token_account: usdc_reserve.account.config.fee_receiver,
             mint: usdc_mint::id(),
             diff: expected_protocol_liquidation_fee as i128,
         },
         // wsol reserve
-        BalanceChange {
+        TokenBalanceChange {
             token_account: wsol_reserve.account.liquidity.supply_pubkey,
             mint: wsol_mint::id(),
             diff: (expected_borrow_repaid * LAMPORTS_TO_SOL) as i128,
@@ -363,5 +373,13 @@ async fn test_success_insufficient_liquidity() {
         balance_changes, expected_balance_changes,
         "{:#?} {:#?}",
         balance_changes, expected_balance_changes
+    );
+
+    assert_eq!(
+        mint_supply_changes,
+        HashSet::from([MintSupplyChange {
+            mint: usdc_reserve.account.collateral.mint_pubkey,
+            diff: -((available_amount * FRACTIONAL_TO_USDC) as i128)
+        }])
     );
 }

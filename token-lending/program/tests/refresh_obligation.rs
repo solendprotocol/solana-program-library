@@ -146,8 +146,10 @@ async fn test_success() {
         .unwrap();
 
     // check token balances
-    let balance_changes = balance_checker.find_balance_changes(&mut test).await;
+    let (balance_changes, mint_supply_changes) =
+        balance_checker.find_balance_changes(&mut test).await;
     assert_eq!(balance_changes, HashSet::new());
+    assert_eq!(mint_supply_changes, HashSet::new());
 
     // check program state
     let lending_market_post = test

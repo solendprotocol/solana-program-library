@@ -1,6 +1,6 @@
 #![cfg(feature = "test-bpf")]
 
-use crate::solend_program_test::BalanceChange;
+use crate::solend_program_test::TokenBalanceChange;
 use solend_program::math::TryMul;
 use solend_program::math::TrySub;
 use solend_program::state::ReserveConfig;
@@ -16,7 +16,7 @@ use crate::solend_program_test::SolendProgramTest;
 use crate::solend_program_test::User;
 use helpers::*;
 use solana_program_test::*;
-use solana_sdk::signature::{Keypair, Signer};
+use solana_sdk::signature::Keypair;
 use solend_program::math::Decimal;
 use solend_program::state::LendingMarket;
 use solend_program::state::Reserve;
@@ -101,7 +101,8 @@ async fn test_success() {
         .await
         .unwrap();
 
-    let balance_changes = balance_checker.find_balance_changes(&mut test).await;
+    let (balance_changes, mint_supply_changes) =
+        balance_checker.find_balance_changes(&mut test).await;
     let borrow_fee = Decimal::from(LAMPORTS_TO_SOL / 2)
         .try_mul(Decimal::from_scaled_val(
             wsol_reserve.account.config.fees.borrow_fee_wad as u128,
@@ -114,17 +115,17 @@ async fn test_success() {
         .unwrap();
 
     let expected_balance_changes = HashSet::from([
-        BalanceChange {
+        TokenBalanceChange {
             token_account: user.get_account(&wsol_mint::id()).unwrap(),
             mint: wsol_mint::id(),
             diff: -(borrow_fee.try_round_u64().unwrap() as i128),
         },
-        BalanceChange {
+        TokenBalanceChange {
             token_account: host_fee_receiver.get_account(&wsol_mint::id()).unwrap(),
             mint: wsol_mint::id(),
             diff: host_fee.try_round_u64().unwrap() as i128,
         },
-        BalanceChange {
+        TokenBalanceChange {
             token_account: wsol_reserve.account.config.fee_receiver,
             mint: wsol_mint::id(),
             diff: borrow_fee
@@ -135,4 +136,5 @@ async fn test_success() {
         },
     ]);
     assert_eq!(balance_changes, expected_balance_changes);
+    assert_eq!(mint_supply_changes, HashSet::new());
 }

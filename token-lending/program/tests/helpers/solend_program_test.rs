@@ -1,4 +1,7 @@
-use super::{mock_pyth::{init_switchboard, set_switchboard_price}, flash_loan_proxy::proxy_program};
+use super::{
+    flash_loan_proxy::proxy_program,
+    mock_pyth::{init_switchboard, set_switchboard_price},
+};
 use crate::helpers::*;
 use solana_program::native_token::LAMPORTS_PER_SOL;
 use solend_sdk::{instruction::update_reserve_config, NULL_PUBKEY};
@@ -414,6 +417,7 @@ impl SolendProgramTest {
         .unwrap();
     }
 
+    #[allow(clippy::too_many_arguments)]
     pub async fn init_reserve(
         &mut self,
         lending_market: &Info<LendingMarket>,
@@ -1093,42 +1097,60 @@ impl Info<LendingMarket> {
 /// Track token balance changes across transactions.
 pub struct BalanceChecker {
     token_accounts: Vec<Info<Option<Token>>>,
+    mint_accounts: Vec<Info<Option<Mint>>>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub struct BalanceChange {
+pub struct TokenBalanceChange {
     pub token_account: Pubkey,
     pub mint: Pubkey,
     pub diff: i128,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub struct MintSupplyChange {
+    pub mint: Pubkey,
+    pub diff: i128,
+}
+
 impl BalanceChecker {
-    pub async fn start(test: &mut SolendProgramTest, objs: &[&dyn GetTokenAccounts]) -> Self {
-        let mut refreshed_accounts = Vec::new();
+    pub async fn start(test: &mut SolendProgramTest, objs: &[&dyn GetTokenAndMintPubkeys]) -> Self {
+        let mut refreshed_token_accounts = Vec::new();
+        let mut refreshed_mint_accounts = Vec::new();
+
         for obj in objs {
-            for pubkey in obj.get_token_accounts() {
+            let (token_pubkeys, mint_pubkeys) = obj.get_token_and_mint_pubkeys();
+
+            for pubkey in token_pubkeys {
                 let refreshed_account = test.load_optional_account::<Token>(pubkey).await;
-                refreshed_accounts.push(refreshed_account);
+                refreshed_token_accounts.push(refreshed_account);
+            }
+
+            for pubkey in mint_pubkeys {
+                let refreshed_account = test.load_optional_account::<Mint>(pubkey).await;
+                refreshed_mint_accounts.push(refreshed_account);
             }
         }
 
         BalanceChecker {
-            token_accounts: refreshed_accounts,
+            token_accounts: refreshed_token_accounts,
+            mint_accounts: refreshed_mint_accounts,
         }
     }
 
     pub async fn find_balance_changes(
         &self,
         test: &mut SolendProgramTest,
-    ) -> HashSet<BalanceChange> {
-        let mut balance_changes = HashSet::new();
+    ) -> (HashSet<TokenBalanceChange>, HashSet<MintSupplyChange>) {
+        let mut token_balance_changes = HashSet::new();
+        let mut mint_supply_changes = HashSet::new();
+
         for token_account in &self.token_accounts {
             let refreshed_token_account = test.load_account::<Token>(token_account.pubkey).await;
-
             match token_account.account {
                 None => {
                     if refreshed_token_account.account.amount > 0 {
-                        balance_changes.insert(BalanceChange {
+                        token_balance_changes.insert(TokenBalanceChange {
                             token_account: refreshed_token_account.pubkey,
                             mint: refreshed_token_account.account.mint,
                             diff: refreshed_token_account.account.amount as i128,
@@ -1137,7 +1159,7 @@ impl BalanceChecker {
                 }
                 Some(token_account) => {
                     if refreshed_token_account.account.amount != token_account.amount {
-                        balance_changes.insert(BalanceChange {
+                        token_balance_changes.insert(TokenBalanceChange {
                             token_account: refreshed_token_account.pubkey,
                             mint: token_account.mint,
                             diff: (refreshed_token_account.account.amount as i128)
@@ -1148,37 +1170,79 @@ impl BalanceChecker {
             };
         }
 
-        balance_changes
+        for mint_account in &self.mint_accounts {
+            let refreshed_mint_account = test.load_account::<Mint>(mint_account.pubkey).await;
+            match mint_account.account {
+                None => {
+                    if refreshed_mint_account.account.supply > 0 {
+                        mint_supply_changes.insert(MintSupplyChange {
+                            mint: refreshed_mint_account.pubkey,
+                            diff: refreshed_mint_account.account.supply as i128,
+                        });
+                    }
+                }
+                Some(mint_account) => {
+                    if refreshed_mint_account.account.supply != mint_account.supply {
+                        mint_supply_changes.insert(MintSupplyChange {
+                            mint: refreshed_mint_account.pubkey,
+                            diff: (refreshed_mint_account.account.supply as i128)
+                                - (mint_account.supply as i128),
+                        });
+                    }
+                }
+            };
+        }
+
+        (token_balance_changes, mint_supply_changes)
     }
 }
 
-/// trait that tracks token accounts associated with a specific struct
-pub trait GetTokenAccounts {
-    fn get_token_accounts(&self) -> Vec<Pubkey>;
+/// trait that tracks token and mint accounts associated with a specific struct
+pub trait GetTokenAndMintPubkeys {
+    fn get_token_and_mint_pubkeys(&self) -> (Vec<Pubkey>, Vec<Pubkey>);
 }
 
-impl GetTokenAccounts for User {
-    fn get_token_accounts(&self) -> Vec<Pubkey> {
-        self.token_accounts.iter().map(|a| a.pubkey).collect()
+impl GetTokenAndMintPubkeys for User {
+    fn get_token_and_mint_pubkeys(&self) -> (Vec<Pubkey>, Vec<Pubkey>) {
+        (
+            self.token_accounts.iter().map(|a| a.pubkey).collect(),
+            vec![],
+        )
     }
 }
 
-impl GetTokenAccounts for Info<Reserve> {
-    fn get_token_accounts(&self) -> Vec<Pubkey> {
-        vec![
-            self.account.liquidity.supply_pubkey,
-            self.account.collateral.supply_pubkey,
-            self.account.config.fee_receiver,
-        ]
+impl GetTokenAndMintPubkeys for Info<Reserve> {
+    fn get_token_and_mint_pubkeys(&self) -> (Vec<Pubkey>, Vec<Pubkey>) {
+        (
+            vec![
+                self.account.liquidity.supply_pubkey,
+                self.account.collateral.supply_pubkey,
+                self.account.config.fee_receiver,
+            ],
+            vec![
+                self.account.liquidity.mint_pubkey,
+                self.account.collateral.mint_pubkey,
+            ],
+        )
     }
 }
 
-impl GetTokenAccounts for Pubkey {
-    fn get_token_accounts(&self) -> Vec<Pubkey> {
-        vec![*self]
+pub struct MintAccount(pub Pubkey);
+pub struct TokenAccount(pub Pubkey);
+
+impl GetTokenAndMintPubkeys for MintAccount {
+    fn get_token_and_mint_pubkeys(&self) -> (Vec<Pubkey>, Vec<Pubkey>) {
+        (vec![], vec![self.0])
     }
 }
 
+impl GetTokenAndMintPubkeys for TokenAccount {
+    fn get_token_and_mint_pubkeys(&self) -> (Vec<Pubkey>, Vec<Pubkey>) {
+        (vec![self.0], vec![])
+    }
+}
+
+/// Init's a lending market with a usdc reserve and wsol reserve.
 pub async fn setup_world(
     usdc_reserve_config: &ReserveConfig,
     wsol_reserve_config: &ReserveConfig,
@@ -1277,6 +1341,18 @@ pub async fn setup_world(
     )
 }
 
+/// Scenario 1
+/// LendingMarket
+/// - USDC Reserve
+/// - WSOL Reserve
+/// Obligation
+/// - 100k USDC deposit
+/// - 10 SOL borrowed
+/// no interest has accrued on anything yet, ie:
+/// - cUSDC/USDC = 1
+/// - cSOL/SOL = 1
+/// - Obligation owes _exactly_ 10 SOL
+/// slot is 999, so the next tx that runs will be at slot 1000
 pub async fn scenario_1(
     usdc_reserve_config: &ReserveConfig,
     wsol_reserve_config: &ReserveConfig,
