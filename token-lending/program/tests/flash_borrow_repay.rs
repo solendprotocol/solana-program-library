@@ -167,9 +167,6 @@ async fn test_fail_disable_flash_loans() {
         .await;
 
     const FLASH_LOAN_AMOUNT: u64 = 3_000_000;
-    const LIQUIDITY_AMOUNT: u64 = 1_000 * FRACTIONAL_TO_USDC;
-    const FEE_AMOUNT: u64 = 3_000_000;
-
     let res = test
         .process_transaction(
             &[
@@ -225,9 +222,6 @@ async fn test_fail_borrow_over_borrow_limit() {
         .await;
 
     const FLASH_LOAN_AMOUNT: u64 = 3_000_000;
-    const LIQUIDITY_AMOUNT: u64 = 1_000 * FRACTIONAL_TO_USDC;
-    const FEE_AMOUNT: u64 = 3_000_000;
-
     let res = test
         .process_transaction(
             &[
@@ -283,9 +277,6 @@ async fn test_fail_double_borrow() {
         .await;
 
     const FLASH_LOAN_AMOUNT: u64 = 3_000_000;
-    const LIQUIDITY_AMOUNT: u64 = 1_000 * FRACTIONAL_TO_USDC;
-    const FEE_AMOUNT: u64 = 3_000_000;
-
     let res = test
         .process_transaction(
             &[
@@ -349,9 +340,6 @@ async fn test_fail_double_repay() {
         .await;
 
     const FLASH_LOAN_AMOUNT: u64 = 3_000_000;
-    const LIQUIDITY_AMOUNT: u64 = 1_000 * FRACTIONAL_TO_USDC;
-    const FEE_AMOUNT: u64 = 3_000_000;
-
     let res = test
         .process_transaction(
             &[
@@ -419,9 +407,6 @@ async fn test_fail_only_one_flash_ix_pair_per_tx() {
         .await;
 
     const FLASH_LOAN_AMOUNT: u64 = 3_000_000;
-    const LIQUIDITY_AMOUNT: u64 = 1_000 * FRACTIONAL_TO_USDC;
-    const FEE_AMOUNT: u64 = 3_000_000;
-
     let res = test
         .process_transaction(
             &[
@@ -938,9 +923,6 @@ async fn test_fail_cpi_borrow() {
     .await;
 
     const FLASH_LOAN_AMOUNT: u64 = 3_000_000;
-    const LIQUIDITY_AMOUNT: u64 = 1_000 * FRACTIONAL_TO_USDC;
-    const FEE_AMOUNT: u64 = 3_000_000;
-
     let res = test
         .process_transaction(
             &[helpers::flash_loan_proxy::borrow_proxy(
@@ -988,9 +970,6 @@ async fn test_fail_cpi_repay() {
         .await;
 
     const FLASH_LOAN_AMOUNT: u64 = 3_000_000;
-    const LIQUIDITY_AMOUNT: u64 = 1_000 * FRACTIONAL_TO_USDC;
-    const FEE_AMOUNT: u64 = 3_000_000;
-
     let res = test
         .process_transaction(
             &[helpers::flash_loan_proxy::repay_proxy(
