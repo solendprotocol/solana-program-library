@@ -16,7 +16,7 @@ rm **/**/*.profraw || true
 rm -r target/coverage || true
 
 # run tests with instrumented binary
-CARGO_INCREMENTAL=0 RUSTFLAGS='-Cinstrument-coverage' LLVM_PROFILE_FILE='cargo-test-%p-%m.profraw' cargo test --features test-bpf
+RUST_LOG="error" CARGO_INCREMENTAL=0 RUSTFLAGS='-Cinstrument-coverage' LLVM_PROFILE_FILE='cargo-test-%p-%m.profraw' cargo test --features test-bpf
 
 # generate report
 mkdir -p target/coverage/html
