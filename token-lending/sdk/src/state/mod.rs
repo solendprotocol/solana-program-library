@@ -4,6 +4,7 @@ mod last_update;
 mod lending_market;
 mod obligation;
 mod reserve;
+mod rate_limiter;
 
 pub use last_update::*;
 pub use lending_market::*;
