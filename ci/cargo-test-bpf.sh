@@ -29,7 +29,6 @@ set -x
 cd $program_directory
 run_dir=$(pwd)
 
-
 if [[ -d $run_dir/program ]]; then
   # Build/test just one BPF program
   cd $run_dir/program
