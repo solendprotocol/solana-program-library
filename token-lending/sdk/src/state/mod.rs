@@ -10,6 +10,7 @@ pub use last_update::*;
 pub use lending_market::*;
 pub use obligation::*;
 pub use reserve::*;
+pub use rate_limiter::*;
 
 use crate::math::{Decimal, WAD};
 use solana_program::{msg, program_error::ProgramError};

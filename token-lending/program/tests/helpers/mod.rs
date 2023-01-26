@@ -20,7 +20,7 @@ use solend_program::{
         init_obligation, liquidate_obligation, refresh_obligation, refresh_reserve,
         withdraw_obligation_collateral_and_redeem_reserve_collateral,
     },
-    state::{Obligation, ReserveConfig, ReserveFees},
+    state::{Obligation, ReserveConfig, ReserveFees, SLOTS_PER_YEAR},
 };
 
 use spl_token::state::Mint;
@@ -53,6 +53,8 @@ pub fn test_reserve_config() -> ReserveConfig {
         fee_receiver: Keypair::new().pubkey(),
         protocol_liquidation_fee: 0,
         protocol_take_rate: 0,
+        window_duration: 120,
+        max_outflow: u64::MAX,
     }
 }
 

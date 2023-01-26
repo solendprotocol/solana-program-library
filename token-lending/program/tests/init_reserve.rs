@@ -24,6 +24,7 @@ use solana_sdk::{
     transaction::TransactionError,
 };
 use solend_program::state::LastUpdate;
+use solend_program::state::RateLimiter;
 use solend_program::state::Reserve;
 use solend_program::state::ReserveCollateral;
 use solend_program::state::ReserveLiquidity;
@@ -172,7 +173,12 @@ async fn test_success() {
                 mint_total_supply: 1000,
                 supply_pubkey: reserve_collateral_supply_pubkey,
             },
-            config: reserve_config
+            config: reserve_config,
+            rate_limiter: RateLimiter::new(
+                Decimal::from(reserve_config.max_outflow),
+                reserve_config.window_duration,
+                1001
+            )
         }
     );
 }

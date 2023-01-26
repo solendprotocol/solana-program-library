@@ -497,7 +497,9 @@ impl LendingInstruction {
                 let (borrow_limit, rest) = Self::unpack_u64(rest)?;
                 let (fee_receiver, rest) = Self::unpack_pubkey(rest)?;
                 let (protocol_liquidation_fee, rest) = Self::unpack_u8(rest)?;
-                let (protocol_take_rate, _rest) = Self::unpack_u8(rest)?;
+                let (protocol_take_rate, rest) = Self::unpack_u8(rest)?;
+                let (window_duration, rest) = Self::unpack_u64(rest)?;
+                let (max_outflow, _rest) = Self::unpack_u64(rest)?;
                 Self::InitReserve {
                     liquidity_amount,
                     config: ReserveConfig {
@@ -518,6 +520,8 @@ impl LendingInstruction {
                         fee_receiver,
                         protocol_liquidation_fee,
                         protocol_take_rate,
+                        window_duration,
+                        max_outflow,
                     },
                 }
             }
@@ -579,7 +583,10 @@ impl LendingInstruction {
                 let (borrow_limit, rest) = Self::unpack_u64(rest)?;
                 let (fee_receiver, rest) = Self::unpack_pubkey(rest)?;
                 let (protocol_liquidation_fee, rest) = Self::unpack_u8(rest)?;
-                let (protocol_take_rate, _rest) = Self::unpack_u8(rest)?;
+                let (protocol_take_rate, rest) = Self::unpack_u8(rest)?;
+                let (window_duration, rest) = Self::unpack_u64(rest)?;
+                let (max_outflow, _rest) = Self::unpack_u64(rest)?;
+
                 Self::UpdateReserveConfig {
                     config: ReserveConfig {
                         optimal_utilization_rate,
@@ -599,6 +606,8 @@ impl LendingInstruction {
                         fee_receiver,
                         protocol_liquidation_fee,
                         protocol_take_rate,
+                        window_duration,
+                        max_outflow,
                     },
                 }
             }
@@ -716,6 +725,8 @@ impl LendingInstruction {
                         fee_receiver,
                         protocol_liquidation_fee,
                         protocol_take_rate,
+                        window_duration,
+                        max_outflow,
                     },
             } => {
                 buf.push(2);
@@ -735,6 +746,8 @@ impl LendingInstruction {
                 buf.extend_from_slice(&fee_receiver.to_bytes());
                 buf.extend_from_slice(&protocol_liquidation_fee.to_le_bytes());
                 buf.extend_from_slice(&protocol_take_rate.to_le_bytes());
+                buf.extend_from_slice(&window_duration.to_le_bytes());
+                buf.extend_from_slice(&max_outflow.to_le_bytes());
             }
             Self::RefreshReserve => {
                 buf.push(3);
@@ -802,6 +815,8 @@ impl LendingInstruction {
                 buf.extend_from_slice(&config.fee_receiver.to_bytes());
                 buf.extend_from_slice(&config.protocol_liquidation_fee.to_le_bytes());
                 buf.extend_from_slice(&config.protocol_take_rate.to_le_bytes());
+                buf.extend_from_slice(&config.window_duration.to_le_bytes());
+                buf.extend_from_slice(&config.max_outflow.to_le_bytes());
             }
             Self::LiquidateObligationAndRedeemReserveCollateral { liquidity_amount } => {
                 buf.push(17);
