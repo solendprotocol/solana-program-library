@@ -39,6 +39,11 @@ use switchboard_program::{
 };
 use switchboard_v2::AggregatorAccountData;
 
+/// solend market owner
+pub mod solend_market_owner {
+    solana_program::declare_id!("5pHk2TmnqQzRF9L6egy5FfiyBgS7G9cMZ5RFaJAvghzw");
+}
+
 /// Processes an instruction
 pub fn process_instruction(
     program_id: &Pubkey,
@@ -2057,6 +2062,29 @@ fn process_update_reserve_config(
     if !lending_market_owner_info.is_signer {
         msg!("Lending market owner provided must be a signer");
         return Err(LendingError::InvalidSigner.into());
+    }
+    // if it's a permissionless market
+    if &solend_market_owner::id() != lending_market_owner_info.key {
+        if reserve.config.protocol_liquidation_fee != config.protocol_liquidation_fee {
+            msg!("permissionless markets can't edit protocol liquidation fees");
+            return Err(LendingError::InvalidConfig.into());
+        }
+        if reserve.config.protocol_take_rate != config.protocol_take_rate {
+            msg!("permissionless markets can't edit protocol take rate");
+            return Err(LendingError::InvalidConfig.into());
+        }
+        if reserve.config.fee_receiver != config.fee_receiver {
+            msg!("permissionless markets can't edit fee receiver");
+            return Err(LendingError::InvalidConfig.into());
+        }
+        if reserve.config.fees.flash_loan_fee_wad != config.fees.flash_loan_fee_wad {
+            msg!("permissionless markets can't edit flash loan fees");
+            return Err(LendingError::InvalidConfig.into());
+        }
+        if reserve.config.fees.host_fee_percentage != config.fees.host_fee_percentage {
+            msg!("permissionless markets can't edit host fee percentage");
+            return Err(LendingError::InvalidConfig.into());
+        }
     }
 
     let authority_signer_seeds = &[
