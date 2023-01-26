@@ -1104,6 +1104,7 @@ pub fn malicious_flash_repay_reserve_liquidity(
             liquidity_amount,
             borrow_instruction_index,
         }
-        .try_to_vec().unwrap(),
+        .try_to_vec()
+        .unwrap(),
     }
 }

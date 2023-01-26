@@ -3,8 +3,8 @@ use crate::{
     error::LendingError,
     math::{Decimal, Rate, TryAdd, TryDiv, TryMul, TrySub},
 };
-use borsh::{BorshDeserialize, BorshSerialize};
 use arrayref::{array_mut_ref, array_ref, array_refs, mut_array_refs};
+use borsh::{BorshDeserialize, BorshSerialize};
 use solana_program::{
     clock::Slot,
     entrypoint::ProgramResult,
