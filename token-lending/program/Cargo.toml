@@ -19,6 +19,7 @@ solend-sdk = { path = "../sdk" }
 static_assertions = "1.1.0"
 switchboard-program = "0.2.0"
 switchboard-v2 = "0.1.3"
+borsh = "0.9.3"
 
 [dev-dependencies]
 assert_matches = "1.5.0"

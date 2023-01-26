@@ -4,6 +4,7 @@ mod helpers;
 
 use std::collections::HashSet;
 
+use borsh::BorshSerialize;
 use helpers::*;
 
 use flash_loan_proxy::proxy_program;
@@ -1103,6 +1104,6 @@ pub fn malicious_flash_repay_reserve_liquidity(
             liquidity_amount,
             borrow_instruction_index,
         }
-        .pack(),
+        .try_to_vec().unwrap(),
     }
 }

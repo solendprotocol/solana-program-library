@@ -3,6 +3,7 @@ use crate::{
     error::LendingError,
     math::{Decimal, Rate, TryAdd, TryDiv, TryMul, TrySub},
 };
+use borsh::{BorshDeserialize, BorshSerialize};
 use arrayref::{array_mut_ref, array_ref, array_refs, mut_array_refs};
 use solana_program::{
     clock::Slot,
@@ -666,7 +667,7 @@ impl From<CollateralExchangeRate> for Rate {
 }
 
 /// Reserve configuration values
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, BorshSerialize, BorshDeserialize)]
 pub struct ReserveConfig {
     /// Optimal utilization rate, as a percentage
     pub optimal_utilization_rate: u8,
@@ -702,7 +703,7 @@ pub struct ReserveConfig {
 /// These exist separately from interest accrual fees, and are specifically for the program owner
 /// and frontend host. The fees are paid out as a percentage of liquidity token amounts during
 /// repayments and liquidations.
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, BorshSerialize, BorshDeserialize)]
 pub struct ReserveFees {
     /// Fee assessed on `BorrowObligationLiquidity`, expressed as a Wad.
     /// Must be between 0 and 10^18, such that 10^18 = 1.  A few examples for

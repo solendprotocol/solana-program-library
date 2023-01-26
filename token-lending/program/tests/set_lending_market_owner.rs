@@ -6,6 +6,7 @@ use crate::solend_program_test::setup_world;
 use crate::solend_program_test::Info;
 use crate::solend_program_test::SolendProgramTest;
 use crate::solend_program_test::User;
+use borsh::BorshSerialize;
 use helpers::*;
 use solana_program::instruction::{AccountMeta, Instruction};
 use solana_program_test::*;
@@ -74,7 +75,9 @@ async fn test_owner_not_signer() {
                     AccountMeta::new(lending_market.pubkey, false),
                     AccountMeta::new_readonly(lending_market.account.owner, false),
                 ],
-                data: LendingInstruction::SetLendingMarketOwner { new_owner }.pack(),
+                data: LendingInstruction::SetLendingMarketOwner { new_owner }
+                    .try_to_vec()
+                    .unwrap(),
             }],
             None,
         )

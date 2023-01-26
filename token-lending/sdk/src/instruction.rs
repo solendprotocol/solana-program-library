@@ -1,20 +1,15 @@
 //! Instruction types
 
-use crate::{
-    error::LendingError,
-    state::{ReserveConfig, ReserveFees},
-};
+use crate::state::ReserveConfig;
+use borsh::{BorshDeserialize, BorshSerialize};
 use solana_program::{
     instruction::{AccountMeta, Instruction},
-    msg,
-    program_error::ProgramError,
     pubkey::{Pubkey, PUBKEY_BYTES},
     sysvar,
 };
-use std::{convert::TryInto, mem::size_of};
 
 /// Instructions supported by the lending program.
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq, BorshSerialize, BorshDeserialize)]
 pub enum LendingInstruction {
     // 0
     /// Initializes a new lending market.
@@ -462,371 +457,6 @@ pub enum LendingInstruction {
     },
 }
 
-impl LendingInstruction {
-    /// Unpacks a byte buffer into a [LendingInstruction](enum.LendingInstruction.html).
-    pub fn unpack(input: &[u8]) -> Result<Self, ProgramError> {
-        let (&tag, rest) = input
-            .split_first()
-            .ok_or(LendingError::InstructionUnpackError)?;
-        Ok(match tag {
-            0 => {
-                let (owner, rest) = Self::unpack_pubkey(rest)?;
-                let (quote_currency, _rest) = Self::unpack_bytes32(rest)?;
-                Self::InitLendingMarket {
-                    owner,
-                    quote_currency: *quote_currency,
-                }
-            }
-            1 => {
-                let (new_owner, _rest) = Self::unpack_pubkey(rest)?;
-                Self::SetLendingMarketOwner { new_owner }
-            }
-            2 => {
-                let (liquidity_amount, rest) = Self::unpack_u64(rest)?;
-                let (optimal_utilization_rate, rest) = Self::unpack_u8(rest)?;
-                let (loan_to_value_ratio, rest) = Self::unpack_u8(rest)?;
-                let (liquidation_bonus, rest) = Self::unpack_u8(rest)?;
-                let (liquidation_threshold, rest) = Self::unpack_u8(rest)?;
-                let (min_borrow_rate, rest) = Self::unpack_u8(rest)?;
-                let (optimal_borrow_rate, rest) = Self::unpack_u8(rest)?;
-                let (max_borrow_rate, rest) = Self::unpack_u8(rest)?;
-                let (borrow_fee_wad, rest) = Self::unpack_u64(rest)?;
-                let (flash_loan_fee_wad, rest) = Self::unpack_u64(rest)?;
-                let (host_fee_percentage, rest) = Self::unpack_u8(rest)?;
-                let (deposit_limit, rest) = Self::unpack_u64(rest)?;
-                let (borrow_limit, rest) = Self::unpack_u64(rest)?;
-                let (fee_receiver, rest) = Self::unpack_pubkey(rest)?;
-                let (protocol_liquidation_fee, rest) = Self::unpack_u8(rest)?;
-                let (protocol_take_rate, _rest) = Self::unpack_u8(rest)?;
-                Self::InitReserve {
-                    liquidity_amount,
-                    config: ReserveConfig {
-                        optimal_utilization_rate,
-                        loan_to_value_ratio,
-                        liquidation_bonus,
-                        liquidation_threshold,
-                        min_borrow_rate,
-                        optimal_borrow_rate,
-                        max_borrow_rate,
-                        fees: ReserveFees {
-                            borrow_fee_wad,
-                            flash_loan_fee_wad,
-                            host_fee_percentage,
-                        },
-                        deposit_limit,
-                        borrow_limit,
-                        fee_receiver,
-                        protocol_liquidation_fee,
-                        protocol_take_rate,
-                    },
-                }
-            }
-            3 => Self::RefreshReserve,
-            4 => {
-                let (liquidity_amount, _rest) = Self::unpack_u64(rest)?;
-                Self::DepositReserveLiquidity { liquidity_amount }
-            }
-            5 => {
-                let (collateral_amount, _rest) = Self::unpack_u64(rest)?;
-                Self::RedeemReserveCollateral { collateral_amount }
-            }
-            6 => Self::InitObligation,
-            7 => Self::RefreshObligation,
-            8 => {
-                let (collateral_amount, _rest) = Self::unpack_u64(rest)?;
-                Self::DepositObligationCollateral { collateral_amount }
-            }
-            9 => {
-                let (collateral_amount, _rest) = Self::unpack_u64(rest)?;
-                Self::WithdrawObligationCollateral { collateral_amount }
-            }
-            10 => {
-                let (liquidity_amount, _rest) = Self::unpack_u64(rest)?;
-                Self::BorrowObligationLiquidity { liquidity_amount }
-            }
-            11 => {
-                let (liquidity_amount, _rest) = Self::unpack_u64(rest)?;
-                Self::RepayObligationLiquidity { liquidity_amount }
-            }
-            12 => {
-                let (liquidity_amount, _rest) = Self::unpack_u64(rest)?;
-                Self::LiquidateObligation { liquidity_amount }
-            }
-            13 => {
-                let (amount, _rest) = Self::unpack_u64(rest)?;
-                Self::FlashLoan { amount }
-            }
-            14 => {
-                let (liquidity_amount, _rest) = Self::unpack_u64(rest)?;
-                Self::DepositReserveLiquidityAndObligationCollateral { liquidity_amount }
-            }
-            15 => {
-                let (collateral_amount, _rest) = Self::unpack_u64(rest)?;
-                Self::WithdrawObligationCollateralAndRedeemReserveCollateral { collateral_amount }
-            }
-            16 => {
-                let (optimal_utilization_rate, rest) = Self::unpack_u8(rest)?;
-                let (loan_to_value_ratio, rest) = Self::unpack_u8(rest)?;
-                let (liquidation_bonus, rest) = Self::unpack_u8(rest)?;
-                let (liquidation_threshold, rest) = Self::unpack_u8(rest)?;
-                let (min_borrow_rate, rest) = Self::unpack_u8(rest)?;
-                let (optimal_borrow_rate, rest) = Self::unpack_u8(rest)?;
-                let (max_borrow_rate, rest) = Self::unpack_u8(rest)?;
-                let (borrow_fee_wad, rest) = Self::unpack_u64(rest)?;
-                let (flash_loan_fee_wad, rest) = Self::unpack_u64(rest)?;
-                let (host_fee_percentage, rest) = Self::unpack_u8(rest)?;
-                let (deposit_limit, rest) = Self::unpack_u64(rest)?;
-                let (borrow_limit, rest) = Self::unpack_u64(rest)?;
-                let (fee_receiver, rest) = Self::unpack_pubkey(rest)?;
-                let (protocol_liquidation_fee, rest) = Self::unpack_u8(rest)?;
-                let (protocol_take_rate, _rest) = Self::unpack_u8(rest)?;
-                Self::UpdateReserveConfig {
-                    config: ReserveConfig {
-                        optimal_utilization_rate,
-                        loan_to_value_ratio,
-                        liquidation_bonus,
-                        liquidation_threshold,
-                        min_borrow_rate,
-                        optimal_borrow_rate,
-                        max_borrow_rate,
-                        fees: ReserveFees {
-                            borrow_fee_wad,
-                            flash_loan_fee_wad,
-                            host_fee_percentage,
-                        },
-                        deposit_limit,
-                        borrow_limit,
-                        fee_receiver,
-                        protocol_liquidation_fee,
-                        protocol_take_rate,
-                    },
-                }
-            }
-            17 => {
-                let (liquidity_amount, _rest) = Self::unpack_u64(rest)?;
-                Self::LiquidateObligationAndRedeemReserveCollateral { liquidity_amount }
-            }
-            18 => Self::RedeemFees,
-            19 => {
-                let (liquidity_amount, _rest) = Self::unpack_u64(rest)?;
-                Self::FlashBorrowReserveLiquidity { liquidity_amount }
-            }
-            20 => {
-                let (liquidity_amount, rest) = Self::unpack_u64(rest)?;
-                let (borrow_instruction_index, _rest) = Self::unpack_u8(rest)?;
-                Self::FlashRepayReserveLiquidity {
-                    liquidity_amount,
-                    borrow_instruction_index,
-                }
-            }
-            _ => {
-                msg!("Instruction cannot be unpacked");
-                return Err(LendingError::InstructionUnpackError.into());
-            }
-        })
-    }
-
-    fn unpack_u64(input: &[u8]) -> Result<(u64, &[u8]), ProgramError> {
-        if input.len() < 8 {
-            msg!("u64 cannot be unpacked");
-            return Err(LendingError::InstructionUnpackError.into());
-        }
-        let (bytes, rest) = input.split_at(8);
-        let value = bytes
-            .get(..8)
-            .and_then(|slice| slice.try_into().ok())
-            .map(u64::from_le_bytes)
-            .ok_or(LendingError::InstructionUnpackError)?;
-        Ok((value, rest))
-    }
-
-    fn unpack_u8(input: &[u8]) -> Result<(u8, &[u8]), ProgramError> {
-        if input.is_empty() {
-            msg!("u8 cannot be unpacked");
-            return Err(LendingError::InstructionUnpackError.into());
-        }
-        let (bytes, rest) = input.split_at(1);
-        let value = bytes
-            .get(..1)
-            .and_then(|slice| slice.try_into().ok())
-            .map(u8::from_le_bytes)
-            .ok_or(LendingError::InstructionUnpackError)?;
-        Ok((value, rest))
-    }
-
-    fn unpack_bytes32(input: &[u8]) -> Result<(&[u8; 32], &[u8]), ProgramError> {
-        if input.len() < 32 {
-            msg!("32 bytes cannot be unpacked");
-            return Err(LendingError::InstructionUnpackError.into());
-        }
-        let (bytes, rest) = input.split_at(32);
-        Ok((
-            bytes
-                .try_into()
-                .map_err(|_| LendingError::InstructionUnpackError)?,
-            rest,
-        ))
-    }
-
-    fn unpack_pubkey(input: &[u8]) -> Result<(Pubkey, &[u8]), ProgramError> {
-        if input.len() < PUBKEY_BYTES {
-            msg!("Pubkey cannot be unpacked");
-            return Err(LendingError::InstructionUnpackError.into());
-        }
-        let (key, rest) = input.split_at(PUBKEY_BYTES);
-        let pk = Pubkey::new(key);
-        Ok((pk, rest))
-    }
-
-    /// Packs a [LendingInstruction](enum.LendingInstruction.html) into a byte buffer.
-    pub fn pack(&self) -> Vec<u8> {
-        let mut buf = Vec::with_capacity(size_of::<Self>());
-        match *self {
-            Self::InitLendingMarket {
-                owner,
-                quote_currency,
-            } => {
-                buf.push(0);
-                buf.extend_from_slice(owner.as_ref());
-                buf.extend_from_slice(quote_currency.as_ref());
-            }
-            Self::SetLendingMarketOwner { new_owner } => {
-                buf.push(1);
-                buf.extend_from_slice(new_owner.as_ref());
-            }
-            Self::InitReserve {
-                liquidity_amount,
-                config:
-                    ReserveConfig {
-                        optimal_utilization_rate,
-                        loan_to_value_ratio,
-                        liquidation_bonus,
-                        liquidation_threshold,
-                        min_borrow_rate,
-                        optimal_borrow_rate,
-                        max_borrow_rate,
-                        fees:
-                            ReserveFees {
-                                borrow_fee_wad,
-                                flash_loan_fee_wad,
-                                host_fee_percentage,
-                            },
-                        deposit_limit,
-                        borrow_limit,
-                        fee_receiver,
-                        protocol_liquidation_fee,
-                        protocol_take_rate,
-                    },
-            } => {
-                buf.push(2);
-                buf.extend_from_slice(&liquidity_amount.to_le_bytes());
-                buf.extend_from_slice(&optimal_utilization_rate.to_le_bytes());
-                buf.extend_from_slice(&loan_to_value_ratio.to_le_bytes());
-                buf.extend_from_slice(&liquidation_bonus.to_le_bytes());
-                buf.extend_from_slice(&liquidation_threshold.to_le_bytes());
-                buf.extend_from_slice(&min_borrow_rate.to_le_bytes());
-                buf.extend_from_slice(&optimal_borrow_rate.to_le_bytes());
-                buf.extend_from_slice(&max_borrow_rate.to_le_bytes());
-                buf.extend_from_slice(&borrow_fee_wad.to_le_bytes());
-                buf.extend_from_slice(&flash_loan_fee_wad.to_le_bytes());
-                buf.extend_from_slice(&host_fee_percentage.to_le_bytes());
-                buf.extend_from_slice(&deposit_limit.to_le_bytes());
-                buf.extend_from_slice(&borrow_limit.to_le_bytes());
-                buf.extend_from_slice(&fee_receiver.to_bytes());
-                buf.extend_from_slice(&protocol_liquidation_fee.to_le_bytes());
-                buf.extend_from_slice(&protocol_take_rate.to_le_bytes());
-            }
-            Self::RefreshReserve => {
-                buf.push(3);
-            }
-            Self::DepositReserveLiquidity { liquidity_amount } => {
-                buf.push(4);
-                buf.extend_from_slice(&liquidity_amount.to_le_bytes());
-            }
-            Self::RedeemReserveCollateral { collateral_amount } => {
-                buf.push(5);
-                buf.extend_from_slice(&collateral_amount.to_le_bytes());
-            }
-            Self::InitObligation => {
-                buf.push(6);
-            }
-            Self::RefreshObligation => {
-                buf.push(7);
-            }
-            Self::DepositObligationCollateral { collateral_amount } => {
-                buf.push(8);
-                buf.extend_from_slice(&collateral_amount.to_le_bytes());
-            }
-            Self::WithdrawObligationCollateral { collateral_amount } => {
-                buf.push(9);
-                buf.extend_from_slice(&collateral_amount.to_le_bytes());
-            }
-            Self::BorrowObligationLiquidity { liquidity_amount } => {
-                buf.push(10);
-                buf.extend_from_slice(&liquidity_amount.to_le_bytes());
-            }
-            Self::RepayObligationLiquidity { liquidity_amount } => {
-                buf.push(11);
-                buf.extend_from_slice(&liquidity_amount.to_le_bytes());
-            }
-            Self::LiquidateObligation { liquidity_amount } => {
-                buf.push(12);
-                buf.extend_from_slice(&liquidity_amount.to_le_bytes());
-            }
-            Self::FlashLoan { amount } => {
-                buf.push(13);
-                buf.extend_from_slice(&amount.to_le_bytes());
-            }
-            Self::DepositReserveLiquidityAndObligationCollateral { liquidity_amount } => {
-                buf.push(14);
-                buf.extend_from_slice(&liquidity_amount.to_le_bytes());
-            }
-            Self::WithdrawObligationCollateralAndRedeemReserveCollateral { collateral_amount } => {
-                buf.push(15);
-                buf.extend_from_slice(&collateral_amount.to_le_bytes());
-            }
-            Self::UpdateReserveConfig { config } => {
-                buf.push(16);
-                buf.extend_from_slice(&config.optimal_utilization_rate.to_le_bytes());
-                buf.extend_from_slice(&config.loan_to_value_ratio.to_le_bytes());
-                buf.extend_from_slice(&config.liquidation_bonus.to_le_bytes());
-                buf.extend_from_slice(&config.liquidation_threshold.to_le_bytes());
-                buf.extend_from_slice(&config.min_borrow_rate.to_le_bytes());
-                buf.extend_from_slice(&config.optimal_borrow_rate.to_le_bytes());
-                buf.extend_from_slice(&config.max_borrow_rate.to_le_bytes());
-                buf.extend_from_slice(&config.fees.borrow_fee_wad.to_le_bytes());
-                buf.extend_from_slice(&config.fees.flash_loan_fee_wad.to_le_bytes());
-                buf.extend_from_slice(&config.fees.host_fee_percentage.to_le_bytes());
-                buf.extend_from_slice(&config.deposit_limit.to_le_bytes());
-                buf.extend_from_slice(&config.borrow_limit.to_le_bytes());
-                buf.extend_from_slice(&config.fee_receiver.to_bytes());
-                buf.extend_from_slice(&config.protocol_liquidation_fee.to_le_bytes());
-                buf.extend_from_slice(&config.protocol_take_rate.to_le_bytes());
-            }
-            Self::LiquidateObligationAndRedeemReserveCollateral { liquidity_amount } => {
-                buf.push(17);
-                buf.extend_from_slice(&liquidity_amount.to_le_bytes());
-            }
-            Self::RedeemFees {} => {
-                buf.push(18);
-            }
-            Self::FlashBorrowReserveLiquidity { liquidity_amount } => {
-                buf.push(19);
-                buf.extend_from_slice(&liquidity_amount.to_le_bytes());
-            }
-            Self::FlashRepayReserveLiquidity {
-                liquidity_amount,
-                borrow_instruction_index,
-            } => {
-                buf.push(20);
-                buf.extend_from_slice(&liquidity_amount.to_le_bytes());
-                buf.extend_from_slice(&borrow_instruction_index.to_le_bytes());
-            }
-        }
-        buf
-    }
-}
-
 /// Creates an 'InitLendingMarket' instruction.
 pub fn init_lending_market(
     program_id: Pubkey,
@@ -849,7 +479,8 @@ pub fn init_lending_market(
             owner,
             quote_currency,
         }
-        .pack(),
+        .try_to_vec()
+        .unwrap(),
     }
 }
 
@@ -866,7 +497,9 @@ pub fn set_lending_market_owner(
             AccountMeta::new(lending_market_pubkey, false),
             AccountMeta::new_readonly(lending_market_owner, true),
         ],
-        data: LendingInstruction::SetLendingMarketOwner { new_owner }.pack(),
+        data: LendingInstruction::SetLendingMarketOwner { new_owner }
+            .try_to_vec()
+            .unwrap(),
     }
 }
 
@@ -920,7 +553,8 @@ pub fn init_reserve(
             liquidity_amount,
             config,
         }
-        .pack(),
+        .try_to_vec()
+        .unwrap(),
     }
 }
 
@@ -939,7 +573,7 @@ pub fn refresh_reserve(
     Instruction {
         program_id,
         accounts,
-        data: LendingInstruction::RefreshReserve.pack(),
+        data: LendingInstruction::RefreshReserve.try_to_vec().unwrap(),
     }
 }
 
@@ -973,7 +607,9 @@ pub fn deposit_reserve_liquidity(
             AccountMeta::new_readonly(user_transfer_authority_pubkey, true),
             AccountMeta::new_readonly(spl_token::id(), false),
         ],
-        data: LendingInstruction::DepositReserveLiquidity { liquidity_amount }.pack(),
+        data: LendingInstruction::DepositReserveLiquidity { liquidity_amount }
+            .try_to_vec()
+            .unwrap(),
     }
 }
 
@@ -1007,7 +643,9 @@ pub fn redeem_reserve_collateral(
             AccountMeta::new_readonly(user_transfer_authority_pubkey, true),
             AccountMeta::new_readonly(spl_token::id(), false),
         ],
-        data: LendingInstruction::RedeemReserveCollateral { collateral_amount }.pack(),
+        data: LendingInstruction::RedeemReserveCollateral { collateral_amount }
+            .try_to_vec()
+            .unwrap(),
     }
 }
 
@@ -1028,7 +666,7 @@ pub fn init_obligation(
             AccountMeta::new_readonly(sysvar::rent::id(), false),
             AccountMeta::new_readonly(spl_token::id(), false),
         ],
-        data: LendingInstruction::InitObligation.pack(),
+        data: LendingInstruction::InitObligation.try_to_vec().unwrap(),
     }
 }
 
@@ -1048,7 +686,7 @@ pub fn refresh_obligation(
     Instruction {
         program_id,
         accounts,
-        data: LendingInstruction::RefreshObligation.pack(),
+        data: LendingInstruction::RefreshObligation.try_to_vec().unwrap(),
     }
 }
 
@@ -1077,7 +715,9 @@ pub fn deposit_obligation_collateral(
             AccountMeta::new_readonly(user_transfer_authority_pubkey, true),
             AccountMeta::new_readonly(spl_token::id(), false),
         ],
-        data: LendingInstruction::DepositObligationCollateral { collateral_amount }.pack(),
+        data: LendingInstruction::DepositObligationCollateral { collateral_amount }
+            .try_to_vec()
+            .unwrap(),
     }
 }
 
@@ -1124,7 +764,8 @@ pub fn deposit_reserve_liquidity_and_obligation_collateral(
         data: LendingInstruction::DepositReserveLiquidityAndObligationCollateral {
             liquidity_amount,
         }
-        .pack(),
+        .try_to_vec()
+        .unwrap(),
     }
 }
 
@@ -1167,7 +808,8 @@ pub fn withdraw_obligation_collateral_and_redeem_reserve_collateral(
         data: LendingInstruction::WithdrawObligationCollateralAndRedeemReserveCollateral {
             collateral_amount,
         }
-        .pack(),
+        .try_to_vec()
+        .unwrap(),
     }
 }
 
@@ -1199,7 +841,9 @@ pub fn withdraw_obligation_collateral(
             AccountMeta::new_readonly(obligation_owner_pubkey, true),
             AccountMeta::new_readonly(spl_token::id(), false),
         ],
-        data: LendingInstruction::WithdrawObligationCollateral { collateral_amount }.pack(),
+        data: LendingInstruction::WithdrawObligationCollateral { collateral_amount }
+            .try_to_vec()
+            .unwrap(),
     }
 }
 
@@ -1238,7 +882,9 @@ pub fn borrow_obligation_liquidity(
     Instruction {
         program_id,
         accounts,
-        data: LendingInstruction::BorrowObligationLiquidity { liquidity_amount }.pack(),
+        data: LendingInstruction::BorrowObligationLiquidity { liquidity_amount }
+            .try_to_vec()
+            .unwrap(),
     }
 }
 
@@ -1265,7 +911,9 @@ pub fn repay_obligation_liquidity(
             AccountMeta::new_readonly(user_transfer_authority_pubkey, true),
             AccountMeta::new_readonly(spl_token::id(), false),
         ],
-        data: LendingInstruction::RepayObligationLiquidity { liquidity_amount }.pack(),
+        data: LendingInstruction::RepayObligationLiquidity { liquidity_amount }
+            .try_to_vec()
+            .unwrap(),
     }
 }
 
@@ -1303,7 +951,9 @@ pub fn liquidate_obligation(
             AccountMeta::new_readonly(user_transfer_authority_pubkey, true),
             AccountMeta::new_readonly(spl_token::id(), false),
         ],
-        data: LendingInstruction::LiquidateObligation { liquidity_amount }.pack(),
+        data: LendingInstruction::LiquidateObligation { liquidity_amount }
+            .try_to_vec()
+            .unwrap(),
     }
 }
 
@@ -1335,7 +985,9 @@ pub fn update_reserve_config(
     Instruction {
         program_id,
         accounts,
-        data: LendingInstruction::UpdateReserveConfig { config }.pack(),
+        data: LendingInstruction::UpdateReserveConfig { config }
+            .try_to_vec()
+            .unwrap(),
     }
 }
 
@@ -1384,7 +1036,8 @@ pub fn liquidate_obligation_and_redeem_reserve_collateral(
         data: LendingInstruction::LiquidateObligationAndRedeemReserveCollateral {
             liquidity_amount,
         }
-        .pack(),
+        .try_to_vec()
+        .unwrap(),
     }
 }
 
@@ -1411,7 +1064,7 @@ pub fn redeem_fees(
     Instruction {
         program_id,
         accounts,
-        data: LendingInstruction::RedeemFees.pack(),
+        data: LendingInstruction::RedeemFees.try_to_vec().unwrap(),
     }
 }
 
@@ -1441,7 +1094,9 @@ pub fn flash_borrow_reserve_liquidity(
             AccountMeta::new_readonly(sysvar::instructions::id(), false),
             AccountMeta::new_readonly(spl_token::id(), false),
         ],
-        data: LendingInstruction::FlashBorrowReserveLiquidity { liquidity_amount }.pack(),
+        data: LendingInstruction::FlashBorrowReserveLiquidity { liquidity_amount }
+            .try_to_vec()
+            .unwrap(),
     }
 }
 
@@ -1476,6 +1131,7 @@ pub fn flash_repay_reserve_liquidity(
             liquidity_amount,
             borrow_instruction_index,
         }
-        .pack(),
+        .try_to_vec()
+        .unwrap(),
     }
 }

@@ -13,6 +13,7 @@ use crate::{
         ReserveCollateral, ReserveConfig, ReserveLiquidity,
     },
 };
+use borsh::BorshDeserialize;
 use pyth_sdk_solana::{self, state::ProductAccount};
 use solana_program::{
     account_info::{next_account_info, AccountInfo},
@@ -44,7 +45,7 @@ pub fn process_instruction(
     accounts: &[AccountInfo],
     input: &[u8],
 ) -> ProgramResult {
-    let instruction = LendingInstruction::unpack(input)?;
+    let instruction = LendingInstruction::try_from_slice(input)?;
     match instruction {
         LendingInstruction::InitLendingMarket {
             owner,
@@ -2260,7 +2261,7 @@ fn _flash_borrow_reserve_liquidity<'a>(
             continue;
         }
 
-        let unpacked = LendingInstruction::unpack(ixn.data.as_slice())?;
+        let unpacked = LendingInstruction::try_from_slice(ixn.data.as_slice())?;
         match unpacked {
             LendingInstruction::FlashRepayReserveLiquidity {
                 liquidity_amount: repay_liquidity_amount,
@@ -2429,7 +2430,7 @@ fn _flash_repay_reserve_liquidity<'a>(
         return Err(LendingError::InvalidFlashRepay.into());
     }
 
-    let unpacked = LendingInstruction::unpack(ixn.data.as_slice())?;
+    let unpacked = LendingInstruction::try_from_slice(ixn.data.as_slice())?;
     match unpacked {
         LendingInstruction::FlashBorrowReserveLiquidity {
             liquidity_amount: borrow_liquidity_amount,
