@@ -2,8 +2,8 @@
 
 mod helpers;
 
-use solend_sdk::math::Decimal;
 use crate::solend_program_test::MintSupplyChange;
+use solend_sdk::math::Decimal;
 use solend_sdk::state::ObligationCollateral;
 use solend_sdk::state::ReserveCollateral;
 use std::collections::HashSet;
