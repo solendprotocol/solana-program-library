@@ -2,6 +2,7 @@
 
 mod helpers;
 
+use solend_sdk::math::Decimal;
 use crate::solend_program_test::MintSupplyChange;
 use std::collections::HashSet;
 
@@ -104,6 +105,14 @@ async fn test_success() {
             collateral: ReserveCollateral {
                 mint_total_supply: usdc_reserve.account.collateral.mint_total_supply - 1_000_000,
                 ..usdc_reserve.account.collateral
+            },
+            rate_limiter: {
+                let mut rate_limiter = usdc_reserve.account.rate_limiter;
+                rate_limiter
+                    .update(1000, Decimal::from(1_000_000u64))
+                    .unwrap();
+
+                rate_limiter
             },
             ..usdc_reserve.account
         }

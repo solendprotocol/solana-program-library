@@ -872,8 +872,10 @@ impl Info<LendingMarket> {
         host_fee_receiver_pubkey: &Pubkey,
         liquidity_amount: u64,
     ) -> Result<(), BanksClientError> {
+        let obligation = test.load_account::<Obligation>(obligation.pubkey).await;
+
         let mut instructions = self
-            .build_refresh_instructions(test, obligation, Some(borrow_reserve))
+            .build_refresh_instructions(test, &obligation, Some(borrow_reserve))
             .await;
 
         instructions.push(borrow_obligation_liquidity(
@@ -1342,6 +1344,8 @@ pub async fn setup_world(
 }
 
 /// Scenario 1
+/// sol = $10
+/// usdc = $1
 /// LendingMarket
 /// - USDC Reserve
 /// - WSOL Reserve

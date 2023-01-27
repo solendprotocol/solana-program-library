@@ -2,6 +2,7 @@
 
 mod helpers;
 
+use solend_sdk::math::Decimal;
 use crate::solend_program_test::MintSupplyChange;
 use solend_sdk::state::ObligationCollateral;
 use solend_sdk::state::ReserveCollateral;
@@ -42,6 +43,7 @@ async fn test_success() {
     // check token balances
     let (balance_changes, mint_supply_changes) =
         balance_checker.find_balance_changes(&mut test).await;
+    // still borrowing 100usd worth of sol so we need to leave 200usd in the obligation.
     let withdraw_amount = (100_000 * FRACTIONAL_TO_USDC - 200 * FRACTIONAL_TO_USDC) as i128;
 
     let expected_balance_changes = HashSet::from([
@@ -88,6 +90,14 @@ async fn test_success() {
                 mint_total_supply: usdc_reserve.account.collateral.mint_total_supply
                     - withdraw_amount as u64,
                 ..usdc_reserve.account.collateral
+            },
+            rate_limiter: {
+                let mut rate_limiter = usdc_reserve.account.rate_limiter;
+                rate_limiter
+                    .update(1000, Decimal::from(withdraw_amount as u64))
+                    .unwrap();
+
+                rate_limiter
             },
             ..usdc_reserve.account
         }

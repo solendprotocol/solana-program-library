@@ -673,6 +673,7 @@ fn process_redeem_reserve_collateral(
         user_transfer_authority_info,
         clock,
         token_program_id,
+        true,
     )?;
     let mut reserve = Reserve::unpack(&reserve_info.data.borrow())?;
     reserve.last_update.mark_stale();
@@ -695,6 +696,7 @@ fn _redeem_reserve_collateral<'a>(
     user_transfer_authority_info: &AccountInfo<'a>,
     clock: &Clock,
     token_program_id: &AccountInfo<'a>,
+    check_rate_limits: bool,
 ) -> Result<u64, ProgramError> {
     let lending_market = LendingMarket::unpack(&lending_market_info.data.borrow())?;
     if lending_market_info.owner != program_id {
@@ -750,6 +752,18 @@ fn _redeem_reserve_collateral<'a>(
     }
 
     let liquidity_amount = reserve.redeem_collateral(collateral_amount)?;
+
+    if check_rate_limits {
+        reserve
+            .rate_limiter
+            .update(clock.slot, Decimal::from(liquidity_amount))
+            .map_err(|err| {
+                msg!("Reserve outflow limit exceeded! Please try again later.");
+                err
+            })?;
+        // TODO check lending market rate limit
+    }
+
     reserve.last_update.mark_stale();
     Reserve::pack(reserve, &mut reserve_info.data.borrow_mut())?;
 
@@ -1477,6 +1491,16 @@ fn process_borrow_obligation_liquidity(
 
     let cumulative_borrow_rate_wads = borrow_reserve.liquidity.cumulative_borrow_rate_wads;
 
+    // check outflow rate limits
+    // TODO add rate limiter to lending market
+    borrow_reserve
+        .rate_limiter
+        .update(clock.slot, borrow_amount)
+        .map_err(|err| {
+            msg!("Reserve outflow limit exceeded! Please try again later");
+            err
+        })?;
+
     borrow_reserve.liquidity.borrow(borrow_amount)?;
     borrow_reserve.last_update.mark_stale();
     Reserve::pack(borrow_reserve, &mut borrow_reserve_info.data.borrow_mut())?;
@@ -1885,6 +1909,7 @@ fn process_liquidate_obligation_and_redeem_reserve_collateral(
             user_transfer_authority_info,
             clock,
             token_program_id,
+            false,
         )?;
         let withdraw_reserve = Reserve::unpack(&withdraw_reserve_info.data.borrow())?;
         if &withdraw_reserve.config.fee_receiver != withdraw_reserve_liquidity_fee_receiver_info.key
@@ -1959,6 +1984,7 @@ fn process_withdraw_obligation_collateral_and_redeem_reserve_liquidity(
         user_transfer_authority_info,
         clock,
         token_program_id,
+        true,
     )?;
     Ok(())
 }
