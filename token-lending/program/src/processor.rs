@@ -2094,6 +2094,18 @@ fn process_update_reserve_config(
         return Err(LendingError::InvalidMarketAuthority.into());
     }
 
+    // if window duration and max outflow are different, then create a new rate limiter instance.
+    if (reserve.config.window_duration, reserve.config.max_outflow)
+        != (config.window_duration, config.max_outflow)
+    {
+        let rate_limiter = RateLimiter::new(
+            Decimal::from(config.max_outflow),
+            config.window_duration,
+            Clock::get()?.slot,
+        );
+        reserve.rate_limiter = rate_limiter;
+    }
+
     if *pyth_price_info.key != reserve.liquidity.pyth_oracle_pubkey {
         validate_pyth_keys(&lending_market, pyth_product_info, pyth_price_info)?;
         reserve.liquidity.pyth_oracle_pubkey = *pyth_price_info.key;

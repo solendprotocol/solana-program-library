@@ -30,6 +30,7 @@ use solend_program::state::ReserveCollateral;
 use solend_program::state::ReserveLiquidity;
 use solend_program::state::PROGRAM_VERSION;
 use solend_program::NULL_PUBKEY;
+
 use solend_program::{
     error::LendingError,
     instruction::init_reserve,
@@ -318,7 +319,12 @@ async fn test_update_reserve_config() {
         .await
         .unwrap();
 
-    let new_reserve_config = test_reserve_config();
+    let new_reserve_config = ReserveConfig {
+        max_outflow: 100,
+        window_duration: 50,
+        ..test_reserve_config()
+    };
+
     lending_market
         .update_reserve_config(
             &mut test,
@@ -335,6 +341,11 @@ async fn test_update_reserve_config() {
         wsol_reserve_post.account,
         Reserve {
             config: new_reserve_config,
+            rate_limiter: RateLimiter::new(
+                Decimal::from(new_reserve_config.max_outflow),
+                new_reserve_config.window_duration,
+                1000
+            ),
             ..wsol_reserve.account
         }
     );
