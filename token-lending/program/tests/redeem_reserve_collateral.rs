@@ -88,7 +88,19 @@ async fn test_success() {
     let lending_market_post = test
         .load_account::<LendingMarket>(lending_market.pubkey)
         .await;
-    assert_eq!(lending_market.account, lending_market_post.account);
+    assert_eq!(
+        lending_market_post.account,
+        LendingMarket {
+            rate_limiter: {
+                let mut rate_limiter = lending_market.account.rate_limiter;
+                rate_limiter
+                    .update(1000, Decimal::from(1_000_000u64))
+                    .unwrap();
+                rate_limiter
+            },
+            ..lending_market.account
+        }
+    );
 
     let usdc_reserve_post = test.load_account::<Reserve>(usdc_reserve.pubkey).await;
     assert_eq!(

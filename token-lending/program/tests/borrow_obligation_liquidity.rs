@@ -166,8 +166,22 @@ async fn test_success() {
     assert_eq!(mint_supply_changes, HashSet::new());
 
     // check program state
-    let lending_market_post = test.load_account(lending_market.pubkey).await;
-    assert_eq!(lending_market, lending_market_post);
+    let lending_market_post = test
+        .load_account::<LendingMarket>(lending_market.pubkey)
+        .await;
+    assert_eq!(
+        lending_market_post.account,
+        LendingMarket {
+            rate_limiter: {
+                let mut rate_limiter = lending_market.account.rate_limiter;
+                rate_limiter
+                    .update(1000, Decimal::from(10 * (4 * LAMPORTS_PER_SOL + 400)))
+                    .unwrap();
+                rate_limiter
+            },
+            ..lending_market.account
+        }
+    );
 
     let wsol_reserve_post = test.load_account::<Reserve>(wsol_reserve.pubkey).await;
     let expected_wsol_reserve_post = Reserve {

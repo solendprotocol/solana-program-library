@@ -13,18 +13,19 @@ use solana_program::program_pack::{Pack, Sealed};
 /// guarantee: at any point, the outflow between [cur_slot - slot.window_duration, cur_slot]
 /// is less than 2x max_outflow.
 
-#[derive(Debug, Clone, Copy, PartialEq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct RateLimiter {
-    // parameters
-    max_outflow: Decimal,
-    window_duration: Slot,
+    /// max outflow per window duration
+    pub max_outflow: Decimal,
+    /// window duration in slots
+    pub window_duration: Slot,
 
     // state
     prev_window: Window,
     cur_window: Window,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 struct Window {
     slot_start: u64,
     qty: Decimal,

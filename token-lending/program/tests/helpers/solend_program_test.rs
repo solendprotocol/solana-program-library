@@ -4,6 +4,7 @@ use super::{
 };
 use crate::helpers::*;
 use solana_program::native_token::LAMPORTS_PER_SOL;
+use solend_program::state::LendingMarketConfig;
 use solend_sdk::{instruction::update_reserve_config, NULL_PUBKEY};
 
 use pyth_sdk_solana::state::PROD_ACCT_SIZE;
@@ -25,7 +26,7 @@ use solend_program::{
     instruction::{
         deposit_obligation_collateral, deposit_reserve_liquidity, init_lending_market,
         init_reserve, liquidate_obligation_and_redeem_reserve_collateral, redeem_fees,
-        redeem_reserve_collateral, repay_obligation_liquidity, set_lending_market_owner,
+        redeem_reserve_collateral, repay_obligation_liquidity, set_lending_market_owner_and_config,
         withdraw_obligation_collateral,
     },
     processor::process_instruction,
@@ -695,6 +696,8 @@ impl Info<LendingMarket> {
         user: &User,
         collateral_amount: u64,
     ) -> Result<(), BanksClientError> {
+        self.refresh_reserve(test, reserve).await.unwrap();
+
         let instructions = [redeem_reserve_collateral(
             solend_program::id(),
             collateral_amount,
@@ -1078,17 +1081,19 @@ impl Info<LendingMarket> {
             .await
     }
 
-    pub async fn set_lending_market_owner(
+    pub async fn set_lending_market_owner_and_config(
         &self,
         test: &mut SolendProgramTest,
         lending_market_owner: &User,
         new_owner: &Pubkey,
+        config: LendingMarketConfig,
     ) -> Result<(), BanksClientError> {
-        let instructions = [set_lending_market_owner(
+        let instructions = [set_lending_market_owner_and_config(
             solend_program::id(),
             self.pubkey,
             lending_market_owner.keypair.pubkey(),
             *new_owner,
+            config,
         )];
 
         test.process_transaction(&instructions, Some(&[&lending_market_owner.keypair]))

@@ -16,7 +16,10 @@ use solana_sdk::{
     transaction::TransactionError,
 };
 use solend_program::state::LendingMarket;
+use solend_sdk::math::Decimal;
+use solend_sdk::state::RateLimiter;
 
+use solend_program::state::LendingMarketConfig;
 use solend_program::{error::LendingError, instruction::LendingInstruction};
 
 async fn setup() -> (SolendProgramTest, Info<LendingMarket>, User) {
@@ -30,15 +33,33 @@ async fn setup() -> (SolendProgramTest, Info<LendingMarket>, User) {
 async fn test_success() {
     let (mut test, lending_market, lending_market_owner) = setup().await;
     let new_owner = Keypair::new();
+    let new_config = LendingMarketConfig {
+        max_outflow: 100,
+        window_duration: 5,
+    };
+
     lending_market
-        .set_lending_market_owner(&mut test, &lending_market_owner, &new_owner.pubkey())
+        .set_lending_market_owner_and_config(
+            &mut test,
+            &lending_market_owner,
+            &new_owner.pubkey(),
+            new_config,
+        )
         .await
         .unwrap();
 
-    let lending_market = test
+    let lending_market_post = test
         .load_account::<LendingMarket>(lending_market.pubkey)
         .await;
-    assert_eq!(lending_market.account.owner, new_owner.pubkey());
+
+    assert_eq!(
+        lending_market_post.account,
+        LendingMarket {
+            owner: new_owner.pubkey(),
+            rate_limiter: RateLimiter::new(Decimal::from(100u64), 5, 1000),
+            ..lending_market_post.account
+        }
+    );
 }
 
 #[tokio::test]
@@ -48,7 +69,12 @@ async fn test_invalid_owner() {
     let new_owner = Keypair::new();
 
     let res = lending_market
-        .set_lending_market_owner(&mut test, &invalid_owner, &new_owner.pubkey())
+        .set_lending_market_owner_and_config(
+            &mut test,
+            &invalid_owner,
+            &new_owner.pubkey(),
+            LendingMarketConfig::default(),
+        )
         .await
         .unwrap_err()
         .unwrap();
@@ -74,7 +100,11 @@ async fn test_owner_not_signer() {
                     AccountMeta::new(lending_market.pubkey, false),
                     AccountMeta::new_readonly(lending_market.account.owner, false),
                 ],
-                data: LendingInstruction::SetLendingMarketOwner { new_owner }.pack(),
+                data: LendingInstruction::SetLendingMarketOwnerAndConfig {
+                    new_owner,
+                    config: LendingMarketConfig::default(),
+                }
+                .pack(),
             }],
             None,
         )

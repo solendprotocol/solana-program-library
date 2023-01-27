@@ -1,5 +1,6 @@
 //! Instruction types
 
+use crate::state::LendingMarketConfig;
 use crate::{
     error::LendingError,
     state::{ReserveConfig, ReserveFees},
@@ -41,9 +42,11 @@ pub enum LendingInstruction {
     ///
     ///   0. `[writable]` Lending market account.
     ///   1. `[signer]` Current owner.
-    SetLendingMarketOwner {
+    SetLendingMarketOwnerAndConfig {
         /// The new owner
         new_owner: Pubkey,
+        /// The new config
+        config: LendingMarketConfig,
     },
 
     // 2
@@ -478,8 +481,16 @@ impl LendingInstruction {
                 }
             }
             1 => {
-                let (new_owner, _rest) = Self::unpack_pubkey(rest)?;
-                Self::SetLendingMarketOwner { new_owner }
+                let (new_owner, rest) = Self::unpack_pubkey(rest)?;
+                let (window_duration, rest) = Self::unpack_u64(rest)?;
+                let (max_outflow, _rest) = Self::unpack_u64(rest)?;
+                Self::SetLendingMarketOwnerAndConfig {
+                    new_owner,
+                    config: LendingMarketConfig {
+                        window_duration,
+                        max_outflow,
+                    },
+                }
             }
             2 => {
                 let (liquidity_amount, rest) = Self::unpack_u64(rest)?;
@@ -699,9 +710,11 @@ impl LendingInstruction {
                 buf.extend_from_slice(owner.as_ref());
                 buf.extend_from_slice(quote_currency.as_ref());
             }
-            Self::SetLendingMarketOwner { new_owner } => {
+            Self::SetLendingMarketOwnerAndConfig { new_owner, config } => {
                 buf.push(1);
                 buf.extend_from_slice(new_owner.as_ref());
+                buf.extend_from_slice(&config.window_duration.to_le_bytes());
+                buf.extend_from_slice(&config.max_outflow.to_le_bytes());
             }
             Self::InitReserve {
                 liquidity_amount,
@@ -869,11 +882,12 @@ pub fn init_lending_market(
 }
 
 /// Creates a 'SetLendingMarketOwner' instruction.
-pub fn set_lending_market_owner(
+pub fn set_lending_market_owner_and_config(
     program_id: Pubkey,
     lending_market_pubkey: Pubkey,
     lending_market_owner: Pubkey,
     new_owner: Pubkey,
+    config: LendingMarketConfig,
 ) -> Instruction {
     Instruction {
         program_id,
@@ -881,7 +895,7 @@ pub fn set_lending_market_owner(
             AccountMeta::new(lending_market_pubkey, false),
             AccountMeta::new_readonly(lending_market_owner, true),
         ],
-        data: LendingInstruction::SetLendingMarketOwner { new_owner }.pack(),
+        data: LendingInstruction::SetLendingMarketOwnerAndConfig { new_owner, config }.pack(),
     }
 }
 
@@ -1017,7 +1031,7 @@ pub fn redeem_reserve_collateral(
             AccountMeta::new(reserve_pubkey, false),
             AccountMeta::new(reserve_collateral_mint_pubkey, false),
             AccountMeta::new(reserve_liquidity_supply_pubkey, false),
-            AccountMeta::new_readonly(lending_market_pubkey, false),
+            AccountMeta::new(lending_market_pubkey, false),
             AccountMeta::new_readonly(lending_market_authority_pubkey, false),
             AccountMeta::new_readonly(user_transfer_authority_pubkey, true),
             AccountMeta::new_readonly(spl_token::id(), false),
@@ -1170,7 +1184,7 @@ pub fn withdraw_obligation_collateral_and_redeem_reserve_collateral(
             AccountMeta::new(destination_collateral_pubkey, false),
             AccountMeta::new(withdraw_reserve_pubkey, false),
             AccountMeta::new(obligation_pubkey, false),
-            AccountMeta::new_readonly(lending_market_pubkey, false),
+            AccountMeta::new(lending_market_pubkey, false),
             AccountMeta::new_readonly(lending_market_authority_pubkey, false),
             AccountMeta::new(destination_liquidity_pubkey, false),
             AccountMeta::new(reserve_collateral_mint_pubkey, false),
@@ -1242,7 +1256,7 @@ pub fn borrow_obligation_liquidity(
         AccountMeta::new(borrow_reserve_pubkey, false),
         AccountMeta::new(borrow_reserve_liquidity_fee_receiver_pubkey, false),
         AccountMeta::new(obligation_pubkey, false),
-        AccountMeta::new_readonly(lending_market_pubkey, false),
+        AccountMeta::new(lending_market_pubkey, false),
         AccountMeta::new_readonly(lending_market_authority_pubkey, false),
         AccountMeta::new_readonly(obligation_owner_pubkey, true),
         AccountMeta::new_readonly(spl_token::id(), false),

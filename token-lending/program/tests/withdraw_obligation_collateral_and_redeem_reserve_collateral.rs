@@ -4,6 +4,7 @@ mod helpers;
 
 use crate::solend_program_test::MintSupplyChange;
 use solend_sdk::math::Decimal;
+use solend_sdk::state::LendingMarket;
 use solend_sdk::state::ObligationCollateral;
 use solend_sdk::state::ReserveCollateral;
 use std::collections::HashSet;
@@ -73,6 +74,23 @@ async fn test_success() {
     );
 
     // check program state
+    let lending_market_post = test
+        .load_account::<LendingMarket>(lending_market.pubkey)
+        .await;
+    assert_eq!(
+        lending_market_post.account,
+        LendingMarket {
+            rate_limiter: {
+                let mut rate_limiter = lending_market.account.rate_limiter;
+                rate_limiter
+                    .update(1000, Decimal::from(withdraw_amount as u64))
+                    .unwrap();
+                rate_limiter
+            },
+            ..lending_market.account
+        }
+    );
+
     let usdc_reserve_post = test.load_account::<Reserve>(usdc_reserve.pubkey).await;
     assert_eq!(
         usdc_reserve_post.account,
