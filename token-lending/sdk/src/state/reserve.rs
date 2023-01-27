@@ -62,8 +62,8 @@ impl Reserve {
         self.collateral = params.collateral;
         self.config = params.config;
         self.rate_limiter = RateLimiter::new(
-            Decimal::from(params.config.max_outflow),
             params.config.window_duration,
+            Decimal::from(params.config.max_outflow),
             params.current_slot,
         );
     }

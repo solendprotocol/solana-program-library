@@ -56,7 +56,7 @@ async fn test_success() {
         lending_market_post.account,
         LendingMarket {
             owner: new_owner.pubkey(),
-            rate_limiter: RateLimiter::new(Decimal::from(100u64), 5, 1000),
+            rate_limiter: RateLimiter::new(5, Decimal::from(100u64), 1000),
             ..lending_market_post.account
         }
     );

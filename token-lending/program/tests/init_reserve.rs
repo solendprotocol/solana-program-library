@@ -176,8 +176,8 @@ async fn test_success() {
             },
             config: reserve_config,
             rate_limiter: RateLimiter::new(
-                Decimal::from(reserve_config.max_outflow),
                 reserve_config.window_duration,
+                Decimal::from(reserve_config.max_outflow),
                 1001
             )
         }
@@ -342,8 +342,8 @@ async fn test_update_reserve_config() {
         Reserve {
             config: new_reserve_config,
             rate_limiter: RateLimiter::new(
-                Decimal::from(new_reserve_config.max_outflow),
                 new_reserve_config.window_duration,
+                Decimal::from(new_reserve_config.max_outflow),
                 1000
             ),
             ..wsol_reserve.account

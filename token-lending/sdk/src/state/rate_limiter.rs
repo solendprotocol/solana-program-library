@@ -15,10 +15,11 @@ use solana_program::program_pack::{Pack, Sealed};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct RateLimiter {
-    /// max outflow per window duration
-    pub max_outflow: Decimal,
     /// window duration in slots
     pub window_duration: Slot,
+
+    /// max outflow per window duration
+    pub max_outflow: Decimal,
 
     // state
     prev_window: Window,
@@ -33,7 +34,7 @@ struct Window {
 
 impl RateLimiter {
     /// initialize rate limiter
-    pub fn new(max_outflow: Decimal, window_duration: u64, cur_slot: u64) -> Self {
+    pub fn new(window_duration: u64, max_outflow: Decimal, cur_slot: u64) -> Self {
         let slot_start = cur_slot / window_duration * window_duration;
         Self {
             max_outflow,
@@ -108,7 +109,7 @@ mod test {
 
     #[test]
     fn test_rate_limiter() {
-        let mut rate_limiter = RateLimiter::new(Decimal::from(100u64), 10, 10);
+        let mut rate_limiter = RateLimiter::new(10, Decimal::from(100u64), 10);
 
         // case 1: no prev window, all quantity is taken up in first slot
         assert_eq!(
@@ -150,7 +151,7 @@ mod test {
 
 impl Default for RateLimiter {
     fn default() -> Self {
-        Self::new(Decimal::from(u64::MAX), 1, 1)
+        Self::new(1, Decimal::from(u64::MAX), 1)
     }
 }
 

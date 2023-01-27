@@ -231,8 +231,8 @@ fn process_set_lending_market_owner_and_config(
         )
     {
         lending_market.rate_limiter = RateLimiter::new(
-            Decimal::from(config.max_outflow),
             config.window_duration,
+            Decimal::from(config.max_outflow),
             Clock::get()?.slot,
         );
     }
@@ -2099,8 +2099,8 @@ fn process_update_reserve_config(
         != (config.window_duration, config.max_outflow)
     {
         let rate_limiter = RateLimiter::new(
-            Decimal::from(config.max_outflow),
             config.window_duration,
+            Decimal::from(config.max_outflow),
             Clock::get()?.slot,
         );
         reserve.rate_limiter = rate_limiter;
