@@ -15,11 +15,8 @@ use solana_program::program_pack::{Pack, Sealed};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct RateLimiter {
-    /// window duration in slots
-    pub window_duration: Slot,
-
-    /// max outflow per window duration
-    pub max_outflow: Decimal,
+    /// configuration parameters
+    pub config: RateLimiterConfig,
 
     // state
     prev_window: Window,
@@ -32,13 +29,30 @@ struct Window {
     qty: Decimal,
 }
 
+/// Lending market configuration parameters
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct RateLimiterConfig {
+    /// Rate limiter window size in slots
+    pub window_duration: u64,
+    /// Rate limiter param. Max outflow of tokens in a window
+    pub max_outflow: u64,
+}
+
+impl Default for RateLimiterConfig {
+    fn default() -> Self {
+        Self {
+            window_duration: 1,
+            max_outflow: u64::MAX,
+        }
+    }
+}
+
 impl RateLimiter {
     /// initialize rate limiter
-    pub fn new(window_duration: u64, max_outflow: Decimal, cur_slot: u64) -> Self {
-        let slot_start = cur_slot / window_duration * window_duration;
+    pub fn new(config: RateLimiterConfig, cur_slot: u64) -> Self {
+        let slot_start = cur_slot / config.window_duration * config.window_duration;
         Self {
-            max_outflow,
-            window_duration,
+            config,
             prev_window: Window {
                 slot_start: slot_start - 1,
                 qty: Decimal::zero(),
@@ -55,10 +69,10 @@ impl RateLimiter {
         assert!(cur_slot >= self.cur_window.slot_start);
 
         // floor wrt window duration
-        let slot_start = cur_slot / self.window_duration * self.window_duration;
+        let slot_start = cur_slot / self.config.window_duration * self.config.window_duration;
 
         // update prev window, current window
-        match slot_start.cmp(&(self.cur_window.slot_start + self.window_duration)) {
+        match slot_start.cmp(&(self.cur_window.slot_start + self.config.window_duration)) {
             // |<-prev window->|<-cur window (cur_slot is in here)->|
             std::cmp::Ordering::Less => (),
 
@@ -88,13 +102,13 @@ impl RateLimiter {
         // this isn't true, but it's a good enough approximation
         let prev_weight = Decimal::one().try_sub(
             Decimal::from(cur_slot - self.cur_window.slot_start + 1)
-                .try_div(self.window_duration)?,
+                .try_div(self.config.window_duration)?,
         )?;
         let cur_outflow = prev_weight
             .try_mul(self.prev_window.qty)?
             .try_add(self.cur_window.qty)?;
 
-        if cur_outflow.try_add(qty)? > self.max_outflow {
+        if cur_outflow.try_add(qty)? > Decimal::from(self.config.max_outflow) {
             Err(LendingError::OutflowRateLimitExceeded.into())
         } else {
             self.cur_window.qty = self.cur_window.qty.try_add(qty)?;
@@ -109,7 +123,13 @@ mod test {
 
     #[test]
     fn test_rate_limiter() {
-        let mut rate_limiter = RateLimiter::new(10, Decimal::from(100u64), 10);
+        let mut rate_limiter = RateLimiter::new(
+            RateLimiterConfig {
+                window_duration: 10,
+                max_outflow: 100,
+            },
+            10,
+        );
 
         // case 1: no prev window, all quantity is taken up in first slot
         assert_eq!(
@@ -151,7 +171,13 @@ mod test {
 
 impl Default for RateLimiter {
     fn default() -> Self {
-        Self::new(1, Decimal::from(u64::MAX), 1)
+        Self::new(
+            RateLimiterConfig {
+                window_duration: 1,
+                max_outflow: u64::MAX,
+            },
+            1,
+        )
     }
 }
 
@@ -164,22 +190,22 @@ impl IsInitialized for RateLimiter {
 }
 
 /// Size of RateLimiter when packed into account
-pub const RATE_LIMITER_LEN: usize = 72;
+pub const RATE_LIMITER_LEN: usize = 64;
 impl Pack for RateLimiter {
     const LEN: usize = RATE_LIMITER_LEN;
 
     fn pack_into_slice(&self, dst: &mut [u8]) {
         let dst = array_mut_ref![dst, 0, RATE_LIMITER_LEN];
         let (
-            max_outflow_dst,
-            window_duration_dst,
+            config_max_outflow_dst,
+            config_window_duration_dst,
             prev_window_slot_start_dst,
             prev_window_qty_dst,
             cur_window_slot_start_dst,
             cur_window_qty_dst,
-        ) = mut_array_refs![dst, 16, 8, 8, 16, 8, 16];
-        pack_decimal(self.max_outflow, max_outflow_dst);
-        *window_duration_dst = self.window_duration.to_le_bytes();
+        ) = mut_array_refs![dst, 8, 8, 8, 16, 8, 16];
+        *config_max_outflow_dst = self.config.max_outflow.to_le_bytes();
+        *config_window_duration_dst = self.config.window_duration.to_le_bytes();
         *prev_window_slot_start_dst = self.prev_window.slot_start.to_le_bytes();
         pack_decimal(self.prev_window.qty, prev_window_qty_dst);
         *cur_window_slot_start_dst = self.cur_window.slot_start.to_le_bytes();
@@ -189,17 +215,19 @@ impl Pack for RateLimiter {
     fn unpack_from_slice(src: &[u8]) -> Result<Self, ProgramError> {
         let src = array_ref![src, 0, RATE_LIMITER_LEN];
         let (
-            max_outflow_src,
-            window_duration_src,
+            config_max_outflow_src,
+            config_window_duration_src,
             prev_window_slot_start_src,
             prev_window_qty_src,
             cur_window_slot_start_src,
             cur_window_qty_src,
-        ) = array_refs![src, 16, 8, 8, 16, 8, 16];
+        ) = array_refs![src, 8, 8, 8, 16, 8, 16];
 
         Ok(Self {
-            max_outflow: unpack_decimal(max_outflow_src),
-            window_duration: u64::from_le_bytes(*window_duration_src),
+            config: RateLimiterConfig {
+                max_outflow: u64::from_le_bytes(*config_max_outflow_src),
+                window_duration: u64::from_le_bytes(*config_window_duration_src),
+            },
             prev_window: Window {
                 slot_start: u64::from_le_bytes(*prev_window_slot_start_src),
                 qty: unpack_decimal(prev_window_qty_src),

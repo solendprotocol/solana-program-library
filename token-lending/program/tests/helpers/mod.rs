@@ -53,8 +53,6 @@ pub fn test_reserve_config() -> ReserveConfig {
         fee_receiver: Keypair::new().pubkey(),
         protocol_liquidation_fee: 0,
         protocol_take_rate: 0,
-        window_duration: 120,
-        max_outflow: u64::MAX,
     }
 }
 

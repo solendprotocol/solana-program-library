@@ -3,7 +3,7 @@
 use solend_program::math::TryDiv;
 mod helpers;
 
-use solend_program::state::ReserveFees;
+use solend_program::state::{ReserveFees, RateLimiterConfig};
 use std::collections::HashSet;
 
 use helpers::solend_program_test::{
@@ -32,8 +32,9 @@ async fn setup(
     User,
     Info<Obligation>,
     User,
+    User,
 ) {
-    let (mut test, lending_market, usdc_reserve, wsol_reserve, _, user) =
+    let (mut test, lending_market, usdc_reserve, wsol_reserve, lending_market_owner, user) =
         setup_world(&test_reserve_config(), wsol_reserve_config).await;
 
     let obligation = lending_market
@@ -99,12 +100,13 @@ async fn setup(
         user,
         obligation,
         host_fee_receiver,
+        lending_market_owner,
     )
 }
 
 #[tokio::test]
 async fn test_success() {
-    let (mut test, lending_market, usdc_reserve, wsol_reserve, user, obligation, host_fee_receiver) =
+    let (mut test, lending_market, usdc_reserve, wsol_reserve, user, obligation, host_fee_receiver, _) =
         setup(&ReserveConfig {
             fees: ReserveFees {
                 borrow_fee_wad: 100_000_000_000,
@@ -249,7 +251,7 @@ async fn test_success() {
 // FIXME this should really be a unit test
 #[tokio::test]
 async fn test_borrow_max() {
-    let (mut test, lending_market, usdc_reserve, wsol_reserve, user, obligation, host_fee_receiver) =
+    let (mut test, lending_market, usdc_reserve, wsol_reserve, user, obligation, host_fee_receiver, _) =
         setup(&ReserveConfig {
             fees: ReserveFees {
                 borrow_fee_wad: 100_000_000_000,
@@ -315,7 +317,7 @@ async fn test_borrow_max() {
 
 #[tokio::test]
 async fn test_fail_borrow_over_reserve_borrow_limit() {
-    let (mut test, lending_market, _, wsol_reserve, user, obligation, host_fee_receiver) =
+    let (mut test, lending_market, _, wsol_reserve, user, obligation, host_fee_receiver, _) =
         setup(&ReserveConfig {
             borrow_limit: LAMPORTS_PER_SOL,
             ..test_reserve_config()
@@ -347,14 +349,27 @@ async fn test_fail_borrow_over_reserve_borrow_limit() {
 
 #[tokio::test]
 async fn test_fail_reserve_borrow_rate_limit_exceeded() {
-    let (mut test, lending_market, _, wsol_reserve, user, obligation, host_fee_receiver) =
+    let (mut test, lending_market, _, wsol_reserve, user, obligation, host_fee_receiver, lending_market_owner) =
         setup(&ReserveConfig {
-            // ie, within 10 slots, the maximum outflow is 1 SOL
-            window_duration: 10,
-            max_outflow: LAMPORTS_PER_SOL,
             ..test_reserve_config()
         })
         .await;
+
+    // ie, within 10 slots, the maximum outflow is 1 SOL
+    lending_market
+        .update_reserve_config(
+            &mut test,
+            &lending_market_owner,
+            &wsol_reserve,
+            wsol_reserve.account.config,
+            RateLimiterConfig {
+                window_duration: 10,
+                max_outflow: LAMPORTS_PER_SOL,
+            },
+            None,
+        )
+        .await
+        .unwrap();
 
     // borrow maximum amount
     lending_market

@@ -16,10 +16,9 @@ use solana_sdk::{
     transaction::TransactionError,
 };
 use solend_program::state::LendingMarket;
-use solend_sdk::math::Decimal;
+use solend_program::state::RateLimiterConfig;
 use solend_sdk::state::RateLimiter;
 
-use solend_program::state::LendingMarketConfig;
 use solend_program::{error::LendingError, instruction::LendingInstruction};
 
 async fn setup() -> (SolendProgramTest, Info<LendingMarket>, User) {
@@ -33,7 +32,7 @@ async fn setup() -> (SolendProgramTest, Info<LendingMarket>, User) {
 async fn test_success() {
     let (mut test, lending_market, lending_market_owner) = setup().await;
     let new_owner = Keypair::new();
-    let new_config = LendingMarketConfig {
+    let new_config = RateLimiterConfig{
         max_outflow: 100,
         window_duration: 5,
     };
@@ -56,7 +55,7 @@ async fn test_success() {
         lending_market_post.account,
         LendingMarket {
             owner: new_owner.pubkey(),
-            rate_limiter: RateLimiter::new(5, Decimal::from(100u64), 1000),
+            rate_limiter: RateLimiter::new(new_config, 1000),
             ..lending_market_post.account
         }
     );
@@ -73,7 +72,7 @@ async fn test_invalid_owner() {
             &mut test,
             &invalid_owner,
             &new_owner.pubkey(),
-            LendingMarketConfig::default(),
+            RateLimiterConfig::default(),
         )
         .await
         .unwrap_err()
@@ -102,7 +101,7 @@ async fn test_owner_not_signer() {
                 ],
                 data: LendingInstruction::SetLendingMarketOwnerAndConfig {
                     new_owner,
-                    config: LendingMarketConfig::default(),
+                    config: RateLimiterConfig::default(),
                 }
                 .pack(),
             }],

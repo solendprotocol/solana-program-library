@@ -4,7 +4,7 @@ use super::{
 };
 use crate::helpers::*;
 use solana_program::native_token::LAMPORTS_PER_SOL;
-use solend_program::state::LendingMarketConfig;
+use solend_program::state::RateLimiterConfig;
 use solend_sdk::{instruction::update_reserve_config, NULL_PUBKEY};
 
 use pyth_sdk_solana::state::PROD_ACCT_SIZE;
@@ -633,6 +633,7 @@ impl Info<LendingMarket> {
         lending_market_owner: &User,
         reserve: &Info<Reserve>,
         config: ReserveConfig,
+        rate_limiter_config: RateLimiterConfig,
         oracle: Option<&Oracle>,
     ) -> Result<(), BanksClientError> {
         let default_oracle = test
@@ -646,6 +647,7 @@ impl Info<LendingMarket> {
         let instructions = [update_reserve_config(
             solend_program::id(),
             config,
+            rate_limiter_config,
             reserve.pubkey,
             self.pubkey,
             lending_market_owner.keypair.pubkey(),
@@ -1086,7 +1088,7 @@ impl Info<LendingMarket> {
         test: &mut SolendProgramTest,
         lending_market_owner: &User,
         new_owner: &Pubkey,
-        config: LendingMarketConfig,
+        config: RateLimiterConfig,
     ) -> Result<(), BanksClientError> {
         let instructions = [set_lending_market_owner_and_config(
             solend_program::id(),

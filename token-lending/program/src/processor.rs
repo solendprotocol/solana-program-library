@@ -9,7 +9,7 @@ use crate::{
     state::{
         CalculateBorrowResult, CalculateLiquidationResult, CalculateRepayResult,
         InitLendingMarketParams, InitObligationParams, InitReserveParams, LendingMarket,
-        LendingMarketConfig, NewReserveCollateralParams, NewReserveLiquidityParams, Obligation,
+        NewReserveCollateralParams, NewReserveLiquidityParams, Obligation,
         Reserve, ReserveCollateral, ReserveConfig, ReserveLiquidity,
     },
 };
@@ -30,7 +30,7 @@ use solana_program::{
         Sysvar,
     },
 };
-use solend_sdk::state::RateLimiter;
+use solend_sdk::state::{RateLimiter, RateLimiterConfig};
 use solend_sdk::{switchboard_v2_devnet, switchboard_v2_mainnet};
 use spl_token::state::Mint;
 use std::{cmp::min, result::Result};
@@ -129,9 +129,9 @@ pub fn process_instruction(
                 accounts,
             )
         }
-        LendingInstruction::UpdateReserveConfig { config } => {
+        LendingInstruction::UpdateReserveConfig { config, rate_limiter_config } => {
             msg!("Instruction: UpdateReserveConfig");
-            process_update_reserve_config(program_id, config, accounts)
+            process_update_reserve_config(program_id, config, rate_limiter_config, accounts)
         }
         LendingInstruction::LiquidateObligationAndRedeemReserveCollateral { liquidity_amount } => {
             msg!("Instruction: Liquidate Obligation and Redeem Reserve Collateral");
@@ -202,7 +202,7 @@ fn process_init_lending_market(
 fn process_set_lending_market_owner_and_config(
     program_id: &Pubkey,
     new_owner: Pubkey,
-    config: LendingMarketConfig,
+    rate_limiter_config: RateLimiterConfig,
     accounts: &[AccountInfo],
 ) -> ProgramResult {
     let account_info_iter = &mut accounts.iter();
@@ -224,17 +224,9 @@ fn process_set_lending_market_owner_and_config(
     }
 
     lending_market.owner = new_owner;
-    if (Decimal::from(config.max_outflow), config.window_duration)
-        != (
-            lending_market.rate_limiter.max_outflow,
-            lending_market.rate_limiter.window_duration,
-        )
-    {
-        lending_market.rate_limiter = RateLimiter::new(
-            config.window_duration,
-            Decimal::from(config.max_outflow),
-            Clock::get()?.slot,
-        );
+
+    if rate_limiter_config != lending_market.rate_limiter.config {
+        lending_market.rate_limiter = RateLimiter::new(rate_limiter_config, Clock::get()?.slot);
     }
 
     LendingMarket::pack(lending_market, &mut lending_market_info.data.borrow_mut())?;
@@ -363,6 +355,7 @@ fn process_init_reserve(
             supply_pubkey: *reserve_collateral_supply_info.key,
         }),
         config,
+        rate_limiter_config: RateLimiterConfig::default(),
     });
 
     let collateral_amount = reserve.deposit_liquidity(liquidity_amount)?;
@@ -776,7 +769,7 @@ fn _redeem_reserve_collateral<'a>(
             .try_div(Decimal::from(
                 (10u128)
                     .checked_pow(reserve.liquidity.mint_decimals as u32)
-                    .ok_or(LendingError::MathOverflow)?
+                    .ok_or(LendingError::MathOverflow)?,
             ))?;
 
         lending_market
@@ -1533,7 +1526,7 @@ fn process_borrow_obligation_liquidity(
             .try_div(Decimal::from(
                 (10u128)
                     .checked_pow(borrow_reserve.liquidity.mint_decimals as u32)
-                    .ok_or(LendingError::MathOverflow)?
+                    .ok_or(LendingError::MathOverflow)?,
             ))?;
 
         lending_market
@@ -2047,6 +2040,7 @@ fn process_withdraw_obligation_collateral_and_redeem_reserve_liquidity(
 fn process_update_reserve_config(
     program_id: &Pubkey,
     config: ReserveConfig,
+    rate_limiter_config: RateLimiterConfig,
     accounts: &[AccountInfo],
 ) -> ProgramResult {
     validate_reserve_config(config)?;
@@ -2105,15 +2099,11 @@ fn process_update_reserve_config(
     }
 
     // if window duration and max outflow are different, then create a new rate limiter instance.
-    if (reserve.config.window_duration, reserve.config.max_outflow)
-        != (config.window_duration, config.max_outflow)
-    {
-        let rate_limiter = RateLimiter::new(
-            config.window_duration,
-            Decimal::from(config.max_outflow),
+    if rate_limiter_config != reserve.rate_limiter.config {
+        reserve.rate_limiter = RateLimiter::new(
+            rate_limiter_config,
             Clock::get()?.slot,
         );
-        reserve.rate_limiter = rate_limiter;
     }
 
     if *pyth_price_info.key != reserve.liquidity.pyth_oracle_pubkey {

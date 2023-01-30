@@ -50,24 +50,6 @@ impl LendingMarket {
     }
 }
 
-/// Lending market configuration parameters
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub struct LendingMarketConfig {
-    /// Rate limiter window size in slots
-    pub window_duration: u64,
-    /// Rate limiter param. Max outflow of tokens in a window
-    pub max_outflow: u64,
-}
-
-impl Default for LendingMarketConfig {
-    fn default() -> Self {
-        Self {
-            window_duration: 1,
-            max_outflow: u64::MAX,
-        }
-    }
-}
-
 /// Initialize a lending market
 pub struct InitLendingMarketParams {
     /// Bump seed for derived authority address

@@ -61,11 +61,7 @@ impl Reserve {
         self.liquidity = params.liquidity;
         self.collateral = params.collateral;
         self.config = params.config;
-        self.rate_limiter = RateLimiter::new(
-            params.config.window_duration,
-            Decimal::from(params.config.max_outflow),
-            params.current_slot,
-        );
+        self.rate_limiter = RateLimiter::new(params.rate_limiter_config, params.current_slot);
     }
 
     /// Record deposited liquidity and return amount of collateral tokens to mint
@@ -366,6 +362,8 @@ pub struct InitReserveParams {
     pub collateral: ReserveCollateral,
     /// Reserve configuration values
     pub config: ReserveConfig,
+    /// rate limiter config
+    pub rate_limiter_config: RateLimiterConfig,
 }
 
 /// Calculate borrow result
@@ -702,10 +700,6 @@ pub struct ReserveConfig {
     pub protocol_liquidation_fee: u8,
     /// Protocol take rate is the amount borrowed interest protocol recieves, as a percentage  
     pub protocol_take_rate: u8,
-    /// Rate limiter window size in slots
-    pub window_duration: u64,
-    /// Rate limiter param. Max outflow of tokens in a window
-    pub max_outflow: u64,
 }
 
 /// Additional fee information on a reserve
@@ -862,8 +856,6 @@ impl Pack for Reserve {
             config_protocol_liquidation_fee,
             config_protocol_take_rate,
             liquidity_accumulated_protocol_fees_wads,
-            config_window_duration,
-            config_max_outflow,
             rate_limiter,
             _padding,
         ) = mut_array_refs![
@@ -900,10 +892,8 @@ impl Pack for Reserve {
             1,
             1,
             16,
-            8,
-            8,
             RATE_LIMITER_LEN,
-            214 - RATE_LIMITER_LEN
+            230 - RATE_LIMITER_LEN
         ];
 
         // reserve
@@ -955,8 +945,6 @@ impl Pack for Reserve {
         config_fee_receiver.copy_from_slice(self.config.fee_receiver.as_ref());
         *config_protocol_liquidation_fee = self.config.protocol_liquidation_fee.to_le_bytes();
         *config_protocol_take_rate = self.config.protocol_take_rate.to_le_bytes();
-        *config_window_duration = self.config.window_duration.to_le_bytes();
-        *config_max_outflow = self.config.max_outflow.to_le_bytes();
 
         self.rate_limiter.pack_into_slice(rate_limiter);
     }
@@ -998,8 +986,6 @@ impl Pack for Reserve {
             config_protocol_liquidation_fee,
             config_protocol_take_rate,
             liquidity_accumulated_protocol_fees_wads,
-            config_window_duration,
-            config_max_outflow,
             rate_limiter,
             _padding,
         ) = array_refs![
@@ -1036,10 +1022,8 @@ impl Pack for Reserve {
             1,
             1,
             16,
-            8,
-            8,
             RATE_LIMITER_LEN,
-            214 - RATE_LIMITER_LEN
+            230 - RATE_LIMITER_LEN
         ];
 
         let version = u8::from_le_bytes(*version);
@@ -1094,8 +1078,6 @@ impl Pack for Reserve {
                 fee_receiver: Pubkey::new_from_array(*config_fee_receiver),
                 protocol_liquidation_fee: u8::from_le_bytes(*config_protocol_liquidation_fee),
                 protocol_take_rate: u8::from_le_bytes(*config_protocol_take_rate),
-                window_duration: u64::from_le_bytes(*config_window_duration),
-                max_outflow: u64::from_le_bytes(*config_max_outflow),
             },
             rate_limiter: RateLimiter::unpack_from_slice(rate_limiter)?,
         })
