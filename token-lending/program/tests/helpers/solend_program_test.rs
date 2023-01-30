@@ -698,21 +698,27 @@ impl Info<LendingMarket> {
         user: &User,
         collateral_amount: u64,
     ) -> Result<(), BanksClientError> {
-        self.refresh_reserve(test, reserve).await.unwrap();
-
-        let instructions = [redeem_reserve_collateral(
-            solend_program::id(),
-            collateral_amount,
-            user.get_account(&reserve.account.collateral.mint_pubkey)
-                .unwrap(),
-            user.get_account(&reserve.account.liquidity.mint_pubkey)
-                .unwrap(),
-            reserve.pubkey,
-            reserve.account.collateral.mint_pubkey,
-            reserve.account.liquidity.supply_pubkey,
-            self.pubkey,
-            user.keypair.pubkey(),
-        )];
+        let instructions = [
+            refresh_reserve(
+                solend_program::id(),
+                reserve.pubkey,
+                reserve.account.liquidity.pyth_oracle_pubkey,
+                reserve.account.liquidity.switchboard_oracle_pubkey,
+            ),
+            redeem_reserve_collateral(
+                solend_program::id(),
+                collateral_amount,
+                user.get_account(&reserve.account.collateral.mint_pubkey)
+                    .unwrap(),
+                user.get_account(&reserve.account.liquidity.mint_pubkey)
+                    .unwrap(),
+                reserve.pubkey,
+                reserve.account.collateral.mint_pubkey,
+                reserve.account.liquidity.supply_pubkey,
+                self.pubkey,
+                user.keypair.pubkey(),
+            ),
+        ];
 
         test.process_transaction(&instructions, Some(&[&user.keypair]))
             .await
@@ -1028,8 +1034,10 @@ impl Info<LendingMarket> {
         user: &User,
         collateral_amount: u64,
     ) -> Result<(), BanksClientError> {
+        let obligation = test.load_account::<Obligation>(obligation.pubkey).await;
+
         let mut instructions = self
-            .build_refresh_instructions(test, obligation, Some(withdraw_reserve))
+            .build_refresh_instructions(test, &obligation, Some(withdraw_reserve))
             .await;
 
         instructions.push(
