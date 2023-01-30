@@ -1,4 +1,5 @@
 use crate::state::{pack_decimal, unpack_decimal};
+use solana_program::msg;
 use solana_program::program_pack::IsInitialized;
 use solana_program::{program_error::ProgramError, slot_history::Slot};
 
@@ -59,7 +60,10 @@ impl RateLimiter {
 
     /// update rate limiter with new quantity. errors if rate limit has been reached
     pub fn update(&mut self, cur_slot: u64, qty: Decimal) -> Result<(), ProgramError> {
-        assert!(cur_slot >= self.window_start);
+        if cur_slot < self.window_start {
+            msg!("Current slot is less than window start, which is impossible");
+            return Err(LendingError::InvalidAccountInput.into());
+        }
 
         // floor wrt window duration
         let cur_slot_start = cur_slot / self.config.window_duration * self.config.window_duration;
@@ -112,6 +116,11 @@ mod test {
                 max_outflow: 100,
             },
             10,
+        );
+
+        assert_eq!(
+            rate_limiter.update(9, Decimal::from(1u64)),
+            Err(LendingError::InvalidAccountInput.into())
         );
 
         // case 1: no prev window, all quantity is taken up in first slot
