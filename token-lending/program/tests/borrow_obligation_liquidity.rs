@@ -1,5 +1,6 @@
 #![cfg(feature = "test-bpf")]
 
+use solend_program::math::TryDiv;
 mod helpers;
 
 use solend_program::state::ReserveFees;
@@ -175,7 +176,12 @@ async fn test_success() {
             rate_limiter: {
                 let mut rate_limiter = lending_market.account.rate_limiter;
                 rate_limiter
-                    .update(1000, Decimal::from(10 * (4 * LAMPORTS_PER_SOL + 400)))
+                    .update(
+                        1000,
+                        Decimal::from(10 * (4 * LAMPORTS_PER_SOL + 400))
+                            .try_div(Decimal::from(1_000_000_000_u64))
+                            .unwrap(),
+                    )
                     .unwrap();
                 rate_limiter
             },

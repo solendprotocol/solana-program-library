@@ -94,7 +94,7 @@ async fn test_success() {
             rate_limiter: {
                 let mut rate_limiter = lending_market.account.rate_limiter;
                 rate_limiter
-                    .update(1000, Decimal::from(1_000_000u64))
+                    .update(1000, Decimal::from(1u64))
                     .unwrap();
                 rate_limiter
             },

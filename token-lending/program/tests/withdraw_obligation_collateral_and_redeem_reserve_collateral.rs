@@ -1,5 +1,6 @@
 #![cfg(feature = "test-bpf")]
 
+use solend_program::math::TryDiv;
 mod helpers;
 
 use crate::solend_program_test::MintSupplyChange;
@@ -83,7 +84,12 @@ async fn test_success() {
             rate_limiter: {
                 let mut rate_limiter = lending_market.account.rate_limiter;
                 rate_limiter
-                    .update(1000, Decimal::from(withdraw_amount as u64))
+                    .update(
+                        1000,
+                        Decimal::from(withdraw_amount as u64)
+                            .try_div(Decimal::from(1_000_000u64))
+                            .unwrap(),
+                    )
                     .unwrap();
                 rate_limiter
             },

@@ -769,14 +769,19 @@ fn _redeem_reserve_collateral<'a>(
     let liquidity_amount = reserve.redeem_collateral(collateral_amount)?;
 
     if check_rate_limits {
-        let market_value = reserve
+        let redemption_value = reserve
             .liquidity
             .market_price
-            .try_mul(Decimal::from(liquidity_amount))?;
+            .try_mul(Decimal::from(liquidity_amount))?
+            .try_div(Decimal::from(
+                (10u128)
+                    .checked_pow(reserve.liquidity.mint_decimals as u32)
+                    .ok_or(LendingError::MathOverflow)?
+            ))?;
 
         lending_market
             .rate_limiter
-            .update(clock.slot, market_value)
+            .update(clock.slot, redemption_value)
             .map_err(|err| {
                 msg!("Market outflow limit exceeded! Please try again later.");
                 err
@@ -1521,14 +1526,19 @@ fn process_borrow_obligation_liquidity(
 
     // check outflow rate limits
     {
-        let market_value = borrow_reserve
+        let borrow_value = borrow_reserve
             .liquidity
             .market_price
-            .try_mul(borrow_amount)?;
+            .try_mul(borrow_amount)?
+            .try_div(Decimal::from(
+                (10u128)
+                    .checked_pow(borrow_reserve.liquidity.mint_decimals as u32)
+                    .ok_or(LendingError::MathOverflow)?
+            ))?;
 
         lending_market
             .rate_limiter
-            .update(clock.slot, market_value)
+            .update(clock.slot, borrow_value)
             .map_err(|err| {
                 msg!("Market outflow limit exceeded! Please try again later.");
                 err
