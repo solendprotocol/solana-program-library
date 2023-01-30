@@ -2,7 +2,7 @@
 
 use crate::{
     error::LendingError,
-    state::{ReserveConfig, ReserveFees, RateLimiterConfig},
+    state::{RateLimiterConfig, ReserveConfig, ReserveFees},
 };
 use solana_program::{
     instruction::{AccountMeta, Instruction},
@@ -806,7 +806,10 @@ impl LendingInstruction {
                 buf.push(15);
                 buf.extend_from_slice(&collateral_amount.to_le_bytes());
             }
-            Self::UpdateReserveConfig { config, rate_limiter_config } => {
+            Self::UpdateReserveConfig {
+                config,
+                rate_limiter_config,
+            } => {
                 buf.push(16);
                 buf.extend_from_slice(&config.optimal_utilization_rate.to_le_bytes());
                 buf.extend_from_slice(&config.loan_to_value_ratio.to_le_bytes());
@@ -1360,7 +1363,11 @@ pub fn update_reserve_config(
     Instruction {
         program_id,
         accounts,
-        data: LendingInstruction::UpdateReserveConfig { config, rate_limiter_config }.pack(),
+        data: LendingInstruction::UpdateReserveConfig {
+            config,
+            rate_limiter_config,
+        }
+        .pack(),
     }
 }
 

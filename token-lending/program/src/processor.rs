@@ -9,8 +9,8 @@ use crate::{
     state::{
         CalculateBorrowResult, CalculateLiquidationResult, CalculateRepayResult,
         InitLendingMarketParams, InitObligationParams, InitReserveParams, LendingMarket,
-        NewReserveCollateralParams, NewReserveLiquidityParams, Obligation,
-        Reserve, ReserveCollateral, ReserveConfig, ReserveLiquidity,
+        NewReserveCollateralParams, NewReserveLiquidityParams, Obligation, Reserve,
+        ReserveCollateral, ReserveConfig, ReserveLiquidity,
     },
 };
 use pyth_sdk_solana::{self, state::ProductAccount};
@@ -129,7 +129,10 @@ pub fn process_instruction(
                 accounts,
             )
         }
-        LendingInstruction::UpdateReserveConfig { config, rate_limiter_config } => {
+        LendingInstruction::UpdateReserveConfig {
+            config,
+            rate_limiter_config,
+        } => {
             msg!("Instruction: UpdateReserveConfig");
             process_update_reserve_config(program_id, config, rate_limiter_config, accounts)
         }
@@ -2100,10 +2103,7 @@ fn process_update_reserve_config(
 
     // if window duration and max outflow are different, then create a new rate limiter instance.
     if rate_limiter_config != reserve.rate_limiter.config {
-        reserve.rate_limiter = RateLimiter::new(
-            rate_limiter_config,
-            Clock::get()?.slot,
-        );
+        reserve.rate_limiter = RateLimiter::new(rate_limiter_config, Clock::get()?.slot);
     }
 
     if *pyth_price_info.key != reserve.liquidity.pyth_oracle_pubkey {

@@ -3,7 +3,7 @@
 use solend_program::math::TryDiv;
 mod helpers;
 
-use solend_program::state::{ReserveFees, RateLimiterConfig};
+use solend_program::state::{RateLimiterConfig, ReserveFees};
 use std::collections::HashSet;
 
 use helpers::solend_program_test::{
@@ -106,16 +106,24 @@ async fn setup(
 
 #[tokio::test]
 async fn test_success() {
-    let (mut test, lending_market, usdc_reserve, wsol_reserve, user, obligation, host_fee_receiver, _) =
-        setup(&ReserveConfig {
-            fees: ReserveFees {
-                borrow_fee_wad: 100_000_000_000,
-                flash_loan_fee_wad: 0,
-                host_fee_percentage: 20,
-            },
-            ..test_reserve_config()
-        })
-        .await;
+    let (
+        mut test,
+        lending_market,
+        usdc_reserve,
+        wsol_reserve,
+        user,
+        obligation,
+        host_fee_receiver,
+        _,
+    ) = setup(&ReserveConfig {
+        fees: ReserveFees {
+            borrow_fee_wad: 100_000_000_000,
+            flash_loan_fee_wad: 0,
+            host_fee_percentage: 20,
+        },
+        ..test_reserve_config()
+    })
+    .await;
 
     let balance_checker = BalanceChecker::start(
         &mut test,
@@ -251,16 +259,24 @@ async fn test_success() {
 // FIXME this should really be a unit test
 #[tokio::test]
 async fn test_borrow_max() {
-    let (mut test, lending_market, usdc_reserve, wsol_reserve, user, obligation, host_fee_receiver, _) =
-        setup(&ReserveConfig {
-            fees: ReserveFees {
-                borrow_fee_wad: 100_000_000_000,
-                flash_loan_fee_wad: 0,
-                host_fee_percentage: 20,
-            },
-            ..test_reserve_config()
-        })
-        .await;
+    let (
+        mut test,
+        lending_market,
+        usdc_reserve,
+        wsol_reserve,
+        user,
+        obligation,
+        host_fee_receiver,
+        _,
+    ) = setup(&ReserveConfig {
+        fees: ReserveFees {
+            borrow_fee_wad: 100_000_000_000,
+            flash_loan_fee_wad: 0,
+            host_fee_percentage: 20,
+        },
+        ..test_reserve_config()
+    })
+    .await;
 
     let balance_checker = BalanceChecker::start(
         &mut test,
@@ -349,11 +365,19 @@ async fn test_fail_borrow_over_reserve_borrow_limit() {
 
 #[tokio::test]
 async fn test_fail_reserve_borrow_rate_limit_exceeded() {
-    let (mut test, lending_market, _, wsol_reserve, user, obligation, host_fee_receiver, lending_market_owner) =
-        setup(&ReserveConfig {
-            ..test_reserve_config()
-        })
-        .await;
+    let (
+        mut test,
+        lending_market,
+        _,
+        wsol_reserve,
+        user,
+        obligation,
+        host_fee_receiver,
+        lending_market_owner,
+    ) = setup(&ReserveConfig {
+        ..test_reserve_config()
+    })
+    .await;
 
     // ie, within 10 slots, the maximum outflow is 1 SOL
     lending_market

@@ -339,10 +339,7 @@ async fn test_update_reserve_config() {
         wsol_reserve_post.account,
         Reserve {
             config: new_reserve_config,
-            rate_limiter: RateLimiter::new(
-                new_rate_limiter_config,
-                1000
-            ),
+            rate_limiter: RateLimiter::new(new_rate_limiter_config, 1000),
             ..wsol_reserve.account
         }
     );

@@ -32,7 +32,7 @@ async fn setup() -> (SolendProgramTest, Info<LendingMarket>, User) {
 async fn test_success() {
     let (mut test, lending_market, lending_market_owner) = setup().await;
     let new_owner = Keypair::new();
-    let new_config = RateLimiterConfig{
+    let new_config = RateLimiterConfig {
         max_outflow: 100,
         window_duration: 5,
     };
