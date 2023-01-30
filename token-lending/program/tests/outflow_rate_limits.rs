@@ -5,27 +5,18 @@ use solana_sdk::native_token::LAMPORTS_PER_SOL;
 use solana_sdk::signature::Signer;
 use solana_sdk::signer::keypair::Keypair;
 use solana_sdk::transaction::TransactionError;
-use solend_program::math::TryDiv;
+
 mod helpers;
 
-use crate::solend_program_test::MintSupplyChange;
-use helpers::solend_program_test::{
-    setup_world, BalanceChecker, Info, SolendProgramTest, TokenBalanceChange, User,
-};
+use helpers::solend_program_test::{setup_world, Info, SolendProgramTest, User};
 use solend_sdk::error::LendingError;
-use solend_sdk::math::Decimal;
-use solend_sdk::state::ObligationCollateral;
-use solend_sdk::state::{
-    LendingMarket, RateLimiterConfig, Reserve, ReserveCollateral, ReserveConfig, ReserveLiquidity,
-};
-use std::collections::HashSet;
 
-use crate::solend_program_test::scenario_1;
+use solend_sdk::state::{LendingMarket, RateLimiterConfig, Reserve, ReserveConfig};
+
 use helpers::*;
 
 use solana_program_test::*;
 
-use solend_sdk::state::LastUpdate;
 use solend_sdk::state::Obligation;
 
 async fn setup(
@@ -203,12 +194,7 @@ async fn test_outflow_reserve() {
         );
 
         let res = lending_market
-            .redeem(
-                &mut test,
-                &wsol_reserve,
-                &wsol_depositor,
-                1,
-            )
+            .redeem(&mut test, &wsol_reserve, &wsol_depositor, 1)
             .await
             .err()
             .unwrap()
