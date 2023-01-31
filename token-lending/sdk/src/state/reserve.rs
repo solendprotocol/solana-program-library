@@ -64,6 +64,18 @@ impl Reserve {
         self.rate_limiter = RateLimiter::new(params.rate_limiter_config, params.current_slot);
     }
 
+    /// find price of tokens in quote currency
+    pub fn market_value(&self, liquidity_amount: Decimal) -> Result<Decimal, ProgramError> {
+        self.liquidity
+            .market_price
+            .try_mul(liquidity_amount)?
+            .try_div(Decimal::from(
+                (10u128)
+                    .checked_pow(self.liquidity.mint_decimals as u32)
+                    .ok_or(LendingError::MathOverflow)?,
+            ))
+    }
+
     /// Record deposited liquidity and return amount of collateral tokens to mint
     pub fn deposit_liquidity(&mut self, liquidity_amount: u64) -> Result<u64, ProgramError> {
         let collateral_amount = self
