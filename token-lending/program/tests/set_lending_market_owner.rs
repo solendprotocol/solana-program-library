@@ -101,7 +101,7 @@ async fn test_owner_not_signer() {
                 ],
                 data: LendingInstruction::SetLendingMarketOwnerAndConfig {
                     new_owner,
-                    config: RateLimiterConfig::default(),
+                    rate_limiter_config: RateLimiterConfig::default(),
                 }
                 .pack(),
             }],

@@ -45,7 +45,7 @@ pub enum LendingInstruction {
         /// The new owner
         new_owner: Pubkey,
         /// The new config
-        config: RateLimiterConfig,
+        rate_limiter_config: RateLimiterConfig,
     },
 
     // 2
@@ -487,7 +487,7 @@ impl LendingInstruction {
                 let (max_outflow, _rest) = Self::unpack_u64(rest)?;
                 Self::SetLendingMarketOwnerAndConfig {
                     new_owner,
-                    config: RateLimiterConfig {
+                    rate_limiter_config: RateLimiterConfig {
                         window_duration,
                         max_outflow,
                     },
@@ -709,7 +709,10 @@ impl LendingInstruction {
                 buf.extend_from_slice(owner.as_ref());
                 buf.extend_from_slice(quote_currency.as_ref());
             }
-            Self::SetLendingMarketOwnerAndConfig { new_owner, config } => {
+            Self::SetLendingMarketOwnerAndConfig {
+                new_owner,
+                rate_limiter_config: config,
+            } => {
                 buf.push(1);
                 buf.extend_from_slice(new_owner.as_ref());
                 buf.extend_from_slice(&config.window_duration.to_le_bytes());
@@ -885,7 +888,7 @@ pub fn set_lending_market_owner_and_config(
     lending_market_pubkey: Pubkey,
     lending_market_owner: Pubkey,
     new_owner: Pubkey,
-    config: RateLimiterConfig,
+    rate_limiter_config: RateLimiterConfig,
 ) -> Instruction {
     Instruction {
         program_id,
@@ -893,7 +896,11 @@ pub fn set_lending_market_owner_and_config(
             AccountMeta::new(lending_market_pubkey, false),
             AccountMeta::new_readonly(lending_market_owner, true),
         ],
-        data: LendingInstruction::SetLendingMarketOwnerAndConfig { new_owner, config }.pack(),
+        data: LendingInstruction::SetLendingMarketOwnerAndConfig {
+            new_owner,
+            rate_limiter_config,
+        }
+        .pack(),
     }
 }
 

@@ -54,9 +54,17 @@ pub fn process_instruction(
             msg!("Instruction: Init Lending Market");
             process_init_lending_market(program_id, owner, quote_currency, accounts)
         }
-        LendingInstruction::SetLendingMarketOwnerAndConfig { new_owner, config } => {
+        LendingInstruction::SetLendingMarketOwnerAndConfig {
+            new_owner,
+            rate_limiter_config,
+        } => {
             msg!("Instruction: Set Lending Market Owner");
-            process_set_lending_market_owner_and_config(program_id, new_owner, config, accounts)
+            process_set_lending_market_owner_and_config(
+                program_id,
+                new_owner,
+                rate_limiter_config,
+                accounts,
+            )
         }
         LendingInstruction::InitReserve {
             liquidity_amount,
