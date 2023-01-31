@@ -64,6 +64,11 @@ impl Reserve {
         self.rate_limiter = RateLimiter::new(params.rate_limiter_config, params.current_slot);
     }
 
+    /// get borrow weight. Guaranteed to be greater than 1
+    pub fn borrow_weight(&self) -> Decimal {
+        Decimal::from_bps(std::cmp::max(self.config.borrow_weight_bps, 10_000))
+    }
+
     /// find price of tokens in quote currency
     pub fn market_value(&self, liquidity_amount: Decimal) -> Result<Decimal, ProgramError> {
         self.liquidity
@@ -184,6 +189,7 @@ impl Reserve {
             let borrow_amount = max_borrow_value
                 .try_mul(decimals)?
                 .try_div(self.liquidity.market_price)?
+                .try_div(self.borrow_weight())?
                 .min(remaining_reserve_borrow)
                 .min(self.liquidity.available_amount.into());
             let (borrow_fee, host_fee) = self
@@ -210,9 +216,7 @@ impl Reserve {
                 .calculate_borrow_fees(borrow_amount, FeeCalculation::Exclusive)?;
 
             let borrow_amount = borrow_amount.try_add(borrow_fee.into())?;
-            let borrow_value = borrow_amount
-                .try_mul(self.liquidity.market_price)?
-                .try_div(decimals)?;
+            let borrow_value = self.market_value(borrow_amount)?.try_mul(self.borrow_weight())?;
             if borrow_value > max_borrow_value {
                 msg!("Borrow value cannot exceed maximum borrow value");
                 return Err(LendingError::BorrowTooLarge.into());
@@ -712,6 +716,8 @@ pub struct ReserveConfig {
     pub protocol_liquidation_fee: u8,
     /// Protocol take rate is the amount borrowed interest protocol recieves, as a percentage  
     pub protocol_take_rate: u8,
+    /// Borrow weight in basis points. This value cannot be less than 1.
+    pub borrow_weight_bps: u64,
 }
 
 /// Additional fee information on a reserve
@@ -869,6 +875,7 @@ impl Pack for Reserve {
             config_protocol_take_rate,
             liquidity_accumulated_protocol_fees_wads,
             rate_limiter,
+            config_borrow_weight_bps,
             _padding,
         ) = mut_array_refs![
             output,
@@ -904,8 +911,9 @@ impl Pack for Reserve {
             1,
             1,
             16,
-            RATE_LIMITER_LEN,
-            230 - RATE_LIMITER_LEN
+            56,
+            8,
+            166
         ];
 
         // reserve
@@ -959,6 +967,8 @@ impl Pack for Reserve {
         *config_protocol_take_rate = self.config.protocol_take_rate.to_le_bytes();
 
         self.rate_limiter.pack_into_slice(rate_limiter);
+
+        *config_borrow_weight_bps = self.config.borrow_weight_bps.to_le_bytes();
     }
 
     /// Unpacks a byte buffer into a [ReserveInfo](struct.ReserveInfo.html).
@@ -999,6 +1009,7 @@ impl Pack for Reserve {
             config_protocol_take_rate,
             liquidity_accumulated_protocol_fees_wads,
             rate_limiter,
+            config_borrow_weight_bps,
             _padding,
         ) = array_refs![
             input,
@@ -1034,8 +1045,9 @@ impl Pack for Reserve {
             1,
             1,
             16,
-            RATE_LIMITER_LEN,
-            230 - RATE_LIMITER_LEN
+            56,
+            8,
+            166
         ];
 
         let version = u8::from_le_bytes(*version);
@@ -1090,6 +1102,11 @@ impl Pack for Reserve {
                 fee_receiver: Pubkey::new_from_array(*config_fee_receiver),
                 protocol_liquidation_fee: u8::from_le_bytes(*config_protocol_liquidation_fee),
                 protocol_take_rate: u8::from_le_bytes(*config_protocol_take_rate),
+                borrow_weight_bps: {
+                    // this is a new field, so we need to handle the case where borrow_weight == 0
+                    let borrow_weight_bps = u64::from_le_bytes(*config_borrow_weight_bps);
+                    std::cmp::max(borrow_weight_bps, 10_000)
+                },
             },
             rate_limiter: RateLimiter::unpack_from_slice(rate_limiter)?,
         })

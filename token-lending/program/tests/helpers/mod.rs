@@ -53,6 +53,7 @@ pub fn test_reserve_config() -> ReserveConfig {
         fee_receiver: Keypair::new().pubkey(),
         protocol_liquidation_fee: 0,
         protocol_take_rate: 0,
+        borrow_weight_bps: 10_000,
     }
 }
 
