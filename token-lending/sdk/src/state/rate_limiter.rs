@@ -90,9 +90,9 @@ impl RateLimiter {
 
         // assume the prev_window's outflow is even distributed across the window
         // this isn't true, but it's a good enough approximation
-        let prev_weight = Decimal::one().try_sub(
-            Decimal::from(cur_slot - self.window_start + 1).try_div(self.config.window_duration)?,
-        )?;
+        let prev_weight = Decimal::from(self.config.window_duration)
+            .try_sub(Decimal::from(cur_slot - self.window_start + 1))?
+            .try_div(self.config.window_duration)?;
         let cur_outflow = prev_weight.try_mul(self.prev_qty)?.try_add(self.cur_qty)?;
 
         if cur_outflow.try_add(qty)? > Decimal::from(self.config.max_outflow) {
