@@ -37,7 +37,7 @@ pub struct Obligation {
     pub borrows: Vec<ObligationLiquidity>,
     /// Market value of deposits
     pub deposited_value: Decimal,
-    /// Market value of borrows
+    /// Risk-adjusted market value of borrows
     pub borrowed_value: Decimal,
     /// The maximum borrow value at the weighted average loan to value ratio
     pub allowed_borrow_value: Decimal,

@@ -961,18 +961,10 @@ fn process_refresh_obligation(program_id: &Pubkey, accounts: &[AccountInfo]) -> 
 
         liquidity.accrue_interest(borrow_reserve.liquidity.cumulative_borrow_rate_wads)?;
 
-        // @TODO: add lookup table https://git.io/JOCYq
-        let decimals = 10u64
-            .checked_pow(borrow_reserve.liquidity.mint_decimals as u32)
-            .ok_or(LendingError::MathOverflow)?;
-
-        let market_value = liquidity
-            .borrowed_amount_wads
-            .try_mul(borrow_reserve.liquidity.market_price)?
-            .try_div(decimals)?;
+        let market_value = borrow_reserve.market_value(liquidity.borrowed_amount_wads)?;
         liquidity.market_value = market_value;
 
-        borrowed_value = borrowed_value.try_add(market_value)?;
+        borrowed_value = borrowed_value.try_add(market_value.try_mul(borrow_reserve.borrow_weight())?)?;
     }
 
     if account_info_iter.peek().is_some() {
@@ -2882,6 +2874,10 @@ fn validate_reserve_config(config: ReserveConfig) -> ProgramResult {
     }
     if config.protocol_take_rate > 100 {
         msg!("Protocol take rate must be in range [0, 100]");
+        return Err(LendingError::InvalidConfig.into());
+    }
+    if config.borrow_weight_bps < 10000 {
+        msg!("Borrow weight bps must be greater than 10000!");
         return Err(LendingError::InvalidConfig.into());
     }
     Ok(())

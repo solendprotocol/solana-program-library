@@ -55,6 +55,11 @@ impl Decimal {
         Self(U192::from(percent as u64 * PERCENT_SCALER))
     }
 
+    /// Create scaled decimal from bps value
+    pub fn from_bps(bps: u64) -> Self {
+        Self(U192::from(bps * BPS_SCALER))
+    }
+
     /// Return raw scaled value if it fits within u128
     #[allow(clippy::wrong_self_convention)]
     pub fn to_scaled_val(&self) -> Result<u128, ProgramError> {
@@ -231,6 +236,14 @@ mod test {
     fn test_from_percent() {
         let left = Decimal::from_percent(20);
         let right = Decimal::from(20u64).try_div(Decimal::from(100u64)).unwrap();
+
+        assert_eq!(left, right);
+    }
+
+    #[test]
+    fn test_from_bps() {
+        let left = Decimal::from_bps(2000);
+        let right = Decimal::from_percent(20);
 
         assert_eq!(left, right);
     }
