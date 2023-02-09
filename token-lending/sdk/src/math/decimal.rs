@@ -26,7 +26,7 @@ construct_uint! {
 }
 
 /// Large decimal values, precise to 18 digits
-#[derive(Clone, Copy, Debug, Default, PartialEq, PartialOrd, Eq, Ord)]
+#[derive(Clone, Copy, Default, PartialEq, PartialOrd, Eq, Ord)]
 pub struct Decimal(pub U192);
 
 impl Decimal {
@@ -113,6 +113,12 @@ impl fmt::Display for Decimal {
             scaled_val.insert(scaled_val.len() - SCALE, '.');
         }
         f.write_str(&scaled_val)
+    }
+}
+
+impl fmt::Debug for Decimal {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{}", self)
     }
 }
 
