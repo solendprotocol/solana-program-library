@@ -216,7 +216,9 @@ impl Reserve {
                 .calculate_borrow_fees(borrow_amount, FeeCalculation::Exclusive)?;
 
             let borrow_amount = borrow_amount.try_add(borrow_fee.into())?;
-            let borrow_value = self.market_value(borrow_amount)?.try_mul(self.borrow_weight())?;
+            let borrow_value = self
+                .market_value(borrow_amount)?
+                .try_mul(self.borrow_weight())?;
             if borrow_value > max_borrow_value {
                 msg!("Borrow value cannot exceed maximum borrow value");
                 return Err(LendingError::BorrowTooLarge.into());
@@ -383,7 +385,7 @@ pub struct InitReserveParams {
 }
 
 /// Calculate borrow result
-#[derive(Debug)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct CalculateBorrowResult {
     /// Total amount of borrow including fees
     pub borrow_amount: Decimal,
@@ -1118,6 +1120,7 @@ mod test {
     use super::*;
     use crate::math::{PERCENT_SCALER, WAD};
     use proptest::prelude::*;
+    use solana_program::native_token::LAMPORTS_PER_SOL;
     use std::cmp::Ordering;
     use std::default::Default;
 
@@ -1637,6 +1640,138 @@ mod test {
                 reserve.calculate_liquidation(
                     u64::MAX, &obligation, &obligation.borrows[0], &obligation.deposits[0]).unwrap(),
                 test_case.liquidation_result);
+        }
+    }
+
+    #[derive(Debug, Clone)]
+    struct CalculateBorrowTestCase {
+        // args
+        borrow_amount: u64,
+        remaining_borrow_value: Decimal,
+        remaining_reserve_capacity: Decimal,
+
+        // reserve state
+        market_price: Decimal,
+        decimal: u8,
+        borrow_weight_bps: u64,
+
+        borrow_fee_wad: u64,
+        host_fee: u8,
+
+        result: Result<CalculateBorrowResult, ProgramError>,
+    }
+
+    fn calculate_borrow_test_cases() -> impl Strategy<Value = CalculateBorrowTestCase> {
+        // borrow fee is 1%, host fee is 20% on all test cases
+        prop_oneof![
+            Just(CalculateBorrowTestCase {
+                borrow_amount: LAMPORTS_PER_SOL,
+                remaining_borrow_value: Decimal::from(10u64),
+                remaining_reserve_capacity: Decimal::from(LAMPORTS_PER_SOL * 10),
+
+                market_price: Decimal::from(1u64),
+                decimal: 9,
+                borrow_weight_bps: 10000,
+
+                borrow_fee_wad: 10_000_000_000_000_000, // 1%
+                host_fee: 20,
+
+                result: Ok(CalculateBorrowResult {
+                    borrow_amount: Decimal::from(LAMPORTS_PER_SOL * 101 / 100),
+                    receive_amount: LAMPORTS_PER_SOL,
+                    borrow_fee: LAMPORTS_PER_SOL / 100,
+                    host_fee: LAMPORTS_PER_SOL / 100 / 100 * 20
+                }),
+            }),
+            // borrow max
+            Just(CalculateBorrowTestCase {
+                borrow_amount: u64::MAX,
+                remaining_borrow_value: Decimal::from(10u64),
+                remaining_reserve_capacity: Decimal::from(LAMPORTS_PER_SOL * 101 / 100),
+
+                market_price: Decimal::from(1u64),
+                decimal: 9,
+                borrow_weight_bps: 10000,
+
+                borrow_fee_wad: 10_000_000_000_000_000, // 1%
+                host_fee: 20,
+
+                result: Ok(CalculateBorrowResult {
+                    borrow_amount: Decimal::from(LAMPORTS_PER_SOL * 101 / 100),
+                    receive_amount: LAMPORTS_PER_SOL,
+                    borrow_fee: LAMPORTS_PER_SOL / 100,
+                    host_fee: LAMPORTS_PER_SOL / 100 / 100 * 20
+                }),
+            }),
+            // borrow weight is 2, can only borrow 0.5 sol
+            Just(CalculateBorrowTestCase {
+                borrow_amount: LAMPORTS_PER_SOL / 2,
+                remaining_borrow_value: Decimal::from(1u64),
+                remaining_reserve_capacity: Decimal::from(LAMPORTS_PER_SOL),
+
+                market_price: Decimal::from(1u64),
+                decimal: 9,
+                borrow_weight_bps: 20_000,
+
+                borrow_fee_wad: 0,
+                host_fee: 0,
+
+                result: Ok(CalculateBorrowResult {
+                    borrow_amount: Decimal::from(LAMPORTS_PER_SOL / 2),
+                    receive_amount: LAMPORTS_PER_SOL / 2,
+                    borrow_fee: 0,
+                    host_fee: 0,
+                }),
+            }),
+            // borrow weight is 2, can only max borrow 0.5 sol
+            Just(CalculateBorrowTestCase {
+                borrow_amount: u64::MAX,
+                remaining_borrow_value: Decimal::from(1u64),
+                remaining_reserve_capacity: Decimal::from(LAMPORTS_PER_SOL),
+
+                market_price: Decimal::from(1u64),
+                decimal: 9,
+                borrow_weight_bps: 20_000,
+
+                borrow_fee_wad: 0,
+                host_fee: 0,
+
+                result: Ok(CalculateBorrowResult {
+                    borrow_amount: Decimal::from(LAMPORTS_PER_SOL / 2),
+                    receive_amount: LAMPORTS_PER_SOL / 2,
+                    borrow_fee: 0,
+                    host_fee: 0,
+                }),
+            }),
+        ]
+    }
+
+    proptest! {
+        #[test]
+        fn calculate_borrow(test_case in calculate_borrow_test_cases()) {
+            let reserve = Reserve {
+                config: ReserveConfig {
+                    borrow_weight_bps: test_case.borrow_weight_bps,
+                    fees: ReserveFees {
+                        borrow_fee_wad: test_case.borrow_fee_wad,
+                        host_fee_percentage: test_case.host_fee,
+                        flash_loan_fee_wad: 0,
+                    },
+                    ..ReserveConfig::default()
+                },
+                liquidity: ReserveLiquidity {
+                    mint_decimals: test_case.decimal,
+                    market_price: test_case.market_price,
+                    available_amount: test_case.remaining_reserve_capacity.to_scaled_val().unwrap() as u64,
+                    ..ReserveLiquidity::default()
+                },
+                ..Reserve::default()
+            };
+            assert_eq!(reserve.calculate_borrow(
+                test_case.borrow_amount,
+                test_case.remaining_borrow_value,
+                test_case.remaining_reserve_capacity,
+            ), test_case.result);
         }
     }
 }
