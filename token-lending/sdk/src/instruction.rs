@@ -531,7 +531,7 @@ impl LendingInstruction {
                         fee_receiver,
                         protocol_liquidation_fee,
                         protocol_take_rate,
-                        borrow_weight_bps
+                        borrow_weight_bps,
                     },
                 }
             }
@@ -617,7 +617,7 @@ impl LendingInstruction {
                         fee_receiver,
                         protocol_liquidation_fee,
                         protocol_take_rate,
-                        borrow_weight_bps
+                        borrow_weight_bps,
                     },
                     rate_limiter_config: RateLimiterConfig {
                         window_duration,
@@ -744,7 +744,7 @@ impl LendingInstruction {
                         fee_receiver,
                         protocol_liquidation_fee,
                         protocol_take_rate,
-                        borrow_weight_bps
+                        borrow_weight_bps,
                     },
             } => {
                 buf.push(2);
