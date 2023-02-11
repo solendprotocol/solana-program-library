@@ -964,7 +964,8 @@ fn process_refresh_obligation(program_id: &Pubkey, accounts: &[AccountInfo]) -> 
         let market_value = borrow_reserve.market_value(liquidity.borrowed_amount_wads)?;
         liquidity.market_value = market_value;
 
-        borrowed_value = borrowed_value.try_add(market_value.try_mul(borrow_reserve.borrow_weight())?)?;
+        borrowed_value =
+            borrowed_value.try_add(market_value.try_mul(borrow_reserve.borrow_weight())?)?;
     }
 
     if account_info_iter.peek().is_some() {
