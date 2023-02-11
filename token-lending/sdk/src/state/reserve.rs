@@ -913,7 +913,7 @@ impl Pack for Reserve {
             1,
             1,
             16,
-            56,
+            RATE_LIMITER_LEN,
             8,
             166
         ];
@@ -1047,7 +1047,7 @@ impl Pack for Reserve {
             1,
             1,
             16,
-            56,
+            RATE_LIMITER_LEN,
             8,
             166
         ];
@@ -1773,5 +1773,21 @@ mod test {
                 test_case.remaining_reserve_capacity,
             ), test_case.result);
         }
+    }
+
+    // test that unpacking a reserve with a borrow weight of 0 fails
+    #[test]
+    fn test_unpack_reserve_with_zero_borrow_weight() {
+        let mut reserve = Reserve {
+            version: PROGRAM_VERSION,
+            ..Reserve::default()
+        };
+        reserve.config.borrow_weight_bps = 0;
+
+        let mut buf = [0u8; Reserve::LEN];
+        Reserve::pack(reserve, &mut buf).unwrap();
+
+        let unpacked_reserve = Reserve::unpack(&buf).unwrap();
+        assert_eq!(unpacked_reserve.config.borrow_weight_bps, 10_000);
     }
 }
