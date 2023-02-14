@@ -300,35 +300,6 @@ async fn test_invalid_fees() {
 }
 
 #[tokio::test]
-async fn test_init_reserve_invalid_borrow_weight_bps() {
-    let (mut test, lending_market, lending_market_owner) = setup().await;
-    let res = test
-        .init_reserve(
-            &lending_market,
-            &lending_market_owner,
-            &usdc_mint::id(),
-            &ReserveConfig {
-                borrow_weight_bps: 9999,
-                ..test_reserve_config()
-            },
-            &Keypair::new(),
-            1000,
-            None,
-        )
-        .await
-        .unwrap_err()
-        .unwrap();
-
-    assert_eq!(
-        res,
-        TransactionError::InstructionError(
-            1,
-            InstructionError::Custom(LendingError::InvalidConfig as u32)
-        )
-    );
-}
-
-#[tokio::test]
 async fn test_update_reserve_config() {
     let (mut test, lending_market, lending_market_owner) = setup().await;
 
@@ -421,59 +392,6 @@ async fn test_update_invalid_oracle_config() {
         TransactionError::InstructionError(
             0,
             InstructionError::Custom(LendingError::InvalidOracleConfig as u32)
-        )
-    );
-}
-
-#[tokio::test]
-async fn test_update_invalid_reserve_config_bad_borrow_weight_bps() {
-    let (mut test, lending_market, lending_market_owner) = setup().await;
-    let wsol_reserve = test
-        .init_reserve(
-            &lending_market,
-            &lending_market_owner,
-            &wsol_mint::id(),
-            &test_reserve_config(),
-            &Keypair::new(),
-            1000,
-            None,
-        )
-        .await
-        .unwrap();
-
-    let oracle = test.mints.get(&wsol_mint::id()).unwrap().unwrap();
-
-    let new_reserve_config = ReserveConfig {
-        borrow_weight_bps: 9999,
-        ..test_reserve_config()
-    };
-    let new_rate_limiter_config = RateLimiterConfig {
-        window_duration: 50,
-        max_outflow: 100,
-    };
-
-    let res = lending_market
-        .update_reserve_config(
-            &mut test,
-            &lending_market_owner,
-            &wsol_reserve,
-            new_reserve_config,
-            new_rate_limiter_config,
-            Some(&Oracle {
-                pyth_product_pubkey: oracle.pyth_product_pubkey,
-                pyth_price_pubkey: oracle.pyth_price_pubkey,
-                switchboard_feed_pubkey: Some(NULL_PUBKEY),
-            }),
-        )
-        .await
-        .unwrap_err()
-        .unwrap();
-
-    assert_eq!(
-        res,
-        TransactionError::InstructionError(
-            0,
-            InstructionError::Custom(LendingError::InvalidConfig as u32)
         )
     );
 }

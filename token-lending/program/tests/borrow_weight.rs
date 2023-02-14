@@ -26,7 +26,7 @@ async fn test_refresh_obligation() {
     let (mut test, lending_market, _, _, _, obligation) = scenario_1(
         &test_reserve_config(),
         &ReserveConfig {
-            borrow_weight_bps: 20_000,
+            added_borrow_weight_bps: 10_000,
             ..test_reserve_config()
         },
     )
@@ -55,7 +55,7 @@ async fn test_borrow() {
     let (mut test, lending_market, usdc_reserve, wsol_reserve, _, _) = setup_world(
         &test_reserve_config(),
         &ReserveConfig {
-            borrow_weight_bps: 20_000,
+            added_borrow_weight_bps: 10_000,
             fees: ReserveFees {
                 borrow_fee_wad: 10_000_000_000_000_000, // 1%
                 host_fee_percentage: 20,
@@ -207,7 +207,7 @@ async fn test_liquidation() {
         setup_world(
             &test_reserve_config(),
             &ReserveConfig {
-                borrow_weight_bps: 10_000,
+                added_borrow_weight_bps: 0,
                 fees: ReserveFees {
                     borrow_fee_wad: 10_000_000_000_000_000, // 1%
                     host_fee_percentage: 20,
@@ -341,7 +341,7 @@ async fn test_liquidation() {
             &lending_market_owner,
             &wsol_reserve,
             ReserveConfig {
-                borrow_weight_bps: 11_000,
+                added_borrow_weight_bps: 1_000,
                 ..wsol_reserve.account.config
             },
             wsol_reserve.account.rate_limiter.config,
