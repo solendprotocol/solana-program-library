@@ -369,6 +369,8 @@ impl SolendProgramTest {
                 price.price,
                 price.conf,
                 price.expo,
+                price.ema_price,
+                price.ema_conf,
             )],
             None,
         )
@@ -599,6 +601,8 @@ pub struct PriceArgs {
     pub price: i64,
     pub conf: u64,
     pub expo: i32,
+    pub ema_price: i64,
+    pub ema_conf: u64,
 }
 
 impl Info<LendingMarket> {
@@ -1297,6 +1301,8 @@ pub async fn setup_world(
             price: 1,
             conf: 0,
             expo: 0,
+            ema_price: 1,
+            ema_conf: 0
         },
     )
     .await;
@@ -1308,6 +1314,8 @@ pub async fn setup_world(
             price: 10,
             conf: 0,
             expo: 0,
+            ema_price: 10,
+            ema_conf: 0
         },
     )
     .await;

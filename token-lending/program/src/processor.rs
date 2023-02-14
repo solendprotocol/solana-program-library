@@ -329,7 +329,8 @@ fn process_init_reserve(
     validate_pyth_keys(&lending_market, pyth_product_info, pyth_price_info)?;
     validate_switchboard_keys(&lending_market, switchboard_feed_info)?;
 
-    let market_price = get_price(Some(switchboard_feed_info), pyth_price_info, clock)?;
+    let (market_price, smoothed_market_price) =
+        get_price(Some(switchboard_feed_info), pyth_price_info, clock)?;
 
     let authority_signer_seeds = &[
         lending_market_info.key.as_ref(),
@@ -360,6 +361,7 @@ fn process_init_reserve(
             pyth_oracle_pubkey: *pyth_price_info.key,
             switchboard_oracle_pubkey: *switchboard_feed_info.key,
             market_price,
+            smoothed_market_price: smoothed_market_price.unwrap_or(market_price),
         }),
         collateral: ReserveCollateral::new(NewReserveCollateralParams {
             mint_pubkey: *reserve_collateral_mint_info.key,
@@ -482,7 +484,14 @@ fn _refresh_reserve<'a>(
         return Err(LendingError::InvalidOracleConfig.into());
     }
 
-    reserve.liquidity.market_price = get_price(switchboard_feed_info, pyth_price_info, clock)?;
+    let (market_price, smoothed_market_price) =
+        get_price(switchboard_feed_info, pyth_price_info, clock)?;
+
+    reserve.liquidity.market_price = market_price;
+    if let Some(smoothed_market_price) = smoothed_market_price {
+        reserve.liquidity.smoothed_market_price = smoothed_market_price;
+    }
+
     Reserve::pack(reserve, &mut reserve_info.data.borrow_mut())?;
 
     _refresh_reserve_interest(program_id, reserve_info, clock)
@@ -2606,19 +2615,26 @@ fn get_pyth_product_quote_currency(
         })
 }
 
+/// get_price tries to load the oracle price from pyth, and if it fails, uses switchboard.
+/// The first element in the returned tuple is the market price, and the second is the optional
+/// smoothed price (eg ema, twap).
 fn get_price(
     switchboard_feed_info: Option<&AccountInfo>,
     pyth_price_account_info: &AccountInfo,
     clock: &Clock,
-) -> Result<Decimal, ProgramError> {
-    let pyth_price = get_pyth_price(pyth_price_account_info, clock).unwrap_or_default();
-    if pyth_price != Decimal::zero() {
-        return Ok(pyth_price);
+) -> Result<(Decimal, Option<Decimal>), ProgramError> {
+    if let Ok(prices) = get_pyth_price(pyth_price_account_info, clock) {
+        return Ok((prices.0, Some(prices.1)));
     }
 
     // if switchboard was not passed in don't try to grab the price
     if let Some(switchboard_feed_info_unwrapped) = switchboard_feed_info {
-        return get_switchboard_price(switchboard_feed_info_unwrapped, clock);
+        // TODO: add support for switchboard smoothed prices. Probably need to add a new
+        // switchboard account per reserve.
+        return match get_switchboard_price(switchboard_feed_info_unwrapped, clock) {
+            Ok(price) => Ok((price, None)),
+            Err(e) => Err(e),
+        }
     }
 
     Err(LendingError::InvalidOracleConfig.into())

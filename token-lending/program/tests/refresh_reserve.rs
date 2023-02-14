@@ -148,8 +148,21 @@ async fn test_success() {
     // should be maxed out at 30%
     let borrow_rate = wsol_reserve.account.current_borrow_rate().unwrap();
 
+    test.set_price(
+        &wsol_mint::id(),
+        PriceArgs {
+            price: 20,
+            conf: 1,
+            expo: 1,
+            ema_price: 15,
+            ema_conf: 1,
+        },
+    )
+    .await;
+
     test.advance_clock_by_slots(1).await;
     let balance_checker = BalanceChecker::start(&mut test, &[&wsol_reserve]).await;
+
 
     lending_market
         .refresh_reserve(&mut test, &wsol_reserve)
@@ -187,6 +200,8 @@ async fn test_success() {
                 borrowed_amount_wads: compound_borrow,
                 cumulative_borrow_rate_wads: compound_rate.into(),
                 accumulated_protocol_fees_wads: delta_accumulated_protocol_fees,
+                market_price: Decimal::from(200u64),
+                smoothed_market_price: Decimal::from(150u64),
                 ..wsol_reserve.account.liquidity
             },
             ..wsol_reserve.account
@@ -229,6 +244,8 @@ async fn test_success_pyth_price_stale_switchboard_valid() {
             price: 10,
             expo: 0,
             conf: 0,
+            ema_price: 10,
+            ema_conf: 0,
         },
     )
     .await;
