@@ -510,7 +510,7 @@ impl LendingInstruction {
                 let (fee_receiver, rest) = Self::unpack_pubkey(rest)?;
                 let (protocol_liquidation_fee, rest) = Self::unpack_u8(rest)?;
                 let (protocol_take_rate, rest) = Self::unpack_u8(rest)?;
-                let (borrow_weight_bps, _rest) = Self::unpack_u64(rest)?;
+                let (added_borrow_weight_bps, _rest) = Self::unpack_u64(rest)?;
                 Self::InitReserve {
                     liquidity_amount,
                     config: ReserveConfig {
@@ -531,7 +531,7 @@ impl LendingInstruction {
                         fee_receiver,
                         protocol_liquidation_fee,
                         protocol_take_rate,
-                        borrow_weight_bps,
+                        added_borrow_weight_bps,
                     },
                 }
             }
@@ -594,7 +594,7 @@ impl LendingInstruction {
                 let (fee_receiver, rest) = Self::unpack_pubkey(rest)?;
                 let (protocol_liquidation_fee, rest) = Self::unpack_u8(rest)?;
                 let (protocol_take_rate, rest) = Self::unpack_u8(rest)?;
-                let (borrow_weight_bps, rest) = Self::unpack_u64(rest)?;
+                let (added_borrow_weight_bps, rest) = Self::unpack_u64(rest)?;
                 let (window_duration, rest) = Self::unpack_u64(rest)?;
                 let (max_outflow, _rest) = Self::unpack_u64(rest)?;
 
@@ -617,7 +617,7 @@ impl LendingInstruction {
                         fee_receiver,
                         protocol_liquidation_fee,
                         protocol_take_rate,
-                        borrow_weight_bps,
+                        added_borrow_weight_bps,
                     },
                     rate_limiter_config: RateLimiterConfig {
                         window_duration,
@@ -744,7 +744,7 @@ impl LendingInstruction {
                         fee_receiver,
                         protocol_liquidation_fee,
                         protocol_take_rate,
-                        borrow_weight_bps,
+                        added_borrow_weight_bps: borrow_weight_bps,
                     },
             } => {
                 buf.push(2);
@@ -835,7 +835,7 @@ impl LendingInstruction {
                 buf.extend_from_slice(&config.fee_receiver.to_bytes());
                 buf.extend_from_slice(&config.protocol_liquidation_fee.to_le_bytes());
                 buf.extend_from_slice(&config.protocol_take_rate.to_le_bytes());
-                buf.extend_from_slice(&config.borrow_weight_bps.to_le_bytes());
+                buf.extend_from_slice(&config.added_borrow_weight_bps.to_le_bytes());
                 buf.extend_from_slice(&rate_limiter_config.window_duration.to_le_bytes());
                 buf.extend_from_slice(&rate_limiter_config.max_outflow.to_le_bytes());
             }

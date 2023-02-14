@@ -2877,10 +2877,6 @@ fn validate_reserve_config(config: ReserveConfig) -> ProgramResult {
         msg!("Protocol take rate must be in range [0, 100]");
         return Err(LendingError::InvalidConfig.into());
     }
-    if config.borrow_weight_bps < 10000 {
-        msg!("Borrow weight bps must be greater than 10000!");
-        return Err(LendingError::InvalidConfig.into());
-    }
     Ok(())
 }
 

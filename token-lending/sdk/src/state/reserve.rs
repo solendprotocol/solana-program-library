@@ -66,7 +66,9 @@ impl Reserve {
 
     /// get borrow weight. Guaranteed to be greater than 1
     pub fn borrow_weight(&self) -> Decimal {
-        Decimal::from_bps(std::cmp::max(self.config.borrow_weight_bps, 10_000))
+        Decimal::one()
+            .try_add(Decimal::from_bps(self.config.added_borrow_weight_bps))
+            .unwrap()
     }
 
     /// find price of tokens in quote currency
@@ -718,8 +720,9 @@ pub struct ReserveConfig {
     pub protocol_liquidation_fee: u8,
     /// Protocol take rate is the amount borrowed interest protocol recieves, as a percentage  
     pub protocol_take_rate: u8,
-    /// Borrow weight in basis points. This value cannot be less than 1.
-    pub borrow_weight_bps: u64,
+    /// Added borrow weight in basis points. THIS FIELD SHOULD NEVER BE USED DIRECTLY. Always use
+    /// borrow_weight()
+    pub added_borrow_weight_bps: u64,
 }
 
 /// Additional fee information on a reserve
@@ -877,7 +880,7 @@ impl Pack for Reserve {
             config_protocol_take_rate,
             liquidity_accumulated_protocol_fees_wads,
             rate_limiter,
-            config_borrow_weight_bps,
+            config_added_borrow_weight_bps,
             _padding,
         ) = mut_array_refs![
             output,
@@ -970,7 +973,7 @@ impl Pack for Reserve {
 
         self.rate_limiter.pack_into_slice(rate_limiter);
 
-        *config_borrow_weight_bps = self.config.borrow_weight_bps.to_le_bytes();
+        *config_added_borrow_weight_bps = self.config.added_borrow_weight_bps.to_le_bytes();
     }
 
     /// Unpacks a byte buffer into a [ReserveInfo](struct.ReserveInfo.html).
@@ -1011,7 +1014,7 @@ impl Pack for Reserve {
             config_protocol_take_rate,
             liquidity_accumulated_protocol_fees_wads,
             rate_limiter,
-            config_borrow_weight_bps,
+            config_added_borrow_weight_bps,
             _padding,
         ) = array_refs![
             input,
@@ -1104,11 +1107,7 @@ impl Pack for Reserve {
                 fee_receiver: Pubkey::new_from_array(*config_fee_receiver),
                 protocol_liquidation_fee: u8::from_le_bytes(*config_protocol_liquidation_fee),
                 protocol_take_rate: u8::from_le_bytes(*config_protocol_take_rate),
-                borrow_weight_bps: {
-                    // this is a new field, so we need to handle the case where borrow_weight == 0
-                    let borrow_weight_bps = u64::from_le_bytes(*config_borrow_weight_bps);
-                    std::cmp::max(borrow_weight_bps, 10_000)
-                },
+                added_borrow_weight_bps: u64::from_le_bytes(*config_added_borrow_weight_bps),
             },
             rate_limiter: RateLimiter::unpack_from_slice(rate_limiter)?,
         })
@@ -1653,7 +1652,7 @@ mod test {
         // reserve state
         market_price: Decimal,
         decimal: u8,
-        borrow_weight_bps: u64,
+        added_borrow_weight_bps: u64,
 
         borrow_fee_wad: u64,
         host_fee: u8,
@@ -1671,7 +1670,7 @@ mod test {
 
                 market_price: Decimal::from(1u64),
                 decimal: 9,
-                borrow_weight_bps: 10000,
+                added_borrow_weight_bps: 0,
 
                 borrow_fee_wad: 10_000_000_000_000_000, // 1%
                 host_fee: 20,
@@ -1691,7 +1690,7 @@ mod test {
 
                 market_price: Decimal::from(1u64),
                 decimal: 9,
-                borrow_weight_bps: 10000,
+                added_borrow_weight_bps: 0,
 
                 borrow_fee_wad: 10_000_000_000_000_000, // 1%
                 host_fee: 20,
@@ -1711,7 +1710,7 @@ mod test {
 
                 market_price: Decimal::from(1u64),
                 decimal: 9,
-                borrow_weight_bps: 20_000,
+                added_borrow_weight_bps: 10_000,
 
                 borrow_fee_wad: 0,
                 host_fee: 0,
@@ -1731,7 +1730,7 @@ mod test {
 
                 market_price: Decimal::from(1u64),
                 decimal: 9,
-                borrow_weight_bps: 20_000,
+                added_borrow_weight_bps: 10_000,
 
                 borrow_fee_wad: 0,
                 host_fee: 0,
@@ -1751,7 +1750,7 @@ mod test {
         fn calculate_borrow(test_case in calculate_borrow_test_cases()) {
             let reserve = Reserve {
                 config: ReserveConfig {
-                    borrow_weight_bps: test_case.borrow_weight_bps,
+                    added_borrow_weight_bps: test_case.added_borrow_weight_bps,
                     fees: ReserveFees {
                         borrow_fee_wad: test_case.borrow_fee_wad,
                         host_fee_percentage: test_case.host_fee,
@@ -1773,21 +1772,5 @@ mod test {
                 test_case.remaining_reserve_capacity,
             ), test_case.result);
         }
-    }
-
-    // test that unpacking a reserve with a borrow weight of 0 fails
-    #[test]
-    fn test_unpack_reserve_with_zero_borrow_weight() {
-        let mut reserve = Reserve {
-            version: PROGRAM_VERSION,
-            ..Reserve::default()
-        };
-        reserve.config.borrow_weight_bps = 0;
-
-        let mut buf = [0u8; Reserve::LEN];
-        Reserve::pack(reserve, &mut buf).unwrap();
-
-        let unpacked_reserve = Reserve::unpack(&buf).unwrap();
-        assert_eq!(unpacked_reserve.config.borrow_weight_bps, 10_000);
     }
 }
