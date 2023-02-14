@@ -67,6 +67,8 @@ async fn test_success_new() {
             price: 5500,
             conf: 0,
             expo: 0,
+            ema_price: 5500,
+            ema_conf: 0,
         },
     )
     .await;
@@ -179,6 +181,7 @@ async fn test_success_new() {
                     .try_sub(Decimal::from(expected_borrow_repaid * LAMPORTS_TO_SOL))
                     .unwrap(),
                 market_price: Decimal::from(5500u64),
+                smoothed_market_price: Decimal::from(5500u64),
                 ..wsol_reserve.account.liquidity
             },
             ..wsol_reserve.account
@@ -289,6 +292,8 @@ async fn test_success_insufficient_liquidity() {
             price: 5500,
             conf: 0,
             expo: 0,
+            ema_price: 5500,
+            ema_conf: 0,
         },
     )
     .await;
