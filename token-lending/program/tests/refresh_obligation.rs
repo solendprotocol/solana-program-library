@@ -2,6 +2,7 @@
 
 mod helpers;
 
+use crate::solend_program_test::PriceArgs;
 use std::collections::HashSet;
 
 use helpers::solend_program_test::{setup_world, BalanceChecker, Info, SolendProgramTest, User};
@@ -9,8 +10,8 @@ use helpers::*;
 use solana_program::native_token::LAMPORTS_PER_SOL;
 use solana_program_test::*;
 use solana_sdk::signature::Keypair;
-use solend_program::state::SLOTS_PER_YEAR;
 use solend_program::state::{LastUpdate, ObligationLiquidity, ReserveFees, ReserveLiquidity};
+use solend_program::state::{ObligationCollateral, SLOTS_PER_YEAR};
 
 use solend_program::{
     math::{Decimal, TryAdd, TryDiv, TryMul},
@@ -135,6 +136,18 @@ async fn setup() -> (
 async fn test_success() {
     let (mut test, lending_market, usdc_reserve, wsol_reserve, user, obligation) = setup().await;
 
+    test.set_price(
+        &usdc_mint::id(),
+        PriceArgs {
+            price: 10,
+            conf: 1,
+            expo: -1,
+            ema_price: 9,
+            ema_conf: 1,
+        },
+    )
+    .await;
+
     test.advance_clock_by_slots(1).await;
 
     let balance_checker =
@@ -164,6 +177,10 @@ async fn test_success() {
             last_update: LastUpdate {
                 slot: 1001,
                 stale: false
+            },
+            liquidity: ReserveLiquidity {
+                smoothed_market_price: Decimal::from_percent(90),
+                ..usdc_reserve.account.liquidity
             },
             ..usdc_reserve.account
         }
@@ -222,6 +239,14 @@ async fn test_success() {
             }]
             .to_vec(),
             borrowed_value: new_borrow_value,
+            // uses ema price to calculate allowed borrow value
+            allowed_borrow_value: Decimal::from(100_000u64)
+                .try_mul(Decimal::from_percent(
+                    usdc_reserve.account.config.loan_to_value_ratio
+                ))
+                .unwrap()
+                .try_mul(Decimal::from_percent(90))
+                .unwrap(),
             ..obligation.account
         }
     );

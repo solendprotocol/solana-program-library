@@ -919,25 +919,22 @@ fn process_refresh_obligation(program_id: &Pubkey, accounts: &[AccountInfo]) -> 
             return Err(LendingError::ReserveStale.into());
         }
 
-        // @TODO: add lookup table https://git.io/JOCYq
-        let decimals = 10u64
-            .checked_pow(deposit_reserve.liquidity.mint_decimals as u32)
-            .ok_or(LendingError::MathOverflow)?;
-
-        let market_value = deposit_reserve
+        let liquidity_amount = deposit_reserve
             .collateral_exchange_rate()?
-            .decimal_collateral_to_liquidity(collateral.deposited_amount.into())?
-            .try_mul(deposit_reserve.liquidity.market_price)?
-            .try_div(decimals)?;
-        collateral.market_value = market_value;
+            .decimal_collateral_to_liquidity(collateral.deposited_amount.into())?;
+
+        let market_value = deposit_reserve.market_value(liquidity_amount)?;
+        let market_value_lower_bound =
+            deposit_reserve.market_value_lower_bound(liquidity_amount)?;
 
         let loan_to_value_rate = Rate::from_percent(deposit_reserve.config.loan_to_value_ratio);
         let liquidation_threshold_rate =
             Rate::from_percent(deposit_reserve.config.liquidation_threshold);
 
+        collateral.market_value = market_value;
         deposited_value = deposited_value.try_add(market_value)?;
         allowed_borrow_value =
-            allowed_borrow_value.try_add(market_value.try_mul(loan_to_value_rate)?)?;
+            allowed_borrow_value.try_add(market_value_lower_bound.try_mul(loan_to_value_rate)?)?;
         unhealthy_borrow_value =
             unhealthy_borrow_value.try_add(market_value.try_mul(liquidation_threshold_rate)?)?;
     }
@@ -2634,7 +2631,7 @@ fn get_price(
         return match get_switchboard_price(switchboard_feed_info_unwrapped, clock) {
             Ok(price) => Ok((price, None)),
             Err(e) => Err(e),
-        }
+        };
     }
 
     Err(LendingError::InvalidOracleConfig.into())
