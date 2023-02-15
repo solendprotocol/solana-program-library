@@ -71,10 +71,44 @@ impl Reserve {
             .unwrap()
     }
 
-    /// find price of tokens in quote currency
+    /// find current market value of tokens
     pub fn market_value(&self, liquidity_amount: Decimal) -> Result<Decimal, ProgramError> {
         self.liquidity
             .market_price
+            .try_mul(liquidity_amount)?
+            .try_div(Decimal::from(
+                (10u128)
+                    .checked_pow(self.liquidity.mint_decimals as u32)
+                    .ok_or(LendingError::MathOverflow)?,
+            ))
+    }
+
+    /// find the current upper bound market value of tokens. 
+    /// ie max(market_price, smoothed_market_price) * liquidity_amount
+    pub fn market_value_upper_bound(&self, liquidity_amount: Decimal) -> Result<Decimal, ProgramError> {
+        let price_upper_bound = std::cmp::max(
+            self.liquidity.market_price,
+            self.liquidity.smoothed_market_price,
+        );
+
+        price_upper_bound
+            .try_mul(liquidity_amount)?
+            .try_div(Decimal::from(
+                (10u128)
+                    .checked_pow(self.liquidity.mint_decimals as u32)
+                    .ok_or(LendingError::MathOverflow)?,
+            ))
+    }
+
+    /// find the current lower bound market value of tokens. 
+    /// ie min(market_price, smoothed_market_price) * liquidity_amount
+    pub fn market_value_lower_bound(&self, liquidity_amount: Decimal) -> Result<Decimal, ProgramError> {
+        let price_lower_bound = std::cmp::min(
+            self.liquidity.market_price,
+            self.liquidity.smoothed_market_price,
+        );
+
+        price_lower_bound
             .try_mul(liquidity_amount)?
             .try_div(Decimal::from(
                 (10u128)
