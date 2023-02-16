@@ -1316,48 +1316,21 @@ fn _withdraw_obligation_collateral<'a>(
         return Err(LendingError::InvalidMarketAuthority.into());
     }
 
-    let withdraw_amount = if obligation.borrows.is_empty() {
-        if collateral_amount == u64::MAX {
-            collateral.deposited_amount
-        } else {
-            collateral.deposited_amount.min(collateral_amount)
-        }
-    } else if obligation.deposited_value == Decimal::zero() {
-        msg!("Obligation deposited value is zero");
-        return Err(LendingError::ObligationDepositsZero.into());
-    } else {
-        let max_withdraw_value = obligation.max_withdraw_value(Rate::from_percent(
-            withdraw_reserve.config.loan_to_value_ratio,
-        ))?;
+    let max_withdraw_amount = obligation.max_withdraw_amount(collateral, &withdraw_reserve)?;
 
-        if max_withdraw_value == Decimal::zero() {
-            msg!("Maximum withdraw value is zero");
+    if max_withdraw_amount == 0 {
+        msg!("Maximum withdraw value is zero");
+        return Err(LendingError::WithdrawTooLarge.into());
+    }
+
+    let withdraw_amount = match collateral_amount {
+        u64::MAX => max_withdraw_amount,
+        amount if amount > max_withdraw_amount => {
+            msg!("Withdraw value cannot exceed maximum withdraw value");
             return Err(LendingError::WithdrawTooLarge.into());
         }
-
-        let withdraw_amount = if collateral_amount == u64::MAX {
-            let withdraw_value = max_withdraw_value.min(collateral.market_value);
-            let withdraw_pct = withdraw_value.try_div(collateral.market_value)?;
-            withdraw_pct
-                .try_mul(collateral.deposited_amount)?
-                .try_floor_u64()?
-                .min(collateral.deposited_amount)
-        } else {
-            let withdraw_amount = collateral_amount.min(collateral.deposited_amount);
-            let withdraw_pct =
-                Decimal::from(withdraw_amount).try_div(collateral.deposited_amount)?;
-            let withdraw_value = collateral.market_value.try_mul(withdraw_pct)?;
-            if withdraw_value > max_withdraw_value {
-                msg!("Withdraw value cannot exceed maximum withdraw value");
-                return Err(LendingError::WithdrawTooLarge.into());
-            }
-            withdraw_amount
-        };
-        if withdraw_amount == 0 {
-            msg!("Withdraw amount is too small to transfer collateral");
-            return Err(LendingError::WithdrawTooSmall.into());
-        }
-        withdraw_amount
+        // this min check is technically unnecessary
+        _ => std::cmp::min(collateral_amount, max_withdraw_amount),
     };
 
     obligation.withdraw(withdraw_amount, collateral_index)?;
