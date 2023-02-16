@@ -39,7 +39,8 @@ pub struct Obligation {
     pub deposited_value: Decimal,
     /// Risk-adjusted market value of borrows
     pub borrowed_value: Decimal,
-    /// The maximum borrow value at the weighted average loan to value ratio
+    /// The maximum borrow value at the weighted average loan to value ratio using the minimum of
+    /// the spot price and the smoothed price
     pub allowed_borrow_value: Decimal,
     /// The dangerous borrow value at the weighted average liquidation threshold
     pub unhealthy_borrow_value: Decimal,
@@ -90,20 +91,45 @@ impl Obligation {
         Ok(())
     }
 
-    /// Calculate the maximum collateral value that can be withdrawn
-    pub fn max_withdraw_value(
+    /// calculate the maximum amount of collateral that can be borrowed
+    pub fn max_withdraw_amount(
         &self,
-        withdraw_collateral_ltv: Rate,
-    ) -> Result<Decimal, ProgramError> {
+        collateral: &ObligationCollateral,
+        withdraw_reserve: &Reserve,
+    ) -> Result<u64, ProgramError> {
         if self.allowed_borrow_value <= self.borrowed_value {
-            return Ok(Decimal::zero());
+            return Ok(0);
         }
-        if withdraw_collateral_ltv == Rate::zero() {
-            return Ok(self.deposited_value);
+
+        if self.borrows.is_empty() || withdraw_reserve.config.loan_to_value_ratio == 0 {
+            return Ok(collateral.deposited_amount);
         }
-        self.allowed_borrow_value
+
+        // max usd value that can be withdrawn
+        let max_withdraw_value = self
+            .allowed_borrow_value
             .try_sub(self.borrowed_value)?
-            .try_div(withdraw_collateral_ltv)
+            .try_div(Rate::from_percent(
+                withdraw_reserve.config.loan_to_value_ratio,
+            ))?;
+
+        // convert max_withdraw_value to max withdraw liquidity amount
+        let price = std::cmp::max(
+            withdraw_reserve.liquidity.market_price,
+            withdraw_reserve.liquidity.smoothed_market_price,
+        );
+
+        let decimals = 10u64
+            .checked_pow(withdraw_reserve.liquidity.mint_decimals as u32)
+            .ok_or(LendingError::MathOverflow)?;
+
+        let max_withdraw_liquidity_amount = max_withdraw_value.try_mul(decimals)?.try_div(price)?;
+
+        // convert max withdraw liquidity amount to max withdraw collateral amount
+        let exchange_rate = withdraw_reserve.collateral_exchange_rate()?;
+        exchange_rate
+            .decimal_liquidity_to_collateral(max_withdraw_liquidity_amount)?
+            .try_floor_u64()
     }
 
     /// Calculate the maximum liquidity value that can be borrowed
