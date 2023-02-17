@@ -11,7 +11,7 @@ use solana_program::native_token::LAMPORTS_PER_SOL;
 use solana_program_test::*;
 use solana_sdk::signature::Keypair;
 use solend_program::state::{LastUpdate, ObligationLiquidity, ReserveFees, ReserveLiquidity};
-use solend_program::state::{ObligationCollateral, SLOTS_PER_YEAR};
+use solend_program::state::{SLOTS_PER_YEAR};
 
 use solend_program::{
     math::{Decimal, TryAdd, TryDiv, TryMul},
@@ -148,6 +148,18 @@ async fn test_success() {
     )
     .await;
 
+    test.set_price(
+        &wsol_mint::id(),
+        PriceArgs {
+            price: 10,
+            conf: 1,
+            expo: 0,
+            ema_price: 11,
+            ema_conf: 1,
+        },
+    )
+    .await;
+
     test.advance_clock_by_slots(1).await;
 
     let balance_checker =
@@ -211,6 +223,7 @@ async fn test_success() {
                 available_amount: 0,
                 borrowed_amount_wads: new_borrowed_amount_wads,
                 cumulative_borrow_rate_wads: new_cumulative_borrow_rate,
+                smoothed_market_price: Decimal::from(11u64),
                 ..wsol_reserve.account.liquidity
             },
             ..wsol_reserve.account
@@ -238,9 +251,19 @@ async fn test_success() {
                 market_value: new_borrow_value
             }]
             .to_vec(),
-            borrowed_value: new_borrow_value,
-            borrowed_value_upper_bound: new_borrow_value,
-            // uses ema price to calculate allowed borrow value
+
+            borrowed_value: new_borrowed_amount_wads
+                .try_mul(Decimal::from(10u64))
+                .unwrap()
+                .try_div(Decimal::from(LAMPORTS_PER_SOL))
+                .unwrap(),
+
+            borrowed_value_upper_bound: new_borrowed_amount_wads
+                .try_mul(Decimal::from(11u64))
+                .unwrap()
+                .try_div(Decimal::from(LAMPORTS_PER_SOL))
+                .unwrap(),
+
             allowed_borrow_value: Decimal::from(100_000u64)
                 .try_mul(Decimal::from_percent(
                     usdc_reserve.account.config.loan_to_value_ratio
@@ -248,6 +271,7 @@ async fn test_success() {
                 .unwrap()
                 .try_mul(Decimal::from_percent(90))
                 .unwrap(),
+
             ..obligation.account
         }
     );

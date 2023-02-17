@@ -71,6 +71,11 @@ impl Reserve {
             .unwrap()
     }
 
+    /// get loan to value ratio as a Rate
+    pub fn loan_to_value_ratio(&self) -> Rate {
+        Rate::from_percent(self.config.loan_to_value_ratio)
+    }
+
     /// find current market value of tokens
     pub fn market_value(&self, liquidity_amount: Decimal) -> Result<Decimal, ProgramError> {
         self.liquidity

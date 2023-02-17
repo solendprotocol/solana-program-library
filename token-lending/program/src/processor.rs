@@ -969,13 +969,14 @@ fn process_refresh_obligation(program_id: &Pubkey, accounts: &[AccountInfo]) -> 
         liquidity.accrue_interest(borrow_reserve.liquidity.cumulative_borrow_rate_wads)?;
 
         let market_value = borrow_reserve.market_value(liquidity.borrowed_amount_wads)?;
-        let market_value_upper_bound = borrow_reserve.market_value_upper_bound(liquidity.borrowed_amount_wads)?;
+        let market_value_upper_bound =
+            borrow_reserve.market_value_upper_bound(liquidity.borrowed_amount_wads)?;
         liquidity.market_value = market_value;
 
         borrowed_value =
             borrowed_value.try_add(market_value.try_mul(borrow_reserve.borrow_weight())?)?;
-        borrowed_value_upper_bound =
-            borrowed_value_upper_bound.try_add(market_value_upper_bound.try_mul(borrow_reserve.borrow_weight())?)?;
+        borrowed_value_upper_bound = borrowed_value_upper_bound
+            .try_add(market_value_upper_bound.try_mul(borrow_reserve.borrow_weight())?)?;
     }
 
     if account_info_iter.peek().is_some() {
@@ -1328,15 +1329,7 @@ fn _withdraw_obligation_collateral<'a>(
         return Err(LendingError::WithdrawTooLarge.into());
     }
 
-    let withdraw_amount = match collateral_amount {
-        u64::MAX => max_withdraw_amount,
-        amount if amount > max_withdraw_amount => {
-            msg!("Withdraw value cannot exceed maximum withdraw value");
-            return Err(LendingError::WithdrawTooLarge.into());
-        }
-        // this min check is technically unnecessary
-        _ => std::cmp::min(collateral_amount, max_withdraw_amount),
-    };
+    let withdraw_amount = std::cmp::min(collateral_amount, max_withdraw_amount);
 
     obligation.withdraw(withdraw_amount, collateral_index)?;
     obligation.last_update.mark_stale();
