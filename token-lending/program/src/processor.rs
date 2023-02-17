@@ -890,6 +890,7 @@ fn process_refresh_obligation(program_id: &Pubkey, accounts: &[AccountInfo]) -> 
 
     let mut deposited_value = Decimal::zero();
     let mut borrowed_value = Decimal::zero();
+    let mut borrowed_value_upper_bound = Decimal::zero();
     let mut allowed_borrow_value = Decimal::zero();
     let mut unhealthy_borrow_value = Decimal::zero();
 
@@ -968,10 +969,13 @@ fn process_refresh_obligation(program_id: &Pubkey, accounts: &[AccountInfo]) -> 
         liquidity.accrue_interest(borrow_reserve.liquidity.cumulative_borrow_rate_wads)?;
 
         let market_value = borrow_reserve.market_value(liquidity.borrowed_amount_wads)?;
+        let market_value_upper_bound = borrow_reserve.market_value_upper_bound(liquidity.borrowed_amount_wads)?;
         liquidity.market_value = market_value;
 
         borrowed_value =
             borrowed_value.try_add(market_value.try_mul(borrow_reserve.borrow_weight())?)?;
+        borrowed_value_upper_bound =
+            borrowed_value_upper_bound.try_add(market_value_upper_bound.try_mul(borrow_reserve.borrow_weight())?)?;
     }
 
     if account_info_iter.peek().is_some() {
@@ -981,6 +985,7 @@ fn process_refresh_obligation(program_id: &Pubkey, accounts: &[AccountInfo]) -> 
 
     obligation.deposited_value = deposited_value;
     obligation.borrowed_value = borrowed_value;
+    obligation.borrowed_value_upper_bound = borrowed_value_upper_bound;
 
     let global_unhealthy_borrow_value = Decimal::from(70000000u64);
     let global_allowed_borrow_value = Decimal::from(65000000u64);

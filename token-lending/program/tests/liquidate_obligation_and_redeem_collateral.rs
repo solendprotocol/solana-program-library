@@ -213,6 +213,7 @@ async fn test_success_new() {
             .to_vec(),
             deposited_value: Decimal::from(100_000u64),
             borrowed_value: Decimal::from(55_000u64),
+            borrowed_value_upper_bound: Decimal::from(55_000u64),
             allowed_borrow_value: Decimal::from(50_000u64),
             unhealthy_borrow_value: Decimal::from(55_000u64),
             ..obligation.account

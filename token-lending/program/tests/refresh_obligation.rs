@@ -239,6 +239,7 @@ async fn test_success() {
             }]
             .to_vec(),
             borrowed_value: new_borrow_value,
+            borrowed_value_upper_bound: new_borrow_value,
             // uses ema price to calculate allowed borrow value
             allowed_borrow_value: Decimal::from(100_000u64)
                 .try_mul(Decimal::from_percent(

@@ -37,8 +37,12 @@ pub struct Obligation {
     pub borrows: Vec<ObligationLiquidity>,
     /// Market value of deposits
     pub deposited_value: Decimal,
-    /// Risk-adjusted market value of borrows
+    /// Risk-adjusted market value of borrows.
+    /// ie sum(b.borrowed_amount * b.current_spot_price * b.borrow_weight for b in borrows)
     pub borrowed_value: Decimal,
+    /// Risk-adjusted upper bound market value of borrows. 
+    /// ie sum(b.borrowed_amount * max(b.current_spot_price, b.smoothed_price) * b.borrow_weight for b in borrows)
+    pub borrowed_value_upper_bound: Decimal,
     /// The maximum borrow value at the weighted average loan to value ratio using the minimum of
     /// the spot price and the smoothed price
     pub allowed_borrow_value: Decimal,
@@ -392,6 +396,7 @@ impl Pack for Obligation {
             borrowed_value,
             allowed_borrow_value,
             unhealthy_borrow_value,
+            borrowed_value_upper_bound,
             _padding,
             deposits_len,
             borrows_len,
@@ -407,7 +412,8 @@ impl Pack for Obligation {
             16,
             16,
             16,
-            64,
+            16,
+            48,
             1,
             1,
             OBLIGATION_COLLATERAL_LEN + (OBLIGATION_LIQUIDITY_LEN * (MAX_OBLIGATION_RESERVES - 1))
@@ -421,6 +427,7 @@ impl Pack for Obligation {
         owner.copy_from_slice(self.owner.as_ref());
         pack_decimal(self.deposited_value, deposited_value);
         pack_decimal(self.borrowed_value, borrowed_value);
+        pack_decimal(self.borrowed_value_upper_bound, borrowed_value_upper_bound);
         pack_decimal(self.allowed_borrow_value, allowed_borrow_value);
         pack_decimal(self.unhealthy_borrow_value, unhealthy_borrow_value);
         *deposits_len = u8::try_from(self.deposits.len()).unwrap().to_le_bytes();
@@ -476,6 +483,7 @@ impl Pack for Obligation {
             borrowed_value,
             allowed_borrow_value,
             unhealthy_borrow_value,
+            borrowed_value_upper_bound,
             _padding,
             deposits_len,
             borrows_len,
@@ -491,7 +499,8 @@ impl Pack for Obligation {
             16,
             16,
             16,
-            64,
+            16,
+            48,
             1,
             1,
             OBLIGATION_COLLATERAL_LEN + (OBLIGATION_LIQUIDITY_LEN * (MAX_OBLIGATION_RESERVES - 1))
@@ -552,6 +561,7 @@ impl Pack for Obligation {
             borrows,
             deposited_value: unpack_decimal(deposited_value),
             borrowed_value: unpack_decimal(borrowed_value),
+            borrowed_value_upper_bound: unpack_decimal(borrowed_value_upper_bound),
             allowed_borrow_value: unpack_decimal(allowed_borrow_value),
             unhealthy_borrow_value: unpack_decimal(unhealthy_borrow_value),
         })
