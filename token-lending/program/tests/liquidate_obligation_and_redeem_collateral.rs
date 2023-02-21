@@ -63,7 +63,7 @@ async fn test_success_new() {
     // obligation gets liquidated if 100k * 0.55 = 10 SOL * sol_price => sol_price = 5.5k
     test.set_price(
         &wsol_mint::id(),
-        PriceArgs {
+        &PriceArgs {
             price: 5500,
             conf: 0,
             expo: 0,
@@ -289,7 +289,7 @@ async fn test_success_insufficient_liquidity() {
     // obligation gets liquidated if 100k * 0.55 = 10 SOL * sol_price => sol_price == 5.5k
     test.set_price(
         &wsol_mint::id(),
-        PriceArgs {
+        &PriceArgs {
             price: 5500,
             conf: 0,
             expo: 0,

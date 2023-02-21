@@ -488,8 +488,15 @@ fn _refresh_reserve<'a>(
         get_price(switchboard_feed_info, pyth_price_info, clock)?;
 
     reserve.liquidity.market_price = market_price;
+
     if let Some(smoothed_market_price) = smoothed_market_price {
         reserve.liquidity.smoothed_market_price = smoothed_market_price;
+    }
+
+    // currently there's no way to support two prices without a pyth oracle. So if a reserve
+    // only supports switchboard, reserve.smoothed_market_price == reserve.market_price
+    if reserve.liquidity.pyth_oracle_pubkey == solend_program::NULL_PUBKEY {
+        reserve.liquidity.smoothed_market_price = market_price;
     }
 
     Reserve::pack(reserve, &mut reserve_info.data.borrow_mut())?;

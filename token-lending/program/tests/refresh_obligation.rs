@@ -138,7 +138,7 @@ async fn test_success() {
 
     test.set_price(
         &usdc_mint::id(),
-        PriceArgs {
+        &PriceArgs {
             price: 10,
             conf: 1,
             expo: -1,
@@ -150,7 +150,7 @@ async fn test_success() {
 
     test.set_price(
         &wsol_mint::id(),
-        PriceArgs {
+        &PriceArgs {
             price: 10,
             conf: 1,
             expo: 0,
@@ -258,12 +258,14 @@ async fn test_success() {
                 .try_div(Decimal::from(LAMPORTS_PER_SOL))
                 .unwrap(),
 
+            // uses max(10, 11) = 11 for sol price
             borrowed_value_upper_bound: new_borrowed_amount_wads
                 .try_mul(Decimal::from(11u64))
                 .unwrap()
                 .try_div(Decimal::from(LAMPORTS_PER_SOL))
                 .unwrap(),
 
+            // uses min(1, 0.9) for usdc price
             allowed_borrow_value: Decimal::from(100_000u64)
                 .try_mul(Decimal::from_percent(
                     usdc_reserve.account.config.loan_to_value_ratio

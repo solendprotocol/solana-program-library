@@ -34,7 +34,7 @@ async fn test_success() {
 
     test.set_price(
         &wsol_mint::id(),
-        PriceArgs {
+        &PriceArgs {
             price: 10,
             expo: 0,
             conf: 0,
