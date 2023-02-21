@@ -13,7 +13,7 @@ use solana_program::{
     pubkey::{Pubkey, PUBKEY_BYTES},
 };
 use std::{
-    cmp::{min, Ordering},
+    cmp::{max, min, Ordering},
     convert::{TryFrom, TryInto},
 };
 
@@ -88,9 +88,12 @@ impl Reserve {
             ))
     }
 
-    /// find the current upper bound market value of tokens. 
+    /// find the current upper bound market value of tokens.
     /// ie max(market_price, smoothed_market_price) * liquidity_amount
-    pub fn market_value_upper_bound(&self, liquidity_amount: Decimal) -> Result<Decimal, ProgramError> {
+    pub fn market_value_upper_bound(
+        &self,
+        liquidity_amount: Decimal,
+    ) -> Result<Decimal, ProgramError> {
         let price_upper_bound = std::cmp::max(
             self.liquidity.market_price,
             self.liquidity.smoothed_market_price,
@@ -105,9 +108,12 @@ impl Reserve {
             ))
     }
 
-    /// find the current lower bound market value of tokens. 
+    /// find the current lower bound market value of tokens.
     /// ie min(market_price, smoothed_market_price) * liquidity_amount
-    pub fn market_value_lower_bound(&self, liquidity_amount: Decimal) -> Result<Decimal, ProgramError> {
+    pub fn market_value_lower_bound(
+        &self,
+        liquidity_amount: Decimal,
+    ) -> Result<Decimal, ProgramError> {
         let price_lower_bound = std::cmp::min(
             self.liquidity.market_price,
             self.liquidity.smoothed_market_price,
@@ -229,7 +235,10 @@ impl Reserve {
         if amount_to_borrow == u64::MAX {
             let borrow_amount = max_borrow_value
                 .try_mul(decimals)?
-                .try_div(self.liquidity.market_price)?
+                .try_div(max(
+                    self.liquidity.market_price,
+                    self.liquidity.smoothed_market_price,
+                ))?
                 .try_div(self.borrow_weight())?
                 .min(remaining_reserve_borrow)
                 .min(self.liquidity.available_amount.into());
@@ -258,7 +267,7 @@ impl Reserve {
 
             let borrow_amount = borrow_amount.try_add(borrow_fee.into())?;
             let borrow_value = self
-                .market_value(borrow_amount)?
+                .market_value_upper_bound(borrow_amount)?
                 .try_mul(self.borrow_weight())?;
             if borrow_value > max_borrow_value {
                 msg!("Borrow value cannot exceed maximum borrow value");
@@ -994,7 +1003,10 @@ impl Pack for Reserve {
             liquidity_accumulated_protocol_fees_wads,
         );
         pack_decimal(self.liquidity.market_price, liquidity_market_price);
-        pack_decimal(self.liquidity.smoothed_market_price, liquidity_smoothed_market_price);
+        pack_decimal(
+            self.liquidity.smoothed_market_price,
+            liquidity_smoothed_market_price,
+        );
 
         // collateral
         collateral_mint_pubkey.copy_from_slice(self.collateral.mint_pubkey.as_ref());
@@ -1701,6 +1713,7 @@ mod test {
 
         // reserve state
         market_price: Decimal,
+        smoothed_market_price: Decimal,
         decimal: u8,
         added_borrow_weight_bps: u64,
 
@@ -1719,6 +1732,7 @@ mod test {
                 remaining_reserve_capacity: Decimal::from(LAMPORTS_PER_SOL * 10),
 
                 market_price: Decimal::from(1u64),
+                smoothed_market_price: Decimal::from(1u64),
                 decimal: 9,
                 added_borrow_weight_bps: 0,
 
@@ -1739,6 +1753,7 @@ mod test {
                 remaining_reserve_capacity: Decimal::from(LAMPORTS_PER_SOL * 101 / 100),
 
                 market_price: Decimal::from(1u64),
+                smoothed_market_price: Decimal::from(1u64),
                 decimal: 9,
                 added_borrow_weight_bps: 0,
 
@@ -1759,6 +1774,7 @@ mod test {
                 remaining_reserve_capacity: Decimal::from(LAMPORTS_PER_SOL),
 
                 market_price: Decimal::from(1u64),
+                smoothed_market_price: Decimal::from(1u64),
                 decimal: 9,
                 added_borrow_weight_bps: 10_000,
 
@@ -1779,6 +1795,7 @@ mod test {
                 remaining_reserve_capacity: Decimal::from(LAMPORTS_PER_SOL),
 
                 market_price: Decimal::from(1u64),
+                smoothed_market_price: Decimal::from(1u64),
                 decimal: 9,
                 added_borrow_weight_bps: 10_000,
 
@@ -1791,6 +1808,65 @@ mod test {
                     borrow_fee: 0,
                     host_fee: 0,
                 }),
+            }),
+            // borrow max where ema price is 2x the market price
+            Just(CalculateBorrowTestCase {
+                borrow_amount: u64::MAX,
+                remaining_borrow_value: Decimal::from(100u64),
+                remaining_reserve_capacity: Decimal::from(100 * LAMPORTS_PER_SOL),
+
+                market_price: Decimal::from(10u64),
+                smoothed_market_price: Decimal::from(20u64),
+                decimal: 9,
+                added_borrow_weight_bps: 0,
+
+                borrow_fee_wad: 0,
+                host_fee: 0,
+
+                result: Ok(CalculateBorrowResult {
+                    borrow_amount: Decimal::from(5 * LAMPORTS_PER_SOL),
+                    receive_amount: 5 * LAMPORTS_PER_SOL,
+                    borrow_fee: 0,
+                    host_fee: 0
+                }),
+            }),
+            // borrow max where market price is 2x ema price
+            Just(CalculateBorrowTestCase {
+                borrow_amount: u64::MAX,
+                remaining_borrow_value: Decimal::from(100u64),
+                remaining_reserve_capacity: Decimal::from(100 * LAMPORTS_PER_SOL),
+
+                market_price: Decimal::from(20u64),
+                smoothed_market_price: Decimal::from(10u64),
+                decimal: 9,
+                added_borrow_weight_bps: 0,
+
+                borrow_fee_wad: 0,
+                host_fee: 0,
+
+                result: Ok(CalculateBorrowResult {
+                    borrow_amount: Decimal::from(5 * LAMPORTS_PER_SOL),
+                    receive_amount: 5 * LAMPORTS_PER_SOL,
+                    borrow_fee: 0,
+                    host_fee: 0
+                }),
+            }),
+            // borrow enough where it would be fine if we were just using the market price but
+            // not fine when using both market and ema price
+            Just(CalculateBorrowTestCase {
+                borrow_amount: 7 * LAMPORTS_PER_SOL,
+                remaining_borrow_value: Decimal::from(100u64),
+                remaining_reserve_capacity: Decimal::from(100 * LAMPORTS_PER_SOL),
+
+                market_price: Decimal::from(10u64),
+                smoothed_market_price: Decimal::from(20u64),
+                decimal: 9,
+                added_borrow_weight_bps: 0,
+
+                borrow_fee_wad: 0,
+                host_fee: 0,
+
+                result: Err(LendingError::BorrowTooLarge.into()),
             }),
         ]
     }
@@ -1811,6 +1887,7 @@ mod test {
                 liquidity: ReserveLiquidity {
                     mint_decimals: test_case.decimal,
                     market_price: test_case.market_price,
+                    smoothed_market_price: test_case.smoothed_market_price,
                     available_amount: test_case.remaining_reserve_capacity.to_scaled_val().unwrap() as u64,
                     ..ReserveLiquidity::default()
                 },

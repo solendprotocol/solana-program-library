@@ -163,7 +163,6 @@ async fn test_success() {
     test.advance_clock_by_slots(1).await;
     let balance_checker = BalanceChecker::start(&mut test, &[&wsol_reserve]).await;
 
-
     lending_market
         .refresh_reserve(&mut test, &wsol_reserve)
         .await

@@ -1302,7 +1302,7 @@ pub async fn setup_world(
             conf: 0,
             expo: 0,
             ema_price: 1,
-            ema_conf: 0
+            ema_conf: 0,
         },
     )
     .await;
@@ -1315,7 +1315,7 @@ pub async fn setup_world(
             conf: 0,
             expo: 0,
             ema_price: 10,
-            ema_conf: 0
+            ema_conf: 0,
         },
     )
     .await;

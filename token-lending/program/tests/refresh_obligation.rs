@@ -10,8 +10,8 @@ use helpers::*;
 use solana_program::native_token::LAMPORTS_PER_SOL;
 use solana_program_test::*;
 use solana_sdk::signature::Keypair;
+use solend_program::state::SLOTS_PER_YEAR;
 use solend_program::state::{LastUpdate, ObligationLiquidity, ReserveFees, ReserveLiquidity};
-use solend_program::state::{SLOTS_PER_YEAR};
 
 use solend_program::{
     math::{Decimal, TryAdd, TryDiv, TryMul},

@@ -2,13 +2,11 @@
 
 mod helpers;
 
-
 use crate::solend_program_test::scenario_1;
 use helpers::solend_program_test::{BalanceChecker, TokenBalanceChange};
 use helpers::*;
 
 use solana_program_test::*;
-
 
 use solend_program::state::{LastUpdate, Obligation, ObligationCollateral, Reserve};
 use std::collections::HashSet;
