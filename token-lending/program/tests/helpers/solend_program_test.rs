@@ -383,7 +383,7 @@ impl SolendProgramTest {
         .unwrap();
     }
 
-    pub async fn init_switchboard_feed(&mut self, mint: &Pubkey)-> Pubkey {
+    pub async fn init_switchboard_feed(&mut self, mint: &Pubkey) -> Pubkey {
         let switchboard_feed_pubkey = self
             .create_account(
                 std::mem::size_of::<AggregatorAccountData>() + 8,
