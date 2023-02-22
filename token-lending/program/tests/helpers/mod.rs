@@ -61,6 +61,10 @@ pub mod usdc_mint {
     solana_program::declare_id!("EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v");
 }
 
+pub mod usdt_mint {
+    solana_program::declare_id!("Es9vMFrzaCERmJfrF4H2FYD4KCoNkY11McCe8BenwNYB");
+}
+
 pub mod wsol_mint {
     // fake mint, not the real wsol bc i can't mint wsol programmatically
     solana_program::declare_id!("So1m5eppzgokXLBt9Cg8KCMPWhHfTzVaGh26Y415MRG");

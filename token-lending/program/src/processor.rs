@@ -1470,7 +1470,9 @@ fn process_borrow_obligation_liquidity(
         return Err(LendingError::InvalidMarketAuthority.into());
     }
 
-    let remaining_borrow_value = obligation.remaining_borrow_value()?;
+    let remaining_borrow_value = obligation
+        .remaining_borrow_value()
+        .unwrap_or_else(|_| Decimal::zero());
     if remaining_borrow_value == Decimal::zero() {
         msg!("Remaining borrow value is zero");
         return Err(LendingError::BorrowTooLarge.into());

@@ -88,6 +88,7 @@ impl SolendProgramTest {
         let authority = Keypair::new();
 
         add_mint(&mut test, usdc_mint::id(), 6, authority.pubkey());
+        add_mint(&mut test, usdt_mint::id(), 6, authority.pubkey());
         add_mint(&mut test, wsol_mint::id(), 9, authority.pubkey());
 
         let mut context = test.start_with_context().await;
@@ -97,7 +98,11 @@ impl SolendProgramTest {
             context,
             rent,
             authority,
-            mints: HashMap::from([(usdc_mint::id(), None), (wsol_mint::id(), None)]),
+            mints: HashMap::from([
+                (usdc_mint::id(), None),
+                (wsol_mint::id(), None),
+                (usdt_mint::id(), None),
+            ]),
         }
     }
 
@@ -1519,6 +1524,19 @@ pub async fn custom_scenario(
         .await
         .unwrap();
 
+    let deposits_and_balances = obligation_args
+        .deposits
+        .iter()
+        .map(|(mint, amount)| (mint, *amount))
+        .collect::<Vec<_>>();
+
+    let mut obligation_owner = User::new_with_balances(&mut test, &deposits_and_balances).await;
+
+    let obligation = lending_market
+        .init_obligation(&mut test, Keypair::new(), &obligation_owner)
+        .await
+        .unwrap();
+
     test.advance_clock_by_slots(999).await;
 
     let mut reserves = Vec::new();
@@ -1554,21 +1572,12 @@ pub async fn custom_scenario(
             .await
             .unwrap();
 
+        obligation_owner
+            .create_token_account(&reserve_arg.mint, &mut test)
+            .await;
+
         reserves.push(reserve);
     }
-
-    let deposits_and_balances = obligation_args
-        .deposits
-        .iter()
-        .map(|(mint, amount)| (mint, *amount))
-        .collect::<Vec<_>>();
-
-    let mut obligation_owner = User::new_with_balances(&mut test, &deposits_and_balances).await;
-
-    let obligation = lending_market
-        .init_obligation(&mut test, Keypair::new(), &obligation_owner)
-        .await
-        .unwrap();
 
     for (mint, amount) in obligation_args.deposits.iter() {
         let reserve = reserves
@@ -1615,4 +1624,11 @@ pub async fn custom_scenario(
     }
 
     (test, lending_market, reserves, obligation, obligation_owner)
+}
+
+pub fn find_reserve(reserves: &[Info<Reserve>], mint: &Pubkey) -> Option<Info<Reserve>> {
+    reserves
+        .iter()
+        .find(|reserve| reserve.account.liquidity.mint_pubkey == *mint)
+        .cloned()
 }
