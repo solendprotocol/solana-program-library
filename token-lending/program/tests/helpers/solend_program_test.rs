@@ -383,7 +383,7 @@ impl SolendProgramTest {
         .unwrap();
     }
 
-    pub async fn init_switchboard_feed(&mut self, mint: &Pubkey) {
+    pub async fn init_switchboard_feed(&mut self, mint: &Pubkey)-> Pubkey {
         let switchboard_feed_pubkey = self
             .create_account(
                 std::mem::size_of::<AggregatorAccountData>() + 8,
@@ -405,12 +405,13 @@ impl SolendProgramTest {
         let oracle = self.mints.get_mut(mint).unwrap();
         if let Some(ref mut oracle) = oracle {
             oracle.switchboard_feed_pubkey = Some(switchboard_feed_pubkey);
+            switchboard_feed_pubkey
         } else {
             panic!("oracle not initialized");
         }
     }
 
-    pub async fn set_switchboard_price(&mut self, mint: &Pubkey, price: PriceArgs) {
+    pub async fn set_switchboard_price(&mut self, mint: &Pubkey, price: SwitchboardPriceArgs) {
         let oracle = self.mints.get(mint).unwrap().unwrap();
         self.process_transaction(
             &[set_switchboard_price(
@@ -610,6 +611,11 @@ pub struct PriceArgs {
     pub ema_conf: u64,
 }
 
+pub struct SwitchboardPriceArgs {
+    pub price: i64,
+    pub expo: i32,
+}
+
 impl Info<LendingMarket> {
     pub async fn deposit(
         &self,
@@ -651,7 +657,6 @@ impl Info<LendingMarket> {
             .unwrap()
             .unwrap();
         let oracle = oracle.unwrap_or(&default_oracle);
-        println!("{:?}", oracle);
 
         let instructions = [update_reserve_config(
             solend_program::id(),

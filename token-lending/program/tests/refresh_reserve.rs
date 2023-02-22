@@ -5,8 +5,10 @@ mod helpers;
 use crate::solend_program_test::setup_world;
 use crate::solend_program_test::BalanceChecker;
 use crate::solend_program_test::Info;
+use crate::solend_program_test::Oracle;
 use crate::solend_program_test::PriceArgs;
 use crate::solend_program_test::SolendProgramTest;
+use crate::solend_program_test::SwitchboardPriceArgs;
 use crate::solend_program_test::User;
 use helpers::*;
 use solana_program::instruction::InstructionError;
@@ -20,6 +22,7 @@ use solend_program::state::Reserve;
 use solend_program::state::ReserveConfig;
 use solend_program::state::ReserveFees;
 use solend_program::state::ReserveLiquidity;
+use solend_program::NULL_PUBKEY;
 use solend_program::{
     error::LendingError,
     math::{Decimal, Rate, TryAdd, TryDiv, TryMul, TrySub},
@@ -234,20 +237,29 @@ async fn test_fail_pyth_price_stale() {
 async fn test_success_pyth_price_stale_switchboard_valid() {
     let (mut test, lending_market, _, wsol_reserve, lending_market_owner, _) = setup().await;
 
-    test.advance_clock_by_slots(241).await;
-
-    test.init_switchboard_feed(&wsol_mint::id()).await;
-    test.set_switchboard_price(
+    test.set_price(
         &wsol_mint::id(),
-        PriceArgs {
-            price: 10,
-            expo: 0,
+        &PriceArgs {
+            price: 9,
             conf: 0,
-            ema_price: 10,
+            expo: 0,
+            ema_price: 11,
             ema_conf: 0,
         },
     )
     .await;
+    test.advance_clock_by_slots(1).await;
+
+    lending_market
+        .refresh_reserve(&mut test, &wsol_reserve)
+        .await
+        .unwrap();
+
+    test.advance_clock_by_slots(241).await;
+
+    test.init_switchboard_feed(&wsol_mint::id()).await;
+    test.set_switchboard_price(&wsol_mint::id(), SwitchboardPriceArgs { price: 8, expo: 0 })
+        .await;
 
     // update reserve so the switchboard feed is not NULL_PUBKEY
     lending_market
@@ -266,5 +278,78 @@ async fn test_success_pyth_price_stale_switchboard_valid() {
     lending_market
         .refresh_reserve(&mut test, &wsol_reserve)
         .await
-        .unwrap()
+        .unwrap();
+
+    let wsol_reserve_post = test.load_account::<Reserve>(wsol_reserve.pubkey).await;
+
+    // overwrite liquidity market price with the switchboard price but keep the pyth ema price
+    assert_eq!(
+        wsol_reserve_post.account.liquidity.market_price,
+        Decimal::from(8u64)
+    );
+    assert_eq!(
+        wsol_reserve_post.account.liquidity.smoothed_market_price,
+        Decimal::from(11u64)
+    );
+}
+
+#[tokio::test]
+async fn test_success_only_switchboard_reserve() {
+    let (mut test, lending_market, _, wsol_reserve, lending_market_owner, _) = setup().await;
+
+    test.set_price(
+        &wsol_mint::id(),
+        &PriceArgs {
+            price: 10,
+            conf: 0,
+            expo: 0,
+            ema_price: 11,
+            ema_conf: 0,
+        },
+    )
+    .await;
+
+    test.advance_clock_by_slots(1).await;
+
+    let feed = test.init_switchboard_feed(&wsol_mint::id()).await;
+    test.set_switchboard_price(&wsol_mint::id(), SwitchboardPriceArgs { price: 8, expo: 0 })
+        .await;
+
+    test.advance_clock_by_slots(1).await;
+
+    lending_market
+        .update_reserve_config(
+            &mut test,
+            &lending_market_owner,
+            &wsol_reserve,
+            wsol_reserve.account.config,
+            wsol_reserve.account.rate_limiter.config,
+            Some(&Oracle {
+                pyth_price_pubkey: NULL_PUBKEY,
+                pyth_product_pubkey: NULL_PUBKEY,
+                switchboard_feed_pubkey: Some(feed),
+            }),
+        )
+        .await
+        .unwrap();
+
+    test.advance_clock_by_slots(1).await;
+
+    let wsol_reserve = test.load_account::<Reserve>(wsol_reserve.pubkey).await;
+    lending_market
+        .refresh_reserve(&mut test, &wsol_reserve)
+        .await
+        .unwrap();
+
+    let wsol_reserve_post = test.load_account::<Reserve>(wsol_reserve.pubkey).await;
+
+    // when pyth is null and only switchboard exists, both price fields get overwritten
+    assert_eq!(
+        wsol_reserve_post.account.liquidity.market_price,
+        Decimal::from(8u64)
+    );
+    assert_eq!(
+        wsol_reserve_post.account.liquidity.smoothed_market_price,
+        Decimal::from(8u64)
+    );
 }
