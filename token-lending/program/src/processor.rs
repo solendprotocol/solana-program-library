@@ -961,18 +961,11 @@ fn process_refresh_obligation(program_id: &Pubkey, accounts: &[AccountInfo]) -> 
 
         liquidity.accrue_interest(borrow_reserve.liquidity.cumulative_borrow_rate_wads)?;
 
-        // @TODO: add lookup table https://git.io/JOCYq
-        let decimals = 10u64
-            .checked_pow(borrow_reserve.liquidity.mint_decimals as u32)
-            .ok_or(LendingError::MathOverflow)?;
-
-        let market_value = liquidity
-            .borrowed_amount_wads
-            .try_mul(borrow_reserve.liquidity.market_price)?
-            .try_div(decimals)?;
+        let market_value = borrow_reserve.market_value(liquidity.borrowed_amount_wads)?;
         liquidity.market_value = market_value;
 
-        borrowed_value = borrowed_value.try_add(market_value)?;
+        borrowed_value =
+            borrowed_value.try_add(market_value.try_mul(borrow_reserve.borrow_weight())?)?;
     }
 
     if account_info_iter.peek().is_some() {

@@ -805,6 +805,7 @@ impl Info<LendingMarket> {
         obligation: &Info<Obligation>,
         extra_reserve: Option<&Info<Reserve>>,
     ) -> Vec<Instruction> {
+        let obligation = test.load_account::<Obligation>(obligation.pubkey).await;
         let reserve_pubkeys: Vec<Pubkey> = {
             let mut r = HashSet::new();
             r.extend(
