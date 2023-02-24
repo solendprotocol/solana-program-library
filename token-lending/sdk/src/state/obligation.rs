@@ -43,10 +43,15 @@ pub struct Obligation {
     /// Risk-adjusted upper bound market value of borrows.
     /// ie sum(b.borrowed_amount * max(b.current_spot_price, b.smoothed_price) * b.borrow_weight for b in borrows)
     pub borrowed_value_upper_bound: Decimal,
-    /// The maximum borrow value at the weighted average loan to value ratio using the minimum of
-    /// the spot price and the smoothed price
+    /// The maximum open borrow value.
+    /// ie sum(d.deposited_amount * d.ltv * min(d.current_spot_price, d.smoothed_price) for d in deposits)
+    /// if borrowed_value_upper_bound >= allowed_borrow_value, then the obligation is unhealthy and
+    /// borrows and withdraws are disabled.
     pub allowed_borrow_value: Decimal,
-    /// The dangerous borrow value at the weighted average liquidation threshold
+    /// The dangerous borrow value at the weighted average liquidation threshold.
+    /// ie sum(d.deposited_amount * d.liquidation_threshold * min(d.current_spot_price, d.smoothed_price)
+    /// for d in deposits)
+    /// if borrowed_value >= unhealthy_borrow_value, the obligation can be liquidated
     pub unhealthy_borrow_value: Decimal,
 }
 
