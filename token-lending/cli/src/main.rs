@@ -872,6 +872,7 @@ fn main() {
                     fee_receiver: liquidity_fee_receiver_keypair.pubkey(),
                     protocol_liquidation_fee,
                     protocol_take_rate,
+                    added_borrow_weight_bps: 10000,
                 },
                 source_liquidity_pubkey,
                 source_liquidity_owner_keypair,
