@@ -88,6 +88,7 @@ impl SolendProgramTest {
         let authority = Keypair::new();
 
         add_mint(&mut test, usdc_mint::id(), 6, authority.pubkey());
+        add_mint(&mut test, usdt_mint::id(), 6, authority.pubkey());
         add_mint(&mut test, wsol_mint::id(), 9, authority.pubkey());
 
         let mut context = test.start_with_context().await;
@@ -97,7 +98,11 @@ impl SolendProgramTest {
             context,
             rent,
             authority,
-            mints: HashMap::from([(usdc_mint::id(), None), (wsol_mint::id(), None)]),
+            mints: HashMap::from([
+                (usdc_mint::id(), None),
+                (wsol_mint::id(), None),
+                (usdt_mint::id(), None),
+            ]),
         }
     }
 
@@ -360,7 +365,7 @@ impl SolendProgramTest {
         );
     }
 
-    pub async fn set_price(&mut self, mint: &Pubkey, price: PriceArgs) {
+    pub async fn set_price(&mut self, mint: &Pubkey, price: &PriceArgs) {
         let oracle = self.mints.get(mint).unwrap().unwrap();
         self.process_transaction(
             &[set_price(
@@ -369,6 +374,8 @@ impl SolendProgramTest {
                 price.price,
                 price.conf,
                 price.expo,
+                price.ema_price,
+                price.ema_conf,
             )],
             None,
         )
@@ -376,7 +383,7 @@ impl SolendProgramTest {
         .unwrap();
     }
 
-    pub async fn init_switchboard_feed(&mut self, mint: &Pubkey) {
+    pub async fn init_switchboard_feed(&mut self, mint: &Pubkey) -> Pubkey {
         let switchboard_feed_pubkey = self
             .create_account(
                 std::mem::size_of::<AggregatorAccountData>() + 8,
@@ -398,12 +405,13 @@ impl SolendProgramTest {
         let oracle = self.mints.get_mut(mint).unwrap();
         if let Some(ref mut oracle) = oracle {
             oracle.switchboard_feed_pubkey = Some(switchboard_feed_pubkey);
+            switchboard_feed_pubkey
         } else {
             panic!("oracle not initialized");
         }
     }
 
-    pub async fn set_switchboard_price(&mut self, mint: &Pubkey, price: PriceArgs) {
+    pub async fn set_switchboard_price(&mut self, mint: &Pubkey, price: SwitchboardPriceArgs) {
         let oracle = self.mints.get(mint).unwrap().unwrap();
         self.process_transaction(
             &[set_switchboard_price(
@@ -568,7 +576,7 @@ impl User {
 
                 account
             }
-            Some(_) => panic!("Token account already exists!"),
+            Some(t) => t.clone(),
         }
     }
 
@@ -598,6 +606,13 @@ impl User {
 pub struct PriceArgs {
     pub price: i64,
     pub conf: u64,
+    pub expo: i32,
+    pub ema_price: i64,
+    pub ema_conf: u64,
+}
+
+pub struct SwitchboardPriceArgs {
+    pub price: i64,
     pub expo: i32,
 }
 
@@ -642,7 +657,6 @@ impl Info<LendingMarket> {
             .unwrap()
             .unwrap();
         let oracle = oracle.unwrap_or(&default_oracle);
-        println!("{:?}", oracle);
 
         let instructions = [update_reserve_config(
             solend_program::id(),
@@ -1293,10 +1307,12 @@ pub async fn setup_world(
     test.init_pyth_feed(&usdc_mint::id()).await;
     test.set_price(
         &usdc_mint::id(),
-        PriceArgs {
+        &PriceArgs {
             price: 1,
             conf: 0,
             expo: 0,
+            ema_price: 1,
+            ema_conf: 0,
         },
     )
     .await;
@@ -1304,10 +1320,12 @@ pub async fn setup_world(
     test.init_pyth_feed(&wsol_mint::id()).await;
     test.set_price(
         &wsol_mint::id(),
-        PriceArgs {
+        &PriceArgs {
             price: 10,
             conf: 0,
             expo: 0,
+            ema_price: 10,
+            ema_conf: 0,
         },
     )
     .await;
@@ -1473,4 +1491,149 @@ pub async fn scenario_1(
         user,
         obligation,
     )
+}
+
+pub struct ReserveArgs {
+    pub mint: Pubkey,
+    pub config: ReserveConfig,
+    pub liquidity_amount: u64,
+    pub price: PriceArgs,
+}
+
+pub struct ObligationArgs {
+    pub deposits: Vec<(Pubkey, u64)>,
+    pub borrows: Vec<(Pubkey, u64)>,
+}
+
+pub async fn custom_scenario(
+    reserve_args: &[ReserveArgs],
+    obligation_args: &ObligationArgs,
+) -> (
+    SolendProgramTest,
+    Info<LendingMarket>,
+    Vec<Info<Reserve>>,
+    Info<Obligation>,
+    User,
+) {
+    let mut test = SolendProgramTest::start_new().await;
+    let mints_and_liquidity_amounts = reserve_args
+        .iter()
+        .map(|reserve_arg| (&reserve_arg.mint, reserve_arg.liquidity_amount))
+        .collect::<Vec<_>>();
+
+    let lending_market_owner =
+        User::new_with_balances(&mut test, &mints_and_liquidity_amounts).await;
+
+    let lending_market = test
+        .init_lending_market(&lending_market_owner, &Keypair::new())
+        .await
+        .unwrap();
+
+    let deposits_and_balances = obligation_args
+        .deposits
+        .iter()
+        .map(|(mint, amount)| (mint, *amount))
+        .collect::<Vec<_>>();
+
+    let mut obligation_owner = User::new_with_balances(&mut test, &deposits_and_balances).await;
+
+    let obligation = lending_market
+        .init_obligation(&mut test, Keypair::new(), &obligation_owner)
+        .await
+        .unwrap();
+
+    test.advance_clock_by_slots(999).await;
+
+    let mut reserves = Vec::new();
+    for reserve_arg in reserve_args {
+        test.init_pyth_feed(&reserve_arg.mint).await;
+
+        test.set_price(&reserve_arg.mint, &reserve_arg.price).await;
+
+        let reserve = test
+            .init_reserve(
+                &lending_market,
+                &lending_market_owner,
+                &reserve_arg.mint,
+                &reserve_arg.config,
+                &Keypair::new(),
+                reserve_arg.liquidity_amount,
+                None,
+            )
+            .await
+            .unwrap();
+
+        let user = User::new_with_balances(
+            &mut test,
+            &[
+                (&reserve_arg.mint, reserve_arg.liquidity_amount),
+                (&reserve.account.collateral.mint_pubkey, 0),
+            ],
+        )
+        .await;
+
+        lending_market
+            .deposit(&mut test, &reserve, &user, reserve_arg.liquidity_amount)
+            .await
+            .unwrap();
+
+        obligation_owner
+            .create_token_account(&reserve_arg.mint, &mut test)
+            .await;
+
+        reserves.push(reserve);
+    }
+
+    for (mint, amount) in obligation_args.deposits.iter() {
+        let reserve = reserves
+            .iter()
+            .find(|reserve| reserve.account.liquidity.mint_pubkey == *mint)
+            .unwrap();
+
+        obligation_owner
+            .create_token_account(&reserve.account.collateral.mint_pubkey, &mut test)
+            .await;
+
+        lending_market
+            .deposit_reserve_liquidity_and_obligation_collateral(
+                &mut test,
+                reserve,
+                &obligation,
+                &obligation_owner,
+                *amount,
+            )
+            .await
+            .unwrap();
+    }
+
+    for (mint, amount) in obligation_args.borrows.iter() {
+        let reserve = reserves
+            .iter()
+            .find(|reserve| reserve.account.liquidity.mint_pubkey == *mint)
+            .unwrap();
+
+        obligation_owner.create_token_account(mint, &mut test).await;
+        let fee_receiver = User::new_with_balances(&mut test, &[(mint, 0)]).await;
+
+        lending_market
+            .borrow_obligation_liquidity(
+                &mut test,
+                reserve,
+                &obligation,
+                &obligation_owner,
+                &fee_receiver.get_account(mint).unwrap(),
+                *amount,
+            )
+            .await
+            .unwrap();
+    }
+
+    (test, lending_market, reserves, obligation, obligation_owner)
+}
+
+pub fn find_reserve(reserves: &[Info<Reserve>], mint: &Pubkey) -> Option<Info<Reserve>> {
+    reserves
+        .iter()
+        .find(|reserve| reserve.account.liquidity.mint_pubkey == *mint)
+        .cloned()
 }

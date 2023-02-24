@@ -169,6 +169,7 @@ async fn test_success() {
                 cumulative_borrow_rate_wads: Decimal::one(),
                 accumulated_protocol_fees_wads: Decimal::zero(),
                 market_price: Decimal::from(10u64),
+                smoothed_market_price: Decimal::from(10u64),
             },
             collateral: ReserveCollateral {
                 mint_pubkey: reserve_collateral_mint_pubkey,
