@@ -4,6 +4,7 @@ use super::{
 };
 use crate::helpers::*;
 use solana_program::native_token::LAMPORTS_PER_SOL;
+use solend_program::state::RateLimiterConfig;
 use solend_sdk::{instruction::update_reserve_config, NULL_PUBKEY};
 
 use pyth_sdk_solana::state::PROD_ACCT_SIZE;
@@ -25,7 +26,7 @@ use solend_program::{
     instruction::{
         deposit_obligation_collateral, deposit_reserve_liquidity, init_lending_market,
         init_reserve, liquidate_obligation_and_redeem_reserve_collateral, redeem_fees,
-        redeem_reserve_collateral, repay_obligation_liquidity, set_lending_market_owner,
+        redeem_reserve_collateral, repay_obligation_liquidity, set_lending_market_owner_and_config,
         withdraw_obligation_collateral,
     },
     processor::process_instruction,
@@ -632,6 +633,7 @@ impl Info<LendingMarket> {
         lending_market_owner: &User,
         reserve: &Info<Reserve>,
         config: ReserveConfig,
+        rate_limiter_config: RateLimiterConfig,
         oracle: Option<&Oracle>,
     ) -> Result<(), BanksClientError> {
         let default_oracle = test
@@ -645,6 +647,7 @@ impl Info<LendingMarket> {
         let instructions = [update_reserve_config(
             solend_program::id(),
             config,
+            rate_limiter_config,
             reserve.pubkey,
             self.pubkey,
             lending_market_owner.keypair.pubkey(),
@@ -695,19 +698,27 @@ impl Info<LendingMarket> {
         user: &User,
         collateral_amount: u64,
     ) -> Result<(), BanksClientError> {
-        let instructions = [redeem_reserve_collateral(
-            solend_program::id(),
-            collateral_amount,
-            user.get_account(&reserve.account.collateral.mint_pubkey)
-                .unwrap(),
-            user.get_account(&reserve.account.liquidity.mint_pubkey)
-                .unwrap(),
-            reserve.pubkey,
-            reserve.account.collateral.mint_pubkey,
-            reserve.account.liquidity.supply_pubkey,
-            self.pubkey,
-            user.keypair.pubkey(),
-        )];
+        let instructions = [
+            refresh_reserve(
+                solend_program::id(),
+                reserve.pubkey,
+                reserve.account.liquidity.pyth_oracle_pubkey,
+                reserve.account.liquidity.switchboard_oracle_pubkey,
+            ),
+            redeem_reserve_collateral(
+                solend_program::id(),
+                collateral_amount,
+                user.get_account(&reserve.account.collateral.mint_pubkey)
+                    .unwrap(),
+                user.get_account(&reserve.account.liquidity.mint_pubkey)
+                    .unwrap(),
+                reserve.pubkey,
+                reserve.account.collateral.mint_pubkey,
+                reserve.account.liquidity.supply_pubkey,
+                self.pubkey,
+                user.keypair.pubkey(),
+            ),
+        ];
 
         test.process_transaction(&instructions, Some(&[&user.keypair]))
             .await
@@ -872,8 +883,10 @@ impl Info<LendingMarket> {
         host_fee_receiver_pubkey: &Pubkey,
         liquidity_amount: u64,
     ) -> Result<(), BanksClientError> {
+        let obligation = test.load_account::<Obligation>(obligation.pubkey).await;
+
         let mut instructions = self
-            .build_refresh_instructions(test, obligation, Some(borrow_reserve))
+            .build_refresh_instructions(test, &obligation, Some(borrow_reserve))
             .await;
 
         instructions.push(borrow_obligation_liquidity(
@@ -1021,8 +1034,10 @@ impl Info<LendingMarket> {
         user: &User,
         collateral_amount: u64,
     ) -> Result<(), BanksClientError> {
+        let obligation = test.load_account::<Obligation>(obligation.pubkey).await;
+
         let mut instructions = self
-            .build_refresh_instructions(test, obligation, Some(withdraw_reserve))
+            .build_refresh_instructions(test, &obligation, Some(withdraw_reserve))
             .await;
 
         instructions.push(
@@ -1076,17 +1091,19 @@ impl Info<LendingMarket> {
             .await
     }
 
-    pub async fn set_lending_market_owner(
+    pub async fn set_lending_market_owner_and_config(
         &self,
         test: &mut SolendProgramTest,
         lending_market_owner: &User,
         new_owner: &Pubkey,
+        config: RateLimiterConfig,
     ) -> Result<(), BanksClientError> {
-        let instructions = [set_lending_market_owner(
+        let instructions = [set_lending_market_owner_and_config(
             solend_program::id(),
             self.pubkey,
             lending_market_owner.keypair.pubkey(),
             *new_owner,
+            config,
         )];
 
         test.process_transaction(&instructions, Some(&[&lending_market_owner.keypair]))
@@ -1342,6 +1359,8 @@ pub async fn setup_world(
 }
 
 /// Scenario 1
+/// sol = $10
+/// usdc = $1
 /// LendingMarket
 /// - USDC Reserve
 /// - WSOL Reserve

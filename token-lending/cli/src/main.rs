@@ -1,6 +1,7 @@
 use lending_state::SolendState;
 use solana_client::rpc_config::RpcSendTransactionConfig;
 use solana_sdk::{commitment_config::CommitmentLevel, compute_budget::ComputeBudgetInstruction};
+use solend_program::state::{RateLimiterConfig, SLOTS_PER_YEAR};
 use solend_sdk::{
     instruction::{
         liquidate_obligation_and_redeem_reserve_collateral, redeem_reserve_collateral,
@@ -1675,6 +1676,10 @@ fn command_update_reserve(
         &[update_reserve_config(
             config.lending_program_id,
             reserve.config,
+            RateLimiterConfig {
+                window_duration: SLOTS_PER_YEAR / 365,
+                max_outflow: u64::MAX,
+            },
             reserve_pubkey,
             lending_market_pubkey,
             lending_market_owner_keypair.pubkey(),

@@ -24,11 +24,14 @@ use solana_sdk::{
     transaction::TransactionError,
 };
 use solend_program::state::LastUpdate;
+use solend_program::state::RateLimiter;
+use solend_program::state::RateLimiterConfig;
 use solend_program::state::Reserve;
 use solend_program::state::ReserveCollateral;
 use solend_program::state::ReserveLiquidity;
 use solend_program::state::PROGRAM_VERSION;
 use solend_program::NULL_PUBKEY;
+
 use solend_program::{
     error::LendingError,
     instruction::init_reserve,
@@ -172,7 +175,8 @@ async fn test_success() {
                 mint_total_supply: 1000,
                 supply_pubkey: reserve_collateral_supply_pubkey,
             },
-            config: reserve_config
+            config: reserve_config,
+            rate_limiter: RateLimiter::new(RateLimiter::default().config, 1001)
         }
     );
 }
@@ -313,12 +317,18 @@ async fn test_update_reserve_config() {
         .unwrap();
 
     let new_reserve_config = test_reserve_config();
+    let new_rate_limiter_config = RateLimiterConfig {
+        window_duration: 50,
+        max_outflow: 100,
+    };
+
     lending_market
         .update_reserve_config(
             &mut test,
             &lending_market_owner,
             &wsol_reserve,
             new_reserve_config,
+            new_rate_limiter_config,
             None,
         )
         .await
@@ -329,6 +339,7 @@ async fn test_update_reserve_config() {
         wsol_reserve_post.account,
         Reserve {
             config: new_reserve_config,
+            rate_limiter: RateLimiter::new(new_rate_limiter_config, 1000),
             ..wsol_reserve.account
         }
     );
@@ -353,6 +364,10 @@ async fn test_update_invalid_oracle_config() {
     let oracle = test.mints.get(&wsol_mint::id()).unwrap().unwrap();
 
     let new_reserve_config = test_reserve_config();
+    let new_rate_limiter_config = RateLimiterConfig {
+        window_duration: 50,
+        max_outflow: 100,
+    };
 
     // Try setting both of the oracles to null: Should fail
     let res = lending_market
@@ -361,6 +376,7 @@ async fn test_update_invalid_oracle_config() {
             &lending_market_owner,
             &wsol_reserve,
             new_reserve_config,
+            new_rate_limiter_config,
             Some(&Oracle {
                 pyth_product_pubkey: oracle.pyth_product_pubkey,
                 pyth_price_pubkey: NULL_PUBKEY,

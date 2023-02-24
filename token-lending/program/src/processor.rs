@@ -30,6 +30,7 @@ use solana_program::{
         Sysvar,
     },
 };
+use solend_sdk::state::{RateLimiter, RateLimiterConfig};
 use solend_sdk::{switchboard_v2_devnet, switchboard_v2_mainnet};
 use spl_token::state::Mint;
 use std::{cmp::min, result::Result};
@@ -53,9 +54,17 @@ pub fn process_instruction(
             msg!("Instruction: Init Lending Market");
             process_init_lending_market(program_id, owner, quote_currency, accounts)
         }
-        LendingInstruction::SetLendingMarketOwner { new_owner } => {
+        LendingInstruction::SetLendingMarketOwnerAndConfig {
+            new_owner,
+            rate_limiter_config,
+        } => {
             msg!("Instruction: Set Lending Market Owner");
-            process_set_lending_market_owner(program_id, new_owner, accounts)
+            process_set_lending_market_owner_and_config(
+                program_id,
+                new_owner,
+                rate_limiter_config,
+                accounts,
+            )
         }
         LendingInstruction::InitReserve {
             liquidity_amount,
@@ -128,9 +137,12 @@ pub fn process_instruction(
                 accounts,
             )
         }
-        LendingInstruction::UpdateReserveConfig { config } => {
+        LendingInstruction::UpdateReserveConfig {
+            config,
+            rate_limiter_config,
+        } => {
             msg!("Instruction: UpdateReserveConfig");
-            process_update_reserve_config(program_id, config, accounts)
+            process_update_reserve_config(program_id, config, rate_limiter_config, accounts)
         }
         LendingInstruction::LiquidateObligationAndRedeemReserveCollateral { liquidity_amount } => {
             msg!("Instruction: Liquidate Obligation and Redeem Reserve Collateral");
@@ -190,6 +202,7 @@ fn process_init_lending_market(
         token_program_id: *token_program_id.key,
         oracle_program_id: *oracle_program_id.key,
         switchboard_oracle_program_id: *switchboard_oracle_program_id.key,
+        current_slot: Clock::get()?.slot,
     });
     LendingMarket::pack(lending_market, &mut lending_market_info.data.borrow_mut())?;
 
@@ -197,9 +210,10 @@ fn process_init_lending_market(
 }
 
 #[inline(never)] // avoid stack frame limit
-fn process_set_lending_market_owner(
+fn process_set_lending_market_owner_and_config(
     program_id: &Pubkey,
     new_owner: Pubkey,
+    rate_limiter_config: RateLimiterConfig,
     accounts: &[AccountInfo],
 ) -> ProgramResult {
     let account_info_iter = &mut accounts.iter();
@@ -221,6 +235,11 @@ fn process_set_lending_market_owner(
     }
 
     lending_market.owner = new_owner;
+
+    if rate_limiter_config != lending_market.rate_limiter.config {
+        lending_market.rate_limiter = RateLimiter::new(rate_limiter_config, Clock::get()?.slot);
+    }
+
     LendingMarket::pack(lending_market, &mut lending_market_info.data.borrow_mut())?;
 
     Ok(())
@@ -347,6 +366,7 @@ fn process_init_reserve(
             supply_pubkey: *reserve_collateral_supply_info.key,
         }),
         config,
+        rate_limiter_config: RateLimiterConfig::default(),
     });
 
     let collateral_amount = reserve.deposit_liquidity(liquidity_amount)?;
@@ -659,7 +679,6 @@ fn process_redeem_reserve_collateral(
     }
     let token_program_id = next_account_info(account_info_iter)?;
 
-    _refresh_reserve_interest(program_id, reserve_info, clock)?;
     _redeem_reserve_collateral(
         program_id,
         collateral_amount,
@@ -673,6 +692,7 @@ fn process_redeem_reserve_collateral(
         user_transfer_authority_info,
         clock,
         token_program_id,
+        true,
     )?;
     let mut reserve = Reserve::unpack(&reserve_info.data.borrow())?;
     reserve.last_update.mark_stale();
@@ -695,8 +715,9 @@ fn _redeem_reserve_collateral<'a>(
     user_transfer_authority_info: &AccountInfo<'a>,
     clock: &Clock,
     token_program_id: &AccountInfo<'a>,
+    check_rate_limits: bool,
 ) -> Result<u64, ProgramError> {
-    let lending_market = LendingMarket::unpack(&lending_market_info.data.borrow())?;
+    let mut lending_market = LendingMarket::unpack(&lending_market_info.data.borrow())?;
     if lending_market_info.owner != program_id {
         msg!("Lending market provided is not owned by the lending program");
         return Err(LendingError::InvalidAccountOwner.into());
@@ -750,8 +771,31 @@ fn _redeem_reserve_collateral<'a>(
     }
 
     let liquidity_amount = reserve.redeem_collateral(collateral_amount)?;
+
+    if check_rate_limits {
+        lending_market
+            .rate_limiter
+            .update(
+                clock.slot,
+                reserve.market_value(Decimal::from(liquidity_amount))?,
+            )
+            .map_err(|err| {
+                msg!("Market outflow limit exceeded! Please try again later.");
+                err
+            })?;
+
+        reserve
+            .rate_limiter
+            .update(clock.slot, Decimal::from(liquidity_amount))
+            .map_err(|err| {
+                msg!("Reserve outflow limit exceeded! Please try again later.");
+                err
+            })?;
+    }
+
     reserve.last_update.mark_stale();
     Reserve::pack(reserve, &mut reserve_info.data.borrow_mut())?;
+    LendingMarket::pack(lending_market, &mut lending_market_info.data.borrow_mut())?;
 
     spl_token_burn(TokenBurnParams {
         mint: reserve_collateral_mint_info.clone(),
@@ -1359,7 +1403,7 @@ fn process_borrow_obligation_liquidity(
     }
     let token_program_id = next_account_info(account_info_iter)?;
 
-    let lending_market = LendingMarket::unpack(&lending_market_info.data.borrow())?;
+    let mut lending_market = LendingMarket::unpack(&lending_market_info.data.borrow())?;
     if lending_market_info.owner != program_id {
         msg!("Lending market provided is not owned by the lending program");
         return Err(LendingError::InvalidAccountOwner.into());
@@ -1476,6 +1520,27 @@ fn process_borrow_obligation_liquidity(
     }
 
     let cumulative_borrow_rate_wads = borrow_reserve.liquidity.cumulative_borrow_rate_wads;
+
+    // check outflow rate limits
+    {
+        lending_market
+            .rate_limiter
+            .update(clock.slot, borrow_reserve.market_value(borrow_amount)?)
+            .map_err(|err| {
+                msg!("Market outflow limit exceeded! Please try again later.");
+                err
+            })?;
+
+        borrow_reserve
+            .rate_limiter
+            .update(clock.slot, borrow_amount)
+            .map_err(|err| {
+                msg!("Reserve outflow limit exceeded! Please try again later");
+                err
+            })?;
+    }
+
+    LendingMarket::pack(lending_market, &mut lending_market_info.data.borrow_mut())?;
 
     borrow_reserve.liquidity.borrow(borrow_amount)?;
     borrow_reserve.last_update.mark_stale();
@@ -1885,6 +1950,7 @@ fn process_liquidate_obligation_and_redeem_reserve_collateral(
             user_transfer_authority_info,
             clock,
             token_program_id,
+            false,
         )?;
         let withdraw_reserve = Reserve::unpack(&withdraw_reserve_info.data.borrow())?;
         if &withdraw_reserve.config.fee_receiver != withdraw_reserve_liquidity_fee_receiver_info.key
@@ -1959,6 +2025,7 @@ fn process_withdraw_obligation_collateral_and_redeem_reserve_liquidity(
         user_transfer_authority_info,
         clock,
         token_program_id,
+        true,
     )?;
     Ok(())
 }
@@ -1967,6 +2034,7 @@ fn process_withdraw_obligation_collateral_and_redeem_reserve_liquidity(
 fn process_update_reserve_config(
     program_id: &Pubkey,
     config: ReserveConfig,
+    rate_limiter_config: RateLimiterConfig,
     accounts: &[AccountInfo],
 ) -> ProgramResult {
     validate_reserve_config(config)?;
@@ -2022,6 +2090,11 @@ fn process_update_reserve_config(
             "Derived lending market authority does not match the lending market authority provided"
         );
         return Err(LendingError::InvalidMarketAuthority.into());
+    }
+
+    // if window duration and max outflow are different, then create a new rate limiter instance.
+    if rate_limiter_config != reserve.rate_limiter.config {
+        reserve.rate_limiter = RateLimiter::new(rate_limiter_config, Clock::get()?.slot);
     }
 
     if *pyth_price_info.key != reserve.liquidity.pyth_oracle_pubkey {
