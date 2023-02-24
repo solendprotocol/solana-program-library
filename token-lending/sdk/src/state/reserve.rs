@@ -41,6 +41,8 @@ pub struct Reserve {
     pub collateral: ReserveCollateral,
     /// Reserve configuration values
     pub config: ReserveConfig,
+    /// Outflow Rate Limiter (denominated in tokens)
+    pub rate_limiter: RateLimiter,
 }
 
 impl Reserve {
@@ -59,6 +61,19 @@ impl Reserve {
         self.liquidity = params.liquidity;
         self.collateral = params.collateral;
         self.config = params.config;
+        self.rate_limiter = RateLimiter::new(params.rate_limiter_config, params.current_slot);
+    }
+
+    /// find price of tokens in quote currency
+    pub fn market_value(&self, liquidity_amount: Decimal) -> Result<Decimal, ProgramError> {
+        self.liquidity
+            .market_price
+            .try_mul(liquidity_amount)?
+            .try_div(Decimal::from(
+                (10u128)
+                    .checked_pow(self.liquidity.mint_decimals as u32)
+                    .ok_or(LendingError::MathOverflow)?,
+            ))
     }
 
     /// Record deposited liquidity and return amount of collateral tokens to mint
@@ -359,6 +374,8 @@ pub struct InitReserveParams {
     pub collateral: ReserveCollateral,
     /// Reserve configuration values
     pub config: ReserveConfig,
+    /// rate limiter config
+    pub rate_limiter_config: RateLimiterConfig,
 }
 
 /// Calculate borrow result
@@ -854,6 +871,7 @@ impl Pack for Reserve {
             config_protocol_liquidation_fee,
             config_protocol_take_rate,
             liquidity_accumulated_protocol_fees_wads,
+            rate_limiter,
             _padding,
         ) = mut_array_refs![
             output,
@@ -889,7 +907,8 @@ impl Pack for Reserve {
             1,
             1,
             16,
-            230
+            RATE_LIMITER_LEN,
+            230 - RATE_LIMITER_LEN
         ];
 
         // reserve
@@ -941,6 +960,8 @@ impl Pack for Reserve {
         config_fee_receiver.copy_from_slice(self.config.fee_receiver.as_ref());
         *config_protocol_liquidation_fee = self.config.protocol_liquidation_fee.to_le_bytes();
         *config_protocol_take_rate = self.config.protocol_take_rate.to_le_bytes();
+
+        self.rate_limiter.pack_into_slice(rate_limiter);
     }
 
     /// Unpacks a byte buffer into a [ReserveInfo](struct.ReserveInfo.html).
@@ -980,6 +1001,7 @@ impl Pack for Reserve {
             config_protocol_liquidation_fee,
             config_protocol_take_rate,
             liquidity_accumulated_protocol_fees_wads,
+            rate_limiter,
             _padding,
         ) = array_refs![
             input,
@@ -1015,7 +1037,8 @@ impl Pack for Reserve {
             1,
             1,
             16,
-            230
+            RATE_LIMITER_LEN,
+            230 - RATE_LIMITER_LEN
         ];
 
         let version = u8::from_le_bytes(*version);
@@ -1071,6 +1094,7 @@ impl Pack for Reserve {
                 protocol_liquidation_fee: u8::from_le_bytes(*config_protocol_liquidation_fee),
                 protocol_take_rate: u8::from_le_bytes(*config_protocol_take_rate),
             },
+            rate_limiter: RateLimiter::unpack_from_slice(rate_limiter)?,
         })
     }
 }

@@ -240,6 +240,7 @@ async fn test_success_pyth_price_stale_switchboard_valid() {
             &lending_market_owner,
             &wsol_reserve,
             wsol_reserve.account.config,
+            wsol_reserve.account.rate_limiter.config,
             None,
         )
         .await
