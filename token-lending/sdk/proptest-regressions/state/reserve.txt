@@ -1,0 +1,10 @@
+# Seeds for failure cases proptest has generated in the past. It is
+# automatically read and these particular cases re-run before any
+# novel cases are generated.
+#
+# It is recommended to check this file in to source control so that
+# everyone who runs the test benefits from these saved cases.
+cc ae836691511ddd09b664be596f7a9dc3cad26fa61377989d466b4d7d2aa94951 # shrinks to test_case = LiquidationTestCase { deposit_amount: 1000, deposit_market_value: 100, borrow_amount: 800, borrow_market_value: 80, liquidation_result: CalculateLiquidationResult { settle_amount: Decimal(160000000000000000000), repay_amount: 160, withdraw_amount: 168 } }
+cc c7834b9f655aebaa0680af93305acc615a62cc75d6ef5106660a8dafb11bad83 # shrinks to slots_elapsed = 0, borrow_rate = 0, take_rate = 0
+cc e2d1354a4ceeced06fca1a4480ad5f401d8f1d1caa57bd9c6ccd94b1f92ac152 # shrinks to total_liquidity = 0, borrowed_percent = 0, collateral_multiplier = 0, borrow_rate = 0
+cc 28aa3c66b2468fc4886fc1228541fe43ff0b87990083393d4624f01f9bc5b0ea # shrinks to total_liquidity = 0, borrowed_percent = 0, optimal_utilization_rate = 0, (min_borrow_rate, optimal_borrow_rate, max_borrow_rate) = (0, 0, 0)
