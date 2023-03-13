@@ -49,8 +49,7 @@ pub struct Obligation {
     /// borrows and withdraws are disabled.
     pub allowed_borrow_value: Decimal,
     /// The dangerous borrow value at the weighted average liquidation threshold.
-    /// ie sum(d.deposited_amount * d.liquidation_threshold * min(d.current_spot_price, d.smoothed_price)
-    /// for d in deposits)
+    /// ie sum(d.deposited_amount * d.liquidation_threshold * d.current_spot_price for d in deposits)
     /// if borrowed_value >= unhealthy_borrow_value, the obligation can be liquidated
     pub unhealthy_borrow_value: Decimal,
 }

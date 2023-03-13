@@ -57,7 +57,7 @@ impl Decimal {
 
     /// Create scaled decimal from bps value
     pub fn from_bps(bps: u64) -> Self {
-        Self(U192::from(bps * BPS_SCALER))
+        Self::from(bps).try_div(10_000).unwrap()
     }
 
     /// Return raw scaled value if it fits within u128
@@ -248,10 +248,8 @@ mod test {
 
     #[test]
     fn test_from_bps() {
-        let left = Decimal::from_bps(2000);
-        let right = Decimal::from_percent(20);
-
-        assert_eq!(left, right);
+        let left = Decimal::from_bps(190000);
+        assert_eq!(left, Decimal::from(19u64));
     }
 
     #[test]

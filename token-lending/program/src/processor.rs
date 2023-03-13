@@ -202,7 +202,6 @@ fn process_init_lending_market(
         token_program_id: *token_program_id.key,
         oracle_program_id: *oracle_program_id.key,
         switchboard_oracle_program_id: *switchboard_oracle_program_id.key,
-        current_slot: Clock::get()?.slot,
     });
     LendingMarket::pack(lending_market, &mut lending_market_info.data.borrow_mut())?;
 
@@ -793,7 +792,7 @@ fn _redeem_reserve_collateral<'a>(
             .rate_limiter
             .update(
                 clock.slot,
-                reserve.market_value(Decimal::from(liquidity_amount))?,
+                reserve.market_value_upper_bound(Decimal::from(liquidity_amount))?,
             )
             .map_err(|err| {
                 msg!("Market outflow limit exceeded! Please try again later.");
@@ -2071,7 +2070,7 @@ fn process_update_reserve_config(
         return Err(LendingError::InvalidMarketAuthority.into());
     }
 
-    // if window duration and max outflow are different, then create a new rate limiter instance.
+    // if window duration or max outflow are different, then create a new rate limiter instance.
     if rate_limiter_config != reserve.rate_limiter.config {
         reserve.rate_limiter = RateLimiter::new(rate_limiter_config, Clock::get()?.slot);
     }

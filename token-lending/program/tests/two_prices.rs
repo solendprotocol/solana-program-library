@@ -270,6 +270,8 @@ async fn test_withdraw() {
 
     assert_eq!(balance_changes, expected_balance_changes);
 
+    test.advance_clock_by_slots(1).await;
+
     // we shouldn't be able to withdraw anything else
     for mint in [usdc_mint::id(), usdt_mint::id()] {
         let err = lending_market

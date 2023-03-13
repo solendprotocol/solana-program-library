@@ -65,8 +65,6 @@ pub struct InitLendingMarketParams {
     pub oracle_program_id: Pubkey,
     /// Oracle (Switchboard) program id
     pub switchboard_oracle_program_id: Pubkey,
-    /// Current slot
-    pub current_slot: u64,
 }
 
 impl Sealed for LendingMarket {}

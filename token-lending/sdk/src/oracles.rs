@@ -56,6 +56,9 @@ pub fn get_pyth_price(
         let price_feed = price_account.to_price_feed(pyth_price_info.key);
         // this can be unchecked bc the ema price is only used to _limit_ borrows and withdraws.
         // ie staleness doesn't _really_ matter for this field.
+        //
+        // the pyth EMA is also updated every time the regular spot price is updated anyways so in
+        // reality the staleness should never be an issue.
         let ema_price = price_feed.get_ema_price_unchecked();
         pyth_price_to_decimal(&ema_price)?
     };
