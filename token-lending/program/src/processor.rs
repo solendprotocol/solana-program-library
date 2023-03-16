@@ -1502,7 +1502,10 @@ fn process_borrow_obligation_liquidity(
     {
         lending_market
             .rate_limiter
-            .update(clock.slot, borrow_reserve.market_value_upper_bound(borrow_amount)?)
+            .update(
+                clock.slot,
+                borrow_reserve.market_value_upper_bound(borrow_amount)?,
+            )
             .map_err(|err| {
                 msg!("Market outflow limit exceeded! Please try again later.");
                 err

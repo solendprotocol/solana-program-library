@@ -65,6 +65,12 @@ impl RateLimiter {
             return Err(LendingError::InvalidAccountInput.into());
         }
 
+        // rate limiter is disabled if window duration == 0. this is here because we don't want to
+        // brick borrows/withdraws in permissionless pools on program upgrade.
+        if self.config.window_duration == 0 {
+            return Ok(());
+        }
+
         // floor wrt window duration
         let cur_slot_start = cur_slot / self.config.window_duration * self.config.window_duration;
 
