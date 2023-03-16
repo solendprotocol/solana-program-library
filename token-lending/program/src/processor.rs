@@ -1329,13 +1329,12 @@ fn _withdraw_obligation_collateral<'a>(
     }
 
     let max_withdraw_amount = obligation.max_withdraw_amount(collateral, &withdraw_reserve)?;
+    let withdraw_amount = std::cmp::min(collateral_amount, max_withdraw_amount);
 
-    if max_withdraw_amount == 0 {
+    if withdraw_amount == 0 {
         msg!("Maximum withdraw value is zero");
         return Err(LendingError::WithdrawTooLarge.into());
     }
-
-    let withdraw_amount = std::cmp::min(collateral_amount, max_withdraw_amount);
 
     obligation.withdraw(withdraw_amount, collateral_index)?;
     obligation.last_update.mark_stale();
@@ -1503,7 +1502,7 @@ fn process_borrow_obligation_liquidity(
     {
         lending_market
             .rate_limiter
-            .update(clock.slot, borrow_reserve.market_value(borrow_amount)?)
+            .update(clock.slot, borrow_reserve.market_value_upper_bound(borrow_amount)?)
             .map_err(|err| {
                 msg!("Market outflow limit exceeded! Please try again later.");
                 err
