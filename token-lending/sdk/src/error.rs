@@ -195,6 +195,11 @@ pub enum LendingError {
     /// Outflow Rate Limit Exceeded
     #[error("Outflow Rate Limit Exceeded")]
     OutflowRateLimitExceeded,
+
+    // 55
+    /// Isolated Tier Asset Violation
+    #[error("Isolated Tier Asset Violation")]
+    IsolatedTierAssetViolation,
 }
 
 impl From<LendingError> for ProgramError {
