@@ -172,6 +172,10 @@ pub fn process_instruction(
                 accounts,
             )
         }
+        LendingInstruction::ForgiveDebt { liquidity_amount } => {
+            msg!("Instruction: Forgive Debt");
+            process_forgive_debt(program_id, liquidity_amount, accounts)
+        }
     }
 }
 
@@ -2573,6 +2577,88 @@ fn _flash_repay_reserve_liquidity<'a>(
             token_program: token_program_id.clone(),
         })?;
     }
+
+    Ok(())
+}
+
+fn process_forgive_debt(
+    program_id: &Pubkey,
+    liquidity_amount: u64,
+    accounts: &[AccountInfo],
+) -> ProgramResult {
+    let account_info_iter = &mut accounts.iter();
+    let obligation_info = next_account_info(account_info_iter)?;
+    let reserve_info = next_account_info(account_info_iter)?;
+    let lending_market_info = next_account_info(account_info_iter)?;
+    let lending_market_owner_info = next_account_info(account_info_iter)?;
+
+    let lending_market = LendingMarket::unpack(&lending_market_info.data.borrow())?;
+    if lending_market_info.owner != program_id {
+        msg!(
+            "Lending market provided is not owned by the lending program  {} != {}",
+            &lending_market_info.owner.to_string(),
+            &program_id.to_string(),
+        );
+        return Err(LendingError::InvalidAccountOwner.into());
+    }
+    if &lending_market.owner != lending_market_owner_info.key {
+        msg!("Lending market owner does not match the lending market owner provided");
+        return Err(LendingError::InvalidMarketOwner.into());
+    }
+    if !lending_market_owner_info.is_signer {
+        msg!("Lending market owner provided must be a signer");
+        return Err(LendingError::InvalidSigner.into());
+    }
+
+    let mut reserve = Reserve::unpack(&reserve_info.data.borrow())?;
+    if reserve_info.owner != program_id {
+        msg!("Reserve provided is not owned by the lending program");
+        return Err(LendingError::InvalidAccountOwner.into());
+    }
+    if &reserve.lending_market != lending_market_info.key {
+        msg!("Reserve lending market does not match the lending market provided");
+        return Err(LendingError::InvalidAccountInput.into());
+    }
+    if reserve.last_update.is_stale(Clock::get()?.slot)? {
+        msg!("Reserve is stale and must be refreshed in the current slot");
+        return Err(LendingError::ReserveStale.into());
+    }
+
+    let mut obligation = Obligation::unpack(&obligation_info.data.borrow())?;
+    if obligation_info.owner != program_id {
+        msg!("Obligation provided is not owned by the lending program");
+        return Err(LendingError::InvalidAccountOwner.into());
+    }
+    if &obligation.lending_market != lending_market_info.key {
+        msg!("Obligation lending market does not match the lending market provided");
+        return Err(LendingError::InvalidAccountInput.into());
+    }
+    if obligation.last_update.is_stale(Clock::get()?.slot)? {
+        msg!("Obligation is stale and must be refreshed in the current slot");
+        return Err(LendingError::ObligationStale.into());
+    }
+    if !obligation.is_underwater() {
+        msg!("Obligation is not underwater and cannot have its debt forgiven!");
+        return Err(LendingError::ObligationHealthy.into());
+    }
+    if !obligation.deposits.is_empty() {
+        msg!("Obligation hasn't been fully liquidated!");
+        return Err(LendingError::InvalidAccountInput.into());
+    }
+
+    let (liquidity, liquidity_index) = obligation.find_liquidity_in_borrows(*reserve_info.key)?;
+    let forgive_amount = min(
+        Decimal::from(liquidity_amount),
+        liquidity.borrowed_amount_wads,
+    );
+
+    reserve.liquidity.forgive_debt(forgive_amount)?;
+    reserve.last_update.mark_stale();
+    Reserve::pack(reserve, &mut reserve_info.data.borrow_mut())?;
+
+    obligation.repay(forgive_amount, liquidity_index)?;
+    obligation.last_update.mark_stale();
+    Obligation::pack(obligation, &mut obligation_info.data.borrow_mut())?;
 
     Ok(())
 }

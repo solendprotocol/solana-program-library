@@ -573,6 +573,14 @@ impl ReserveLiquidity {
         Ok(())
     }
 
+    /// Forgive bad debt. This essentially socializes the loss across all ctoken holders of
+    /// this reserve.
+    pub fn forgive_debt(&mut self, liquidity_amount: Decimal) -> ProgramResult {
+        self.borrowed_amount_wads = self.borrowed_amount_wads.try_sub(liquidity_amount)?;
+
+        Ok(())
+    }
+
     /// Subtract settle amount from accumulated_protocol_fees_wads and withdraw_amount from available liquidity
     pub fn redeem_fees(&mut self, withdraw_amount: u64) -> ProgramResult {
         self.available_amount = self
@@ -1697,6 +1705,44 @@ mod test {
 
         assert_eq!(total_fee, 10); // 1% of 1000
         assert_eq!(host_fee, 0); // 0 host fee
+    }
+
+    #[test]
+    fn market_value() {
+        let reserve = Reserve {
+            liquidity: ReserveLiquidity {
+                mint_decimals: 9,
+                market_price: Decimal::from(25u64),
+                smoothed_market_price: Decimal::from(50u64),
+                ..ReserveLiquidity::default()
+            },
+            ..Reserve::default()
+        };
+
+        assert_eq!(
+            reserve.market_value(Decimal::from(1u64)).unwrap(),
+            Decimal::from(25u64).try_div(1e9 as u64).unwrap()
+        );
+        assert_eq!(
+            reserve
+                .market_value(Decimal::from(10 * LAMPORTS_PER_SOL))
+                .unwrap(),
+            Decimal::from(250u64)
+        );
+
+        assert_eq!(
+            reserve
+                .market_value_lower_bound(Decimal::from(10 * LAMPORTS_PER_SOL))
+                .unwrap(),
+            Decimal::from(250u64)
+        );
+
+        assert_eq!(
+            reserve
+                .market_value_upper_bound(Decimal::from(10 * LAMPORTS_PER_SOL))
+                .unwrap(),
+            Decimal::from(500u64)
+        );
     }
 
     #[derive(Debug, Clone)]

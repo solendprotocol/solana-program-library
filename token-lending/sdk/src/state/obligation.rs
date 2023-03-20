@@ -79,6 +79,11 @@ impl Obligation {
         self.borrowed_value.try_div(self.deposited_value)
     }
 
+    /// Returns true if obligation is underwater
+    pub fn is_underwater(&self) -> bool {
+        self.borrowed_value > self.deposited_value
+    }
+
     /// Repay liquidity and remove it from borrows if zeroed out
     pub fn repay(&mut self, settle_amount: Decimal, liquidity_index: usize) -> ProgramResult {
         let liquidity = &mut self.borrows[liquidity_index];
