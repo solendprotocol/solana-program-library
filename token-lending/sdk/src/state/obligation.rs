@@ -595,9 +595,51 @@ mod test {
     use super::*;
     use crate::math::TryAdd;
     use proptest::prelude::*;
+    use rand::Rng;
     use solana_program::native_token::LAMPORTS_PER_SOL;
 
     const MAX_COMPOUNDED_INTEREST: u64 = 100; // 10,000%
+
+    fn rand_decimal() -> Decimal {
+        Decimal::from_scaled_val(rand::thread_rng().gen())
+    }
+
+    #[test]
+    fn pack_and_unpack_obligation() {
+        let mut rng = rand::thread_rng();
+        for _ in 0..100 {
+            let obligation = Obligation {
+                version: PROGRAM_VERSION,
+                last_update: LastUpdate {
+                    slot: rng.gen(),
+                    stale: rng.gen(),
+                },
+                lending_market: Pubkey::new_unique(),
+                owner: Pubkey::new_unique(),
+                deposits: vec![ObligationCollateral {
+                    deposit_reserve: Pubkey::new_unique(),
+                    deposited_amount: rng.gen(),
+                    market_value: rand_decimal(),
+                }],
+                borrows: vec![ObligationLiquidity {
+                    borrow_reserve: Pubkey::new_unique(),
+                    cumulative_borrow_rate_wads: rand_decimal(),
+                    borrowed_amount_wads: rand_decimal(),
+                    market_value: rand_decimal(),
+                }],
+                deposited_value: rand_decimal(),
+                borrowed_value: rand_decimal(),
+                borrowed_value_upper_bound: rand_decimal(),
+                allowed_borrow_value: rand_decimal(),
+                unhealthy_borrow_value: rand_decimal(),
+            };
+
+            let mut packed = [0u8; OBLIGATION_LEN];
+            Obligation::pack(obligation.clone(), &mut packed).unwrap();
+            let unpacked = Obligation::unpack(&packed).unwrap();
+            assert_eq!(obligation, unpacked);
+        }
+    }
 
     #[test]
     fn obligation_accrue_interest_failure() {

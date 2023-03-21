@@ -229,3 +229,23 @@ impl Pack for RateLimiter {
         })
     }
 }
+
+#[cfg(test)]
+pub fn rand_rate_limiter() -> RateLimiter {
+    use rand::Rng;
+    let mut rng = rand::thread_rng();
+
+    fn rand_decimal() -> Decimal {
+        Decimal::from_scaled_val(rand::thread_rng().gen())
+    }
+
+    RateLimiter {
+        config: RateLimiterConfig {
+            window_duration: rng.gen(),
+            max_outflow: rng.gen(),
+        },
+        prev_qty: rand_decimal(),
+        window_start: rng.gen(),
+        cur_qty: rand_decimal(),
+    }
+}
