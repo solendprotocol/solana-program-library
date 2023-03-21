@@ -1184,9 +1184,73 @@ mod test {
     use super::*;
     use crate::math::{PERCENT_SCALER, WAD};
     use proptest::prelude::*;
+    use rand::Rng;
     use solana_program::native_token::LAMPORTS_PER_SOL;
     use std::cmp::Ordering;
     use std::default::Default;
+
+    fn rand_decimal() -> Decimal {
+        Decimal::from_scaled_val(rand::thread_rng().gen())
+    }
+
+    #[test]
+    fn pack_and_unpack_reserve() {
+        let mut rng = rand::thread_rng();
+        for _ in 0..100 {
+            let reserve = Reserve {
+                version: PROGRAM_VERSION,
+                last_update: LastUpdate {
+                    slot: rng.gen(),
+                    stale: rng.gen(),
+                },
+                lending_market: Pubkey::new_unique(),
+                liquidity: ReserveLiquidity {
+                    mint_pubkey: Pubkey::new_unique(),
+                    mint_decimals: rng.gen(),
+                    supply_pubkey: Pubkey::new_unique(),
+                    pyth_oracle_pubkey: Pubkey::new_unique(),
+                    switchboard_oracle_pubkey: Pubkey::new_unique(),
+                    available_amount: rng.gen(),
+                    borrowed_amount_wads: rand_decimal(),
+                    cumulative_borrow_rate_wads: rand_decimal(),
+                    accumulated_protocol_fees_wads: rand_decimal(),
+                    market_price: rand_decimal(),
+                    smoothed_market_price: rand_decimal(),
+                },
+                collateral: ReserveCollateral {
+                    mint_pubkey: Pubkey::new_unique(),
+                    mint_total_supply: rng.gen(),
+                    supply_pubkey: Pubkey::new_unique(),
+                },
+                config: ReserveConfig {
+                    optimal_utilization_rate: rng.gen(),
+                    loan_to_value_ratio: rng.gen(),
+                    liquidation_bonus: rng.gen(),
+                    liquidation_threshold: rng.gen(),
+                    min_borrow_rate: rng.gen(),
+                    optimal_borrow_rate: rng.gen(),
+                    max_borrow_rate: rng.gen(),
+                    fees: ReserveFees {
+                        borrow_fee_wad: rng.gen(),
+                        flash_loan_fee_wad: rng.gen(),
+                        host_fee_percentage: rng.gen(),
+                    },
+                    deposit_limit: rng.gen(),
+                    borrow_limit: rng.gen(),
+                    fee_receiver: Pubkey::new_unique(),
+                    protocol_liquidation_fee: rng.gen(),
+                    protocol_take_rate: rng.gen(),
+                    added_borrow_weight_bps: rng.gen(),
+                },
+                rate_limiter: rand_rate_limiter(),
+            };
+
+            let mut packed = [0u8; Reserve::LEN];
+            Reserve::pack(reserve.clone(), &mut packed).unwrap();
+            let unpacked = Reserve::unpack(&packed).unwrap();
+            assert_eq!(reserve, unpacked);
+        }
+    }
 
     const MAX_LIQUIDITY: u64 = u64::MAX / 5;
 

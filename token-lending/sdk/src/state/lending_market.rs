@@ -180,3 +180,29 @@ impl Pack for LendingMarket {
         })
     }
 }
+
+#[cfg(test)]
+mod test {
+    use super::*;
+    use rand::Rng;
+
+    #[test]
+    fn pack_and_unpack_lending_market() {
+        let mut rng = rand::thread_rng();
+        let lending_market = LendingMarket {
+            version: PROGRAM_VERSION,
+            bump_seed: rng.gen(),
+            owner: Pubkey::new_unique(),
+            quote_currency: [rng.gen(); 32],
+            token_program_id: Pubkey::new_unique(),
+            oracle_program_id: Pubkey::new_unique(),
+            switchboard_oracle_program_id: Pubkey::new_unique(),
+            rate_limiter: rand_rate_limiter(),
+        };
+
+        let mut packed = vec![0u8; LendingMarket::LEN];
+        LendingMarket::pack(lending_market.clone(), &mut packed).unwrap();
+        let unpacked = LendingMarket::unpack_from_slice(&packed).unwrap();
+        assert_eq!(unpacked, lending_market);
+    }
+}
