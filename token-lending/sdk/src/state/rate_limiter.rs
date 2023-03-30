@@ -52,7 +52,7 @@ impl RateLimiter {
         let slot_start = if config.window_duration != 0 {
             cur_slot / config.window_duration * config.window_duration
         } else {
-            0
+            cur_slot
         };
 
         Self {
