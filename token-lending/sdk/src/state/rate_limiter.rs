@@ -50,7 +50,7 @@ impl RateLimiter {
     /// initialize rate limiter
     pub fn new(config: RateLimiterConfig, cur_slot: u64) -> Self {
         let slot_start = if config.window_duration != 0 {
-            cur_slot / config.window_duration * config.window_duration 
+            cur_slot / config.window_duration * config.window_duration
         } else {
             0
         };
