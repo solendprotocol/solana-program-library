@@ -2637,10 +2637,6 @@ fn process_forgive_debt(
         msg!("Obligation is stale and must be refreshed in the current slot");
         return Err(LendingError::ObligationStale.into());
     }
-    if !obligation.is_underwater() {
-        msg!("Obligation is not underwater and cannot have its debt forgiven!");
-        return Err(LendingError::ObligationHealthy.into());
-    }
     if !obligation.deposits.is_empty() {
         msg!("Obligation hasn't been fully liquidated!");
         return Err(LendingError::InvalidAccountInput.into());
