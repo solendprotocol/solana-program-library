@@ -20,7 +20,7 @@ use solend_program::{
         init_obligation, liquidate_obligation, refresh_obligation, refresh_reserve,
         withdraw_obligation_collateral_and_redeem_reserve_collateral,
     },
-    state::{AssetType, Obligation, ReserveConfig, ReserveFees},
+    state::{Obligation, ReserveConfig, ReserveFees, ReserveType},
 };
 
 use spl_token::state::Mint;
@@ -54,7 +54,7 @@ pub fn test_reserve_config() -> ReserveConfig {
         protocol_liquidation_fee: 0,
         protocol_take_rate: 0,
         added_borrow_weight_bps: 0,
-        asset_type: AssetType::Regular,
+        asset_type: ReserveType::Regular,
     }
 }
 

@@ -7,8 +7,8 @@ use solend_sdk::{
         liquidate_obligation_and_redeem_reserve_collateral, redeem_reserve_collateral,
         refresh_obligation, refresh_reserve,
     },
-    state::AssetType,
     state::Obligation,
+    state::ReserveType,
 };
 
 mod lending_state;
@@ -956,7 +956,7 @@ fn main() {
                     protocol_liquidation_fee,
                     protocol_take_rate,
                     added_borrow_weight_bps: 10000,
-                    asset_type: AssetType::Regular,
+                    asset_type: ReserveType::Regular,
                 },
                 source_liquidity_pubkey,
                 source_liquidity_owner_keypair,

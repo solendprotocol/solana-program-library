@@ -12,8 +12,8 @@ use solana_sdk::transaction::TransactionError;
 use solend_program::error::LendingError;
 use solend_sdk::math::Decimal;
 
-use solend_program::state::AssetType;
 use solend_program::state::LastUpdate;
+use solend_program::state::ReserveType;
 use solend_program::state::{Obligation, ObligationLiquidity, ReserveConfig};
 use solend_program::NULL_PUBKEY;
 use solend_sdk::state::ReserveFees;
@@ -49,7 +49,7 @@ async fn test_refresh_obligation() {
                     },
                     optimal_borrow_rate: 0,
                     max_borrow_rate: 0,
-                    asset_type: AssetType::Isolated,
+                    asset_type: ReserveType::Isolated,
 
                     ..test_reserve_config()
                 },
@@ -143,7 +143,7 @@ async fn borrow_isolated_asset() {
                     optimal_borrow_rate: 0,
                     max_borrow_rate: 0,
                     protocol_liquidation_fee: 0,
-                    asset_type: AssetType::Isolated,
+                    asset_type: ReserveType::Isolated,
                     ..test_reserve_config()
                 },
                 liquidity_amount: 1_000_000,
@@ -239,7 +239,7 @@ async fn borrow_isolated_asset_invalid() {
                     optimal_borrow_rate: 0,
                     max_borrow_rate: 0,
                     protocol_liquidation_fee: 0,
-                    asset_type: AssetType::Isolated,
+                    asset_type: ReserveType::Isolated,
                     ..test_reserve_config()
                 },
                 liquidity_amount: 1_000_000,
@@ -324,7 +324,7 @@ async fn borrow_regular_asset_invalid() {
                     optimal_borrow_rate: 0,
                     max_borrow_rate: 0,
                     protocol_liquidation_fee: 0,
-                    asset_type: AssetType::Isolated,
+                    asset_type: ReserveType::Isolated,
                     ..test_reserve_config()
                 },
                 liquidity_amount: 1_000_000,
@@ -419,7 +419,7 @@ async fn invalid_borrow_due_to_reserve_config_change() {
                         optimal_borrow_rate: 0,
                         max_borrow_rate: 0,
                         protocol_liquidation_fee: 0,
-                        asset_type: AssetType::Regular, // regular for now
+                        asset_type: ReserveType::Regular, // regular for now
                         ..test_reserve_config()
                     },
                     liquidity_amount: 1_000_000,
@@ -451,7 +451,7 @@ async fn invalid_borrow_due_to_reserve_config_change() {
             &lending_market_owner,
             bonk_reserve,
             ReserveConfig {
-                asset_type: AssetType::Isolated,
+                asset_type: ReserveType::Isolated,
                 ..bonk_reserve.account.config
             },
             bonk_reserve.account.rate_limiter.config,

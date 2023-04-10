@@ -30,7 +30,7 @@ use solana_program::{
         Sysvar,
     },
 };
-use solend_sdk::state::{AssetType, RateLimiter, RateLimiterConfig};
+use solend_sdk::state::{RateLimiter, RateLimiterConfig, ReserveType};
 use solend_sdk::{switchboard_v2_devnet, switchboard_v2_mainnet};
 use spl_token::state::Mint;
 use std::{cmp::min, result::Result};
@@ -973,7 +973,7 @@ fn process_refresh_obligation(program_id: &Pubkey, accounts: &[AccountInfo]) -> 
             return Err(LendingError::ReserveStale.into());
         }
 
-        if borrow_reserve.config.asset_type == AssetType::Isolated {
+        if borrow_reserve.config.asset_type == ReserveType::Isolated {
             borrowing_isolated_asset = true;
         }
 
@@ -1475,7 +1475,7 @@ fn process_borrow_obligation_liquidity(
     }
 
     match borrow_reserve.config.asset_type {
-        AssetType::Isolated => match obligation.borrows.len() {
+        ReserveType::Isolated => match obligation.borrows.len() {
             0 => {}
             1 => {
                 if &obligation.borrows[0].borrow_reserve != borrow_reserve_info.key {
@@ -1491,7 +1491,7 @@ fn process_borrow_obligation_liquidity(
                 return Err(LendingError::IsolatedTierAssetViolation.into());
             }
         },
-        AssetType::Regular => {
+        ReserveType::Regular => {
             if obligation.borrowing_isolated_asset {
                 msg!(
                     "Cannot borrow a regular tier asset if you have an isolated tier asset borrow"

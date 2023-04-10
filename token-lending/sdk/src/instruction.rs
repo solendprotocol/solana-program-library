@@ -1,6 +1,6 @@
 //! Instruction types
 
-use crate::state::AssetType;
+use crate::state::ReserveType;
 use crate::{
     error::LendingError,
     state::{RateLimiterConfig, ReserveConfig, ReserveFees},
@@ -535,7 +535,7 @@ impl LendingInstruction {
                         protocol_liquidation_fee,
                         protocol_take_rate,
                         added_borrow_weight_bps,
-                        asset_type: AssetType::from_u8(asset_type).unwrap(),
+                        asset_type: ReserveType::from_u8(asset_type).unwrap(),
                     },
                 }
             }
@@ -623,7 +623,7 @@ impl LendingInstruction {
                         protocol_liquidation_fee,
                         protocol_take_rate,
                         added_borrow_weight_bps,
-                        asset_type: AssetType::from_u8(asset_type).unwrap(),
+                        asset_type: ReserveType::from_u8(asset_type).unwrap(),
                     },
                     rate_limiter_config: RateLimiterConfig {
                         window_duration,
@@ -1593,7 +1593,7 @@ mod test {
                         protocol_liquidation_fee: rng.gen::<u8>(),
                         protocol_take_rate: rng.gen::<u8>(),
                         added_borrow_weight_bps: rng.gen::<u64>(),
-                        asset_type: AssetType::from_u8(rng.gen::<u8>() % 2).unwrap(),
+                        asset_type: ReserveType::from_u8(rng.gen::<u8>() % 2).unwrap(),
                     },
                 };
 
@@ -1749,7 +1749,7 @@ mod test {
                         protocol_liquidation_fee: rng.gen::<u8>(),
                         protocol_take_rate: rng.gen::<u8>(),
                         added_borrow_weight_bps: rng.gen::<u64>(),
-                        asset_type: AssetType::from_u8(rng.gen::<u8>() % 2).unwrap(),
+                        asset_type: ReserveType::from_u8(rng.gen::<u8>() % 2).unwrap(),
                     },
                     rate_limiter_config: RateLimiterConfig {
                         window_duration: rng.gen::<u64>(),
