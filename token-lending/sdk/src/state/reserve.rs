@@ -360,7 +360,7 @@ impl Reserve {
                         // safety: technically this gives the liquidator more of a bonus, but this
                         // can happen at most once per ObligationLiquidity so I don't think this
                         // can be exploited to cause bad debt or anything.
-                        1
+                        1,
                     );
                 }
             }
