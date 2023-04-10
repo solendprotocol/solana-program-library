@@ -344,6 +344,11 @@ impl Reserve {
 
                     settle_amount = liquidity.borrowed_amount_wads;
                     repay_amount = settle_amount.try_ceil_u64()?;
+                    if repay_amount == 0 {
+                        msg!("repay amount is zero");
+                        return Err(LendingError::LiquidationTooSmall.into());
+                    }
+
                     withdraw_amount = max(
                         Decimal::from(collateral.deposited_amount)
                             .try_mul(withdraw_pct)?
@@ -355,11 +360,12 @@ impl Reserve {
                         // safety: technically this gives the liquidator more of a bonus, but this
                         // can happen at most once per ObligationLiquidity so I don't think this
                         // can be exploited to cause bad debt or anything.
-                        if repay_amount > 0 { 1 } else { 0 },
+                        1
                     );
                 }
             }
-        } else { // partial liquidation
+        } else {
+            // partial liquidation
             // calculate settle_amount and withdraw_amount, repay_amount is settle_amount rounded
             let liquidation_amount = obligation
                 .max_liquidation_amount(liquidity)?
@@ -1846,7 +1852,9 @@ mod test {
                 borrow_amount: 8000,
                 borrow_market_value: Decimal::from(8000u64),
                 deposit_amount: (8000 * LIQUIDATION_CLOSE_FACTOR as u64) * 105 / 10000,
-                deposit_market_value: Decimal::from((8000 * LIQUIDATION_CLOSE_FACTOR as u64) * 105 / 10000),
+                deposit_market_value: Decimal::from(
+                    (8000 * LIQUIDATION_CLOSE_FACTOR as u64) * 105 / 10000
+                ),
 
                 liquidation_result: CalculateLiquidationResult {
                     settle_amount: Decimal::from((8000 * LIQUIDATION_CLOSE_FACTOR as u64) / 100),
@@ -1861,7 +1869,9 @@ mod test {
 
                 // half of liquidation value
                 deposit_amount: (8000 * LIQUIDATION_CLOSE_FACTOR as u64) * 105 / 10000 / 2,
-                deposit_market_value: Decimal::from((8000 * LIQUIDATION_CLOSE_FACTOR as u64) * 105 / 10000 / 2),
+                deposit_market_value: Decimal::from(
+                    (8000 * LIQUIDATION_CLOSE_FACTOR as u64) * 105 / 10000 / 2
+                ),
 
                 liquidation_result: CalculateLiquidationResult {
                     settle_amount: Decimal::from(
@@ -1911,7 +1921,7 @@ mod test {
                     withdraw_amount: 10,
                 },
             }),
-            // dust ObligationLiquidity where collateral market value > liquidation value and the 
+            // dust ObligationLiquidity where collateral market value > liquidation value and the
             // withdraw amount is 1
             Just(LiquidationTestCase {
                 borrow_amount: 1,
