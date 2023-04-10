@@ -1927,7 +1927,7 @@ mod test {
                 borrow_amount: 1,
                 borrow_market_value: Decimal::one(),
                 deposit_amount: 1,
-                deposit_market_value: Decimal::from(10u64), // $0.525
+                deposit_market_value: Decimal::from(10u64),
 
                 liquidation_result: CalculateLiquidationResult {
                     settle_amount: Decimal::from(1u64),
