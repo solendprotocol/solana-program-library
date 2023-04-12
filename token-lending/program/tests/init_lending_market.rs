@@ -36,6 +36,7 @@ async fn test_success() {
             oracle_program_id: mock_pyth_program::id(),
             switchboard_oracle_program_id: mock_pyth_program::id(),
             rate_limiter: RateLimiter::default(),
+            risk_authority: lending_market_owner.keypair.pubkey(),
         }
     );
 }

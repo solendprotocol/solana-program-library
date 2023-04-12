@@ -32,6 +32,7 @@ async fn setup() -> (SolendProgramTest, Info<LendingMarket>, User) {
 async fn test_success() {
     let (mut test, lending_market, lending_market_owner) = setup().await;
     let new_owner = Keypair::new();
+    let new_risk_authority = Keypair::new();
     let new_config = RateLimiterConfig {
         max_outflow: 100,
         window_duration: 5,
@@ -43,6 +44,7 @@ async fn test_success() {
             &lending_market_owner,
             &new_owner.pubkey(),
             new_config,
+            new_risk_authority.pubkey(),
         )
         .await
         .unwrap();
@@ -66,6 +68,7 @@ async fn test_invalid_owner() {
     let (mut test, lending_market, _lending_market_owner) = setup().await;
     let invalid_owner = User::new_with_keypair(Keypair::new());
     let new_owner = Keypair::new();
+    let new_risk_authority = Keypair::new();
 
     let res = lending_market
         .set_lending_market_owner_and_config(
@@ -73,6 +76,7 @@ async fn test_invalid_owner() {
             &invalid_owner,
             &new_owner.pubkey(),
             RateLimiterConfig::default(),
+            new_risk_authority.pubkey(),
         )
         .await
         .unwrap_err()
@@ -91,6 +95,7 @@ async fn test_invalid_owner() {
 async fn test_owner_not_signer() {
     let (mut test, lending_market, _lending_market_owner) = setup().await;
     let new_owner = Pubkey::new_unique();
+    let new_risk_authority = Keypair::new();
     let res = test
         .process_transaction(
             &[Instruction {
@@ -102,6 +107,7 @@ async fn test_owner_not_signer() {
                 data: LendingInstruction::SetLendingMarketOwnerAndConfig {
                     new_owner,
                     rate_limiter_config: RateLimiterConfig::default(),
+                    risk_authority: new_risk_authority.pubkey(),
                 }
                 .pack(),
             }],

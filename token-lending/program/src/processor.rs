@@ -57,12 +57,14 @@ pub fn process_instruction(
         LendingInstruction::SetLendingMarketOwnerAndConfig {
             new_owner,
             rate_limiter_config,
+            risk_authority,
         } => {
             msg!("Instruction: Set Lending Market Owner");
             process_set_lending_market_owner_and_config(
                 program_id,
                 new_owner,
                 rate_limiter_config,
+                risk_authority,
                 accounts,
             )
         }
@@ -217,6 +219,7 @@ fn process_set_lending_market_owner_and_config(
     program_id: &Pubkey,
     new_owner: Pubkey,
     rate_limiter_config: RateLimiterConfig,
+    risk_authority: Pubkey,
     accounts: &[AccountInfo],
 ) -> ProgramResult {
     let account_info_iter = &mut accounts.iter();
@@ -238,6 +241,7 @@ fn process_set_lending_market_owner_and_config(
     }
 
     lending_market.owner = new_owner;
+    lending_market.risk_authority = risk_authority;
 
     if rate_limiter_config != lending_market.rate_limiter.config {
         lending_market.rate_limiter = RateLimiter::new(rate_limiter_config, Clock::get()?.slot);

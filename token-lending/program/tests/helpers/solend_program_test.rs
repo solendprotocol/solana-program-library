@@ -1114,6 +1114,7 @@ impl Info<LendingMarket> {
         lending_market_owner: &User,
         new_owner: &Pubkey,
         config: RateLimiterConfig,
+        risk_authority: Pubkey,
     ) -> Result<(), BanksClientError> {
         let instructions = [set_lending_market_owner_and_config(
             solend_program::id(),
@@ -1121,6 +1122,7 @@ impl Info<LendingMarket> {
             lending_market_owner.keypair.pubkey(),
             *new_owner,
             config,
+            risk_authority,
         )];
 
         test.process_transaction(&instructions, Some(&[&lending_market_owner.keypair]))
