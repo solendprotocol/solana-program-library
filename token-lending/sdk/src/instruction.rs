@@ -509,7 +509,7 @@ impl LendingInstruction {
                         window_duration,
                         max_outflow,
                     },
-                    risk_authority
+                    risk_authority,
                 }
             }
             2 => {
@@ -743,7 +743,7 @@ impl LendingInstruction {
             Self::SetLendingMarketOwnerAndConfig {
                 new_owner,
                 rate_limiter_config: config,
-                risk_authority
+                risk_authority,
             } => {
                 buf.push(1);
                 buf.extend_from_slice(new_owner.as_ref());

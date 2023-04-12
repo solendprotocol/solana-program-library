@@ -647,7 +647,7 @@ impl Info<LendingMarket> {
     pub async fn update_reserve_config(
         &self,
         test: &mut SolendProgramTest,
-        lending_market_owner: &User,
+        signer: &User, // lending market owner or risk authority
         reserve: &Info<Reserve>,
         config: ReserveConfig,
         rate_limiter_config: RateLimiterConfig,
@@ -666,13 +666,13 @@ impl Info<LendingMarket> {
             rate_limiter_config,
             reserve.pubkey,
             self.pubkey,
-            lending_market_owner.keypair.pubkey(),
+            signer.keypair.pubkey(),
             oracle.pyth_product_pubkey,
             oracle.pyth_price_pubkey,
             oracle.switchboard_feed_pubkey.unwrap_or(NULL_PUBKEY),
         )];
 
-        test.process_transaction(&instructions, Some(&[&lending_market_owner.keypair]))
+        test.process_transaction(&instructions, Some(&[&signer.keypair]))
             .await
     }
 

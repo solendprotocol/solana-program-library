@@ -1577,6 +1577,7 @@ fn command_set_lending_market_owner_and_config(
                 max_outflow: rate_limiter_max_outflow
                     .unwrap_or(lending_market.rate_limiter.config.max_outflow),
             },
+            lending_market_owner_keypair.pubkey(), // FIXME: support risk authority
         )],
         Some(&config.fee_payer.pubkey()),
         &recent_blockhash,
