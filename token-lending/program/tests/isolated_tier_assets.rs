@@ -78,6 +78,7 @@ async fn test_refresh_obligation() {
     let obligation = test.load_account::<Obligation>(obligations[0].pubkey).await;
     assert!(!obligation.account.borrowing_isolated_asset);
 
+
     test.advance_clock_by_slots(1).await;
 
     let wsol_reserve = reserves
