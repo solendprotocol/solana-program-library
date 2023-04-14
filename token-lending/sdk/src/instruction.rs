@@ -446,7 +446,7 @@ pub enum LendingInstruction {
         liquidity_amount: u64,
     },
 
-    // 18
+    // 20
     /// Flash repay reserve liquidity
     //
     /// Accounts expected by this instruction:
@@ -467,6 +467,19 @@ pub enum LendingInstruction {
         liquidity_amount: u64,
         /// Index of FlashBorrowReserveLiquidity instruction
         borrow_instruction_index: u8,
+    },
+
+    // 21
+    /// Forgive Debt
+    ///
+    /// Accounts expected by this instruction:
+    ///  0. `[writable]` Obligation account - refreshed.
+    ///  1. `[writable]` Reserve account - refreshed.
+    ///  2. `[]` Lending Market account.
+    ///  3. `[signer]` Lending Market owner.
+    ForgiveDebt {
+        /// Amount of debt to forgive
+        liquidity_amount: u64,
     },
 }
 
@@ -659,6 +672,10 @@ impl LendingInstruction {
                     liquidity_amount,
                     borrow_instruction_index,
                 }
+            }
+            21 => {
+                let (liquidity_amount, _rest) = Self::unpack_u64(rest)?;
+                Self::ForgiveDebt { liquidity_amount }
             }
             _ => {
                 msg!("Instruction cannot be unpacked");
@@ -889,6 +906,10 @@ impl LendingInstruction {
                 buf.push(20);
                 buf.extend_from_slice(&liquidity_amount.to_le_bytes());
                 buf.extend_from_slice(&borrow_instruction_index.to_le_bytes());
+            }
+            Self::ForgiveDebt { liquidity_amount } => {
+                buf.push(21);
+                buf.extend_from_slice(&liquidity_amount.to_le_bytes());
             }
         }
         buf
@@ -1560,6 +1581,27 @@ pub fn flash_repay_reserve_liquidity(
     }
 }
 
+/// Creates a `ForgiveDebt` instruction
+pub fn forgive_debt(
+    program_id: Pubkey,
+    liquidity_amount: u64,
+    reserve_pubkey: Pubkey,
+    obligation_pubkey: Pubkey,
+    lending_market_pubkey: Pubkey,
+    lending_market_owner: Pubkey,
+) -> Instruction {
+    Instruction {
+        program_id,
+        accounts: vec![
+            AccountMeta::new(obligation_pubkey, false),
+            AccountMeta::new(reserve_pubkey, false),
+            AccountMeta::new_readonly(lending_market_pubkey, false),
+            AccountMeta::new_readonly(lending_market_owner, true),
+        ],
+        data: LendingInstruction::ForgiveDebt { liquidity_amount }.pack(),
+    }
+}
+
 #[cfg(test)]
 mod test {
     use super::*;
@@ -1825,6 +1867,17 @@ mod test {
                 let instruction = LendingInstruction::FlashRepayReserveLiquidity {
                     liquidity_amount: rng.gen::<u64>(),
                     borrow_instruction_index: rng.gen::<u8>(),
+                };
+
+                let packed = instruction.pack();
+                let unpacked = LendingInstruction::unpack(&packed).unwrap();
+                assert_eq!(instruction, unpacked);
+            }
+
+            // forgive debt
+            {
+                let instruction = LendingInstruction::ForgiveDebt {
+                    liquidity_amount: rng.gen::<u64>(),
                 };
 
                 let packed = instruction.pack();
