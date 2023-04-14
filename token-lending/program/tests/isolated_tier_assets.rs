@@ -70,6 +70,14 @@ async fn test_refresh_obligation() {
     )
     .await;
 
+    lending_market
+        .refresh_obligation(&mut test, &obligation)
+        .await
+        .unwrap();
+
+    let obligation = test.load_account::<Obligation>(obligation.pubkey).await;
+    assert!(!obligation.account.borrowing_isolated_asset);
+
     test.advance_clock_by_slots(1).await;
 
     let wsol_reserve = reserves
