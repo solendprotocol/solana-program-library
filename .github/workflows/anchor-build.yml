@@ -1,0 +1,33 @@
+name: Anchor Build
+
+on:
+  push:
+    branches: [mainnet]
+    paths-ignore:
+    - 'docs/**'
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v2
+      
+      - name: Install Anchor
+        uses: actions-rs/cargo@v1
+        with:
+          command: install
+          args: --git https://github.com/coral-xyz/anchor avm --locked --force
+      - name: Anchor Build
+        run: |
+          avm install 0.27.0
+          avm use latest
+          anchor build --verifiable -d projectserum/build:v0.27.0 -- -v
+      - uses: shallwefootball/s3-upload-action@master
+        name: Upload S3
+        id: S3
+        with:
+          aws_key_id: ${{ secrets.AWS_KEY_ID_S3 }}
+          aws_secret_access_key: ${{ secrets.AWS_SECRET_ACCESS_KEY_S3}}
+          aws_bucket: 'token-lending-binaries'
+          source_dir: './target/verifiable/'
+          destination_dir: ${{ github.sha }}
