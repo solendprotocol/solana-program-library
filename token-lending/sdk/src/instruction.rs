@@ -535,7 +535,7 @@ impl LendingInstruction {
                         protocol_liquidation_fee,
                         protocol_take_rate,
                         added_borrow_weight_bps,
-                        asset_type: ReserveType::from_u8(asset_type).unwrap(),
+                        reserve_type: ReserveType::from_u8(asset_type).unwrap(),
                     },
                 }
             }
@@ -623,7 +623,7 @@ impl LendingInstruction {
                         protocol_liquidation_fee,
                         protocol_take_rate,
                         added_borrow_weight_bps,
-                        asset_type: ReserveType::from_u8(asset_type).unwrap(),
+                        reserve_type: ReserveType::from_u8(asset_type).unwrap(),
                     },
                     rate_limiter_config: RateLimiterConfig {
                         window_duration,
@@ -751,7 +751,7 @@ impl LendingInstruction {
                         protocol_liquidation_fee,
                         protocol_take_rate,
                         added_borrow_weight_bps: borrow_weight_bps,
-                        asset_type,
+                        reserve_type: asset_type,
                     },
             } => {
                 buf.push(2);
@@ -844,7 +844,7 @@ impl LendingInstruction {
                 buf.extend_from_slice(&config.protocol_liquidation_fee.to_le_bytes());
                 buf.extend_from_slice(&config.protocol_take_rate.to_le_bytes());
                 buf.extend_from_slice(&config.added_borrow_weight_bps.to_le_bytes());
-                buf.extend_from_slice(&(config.asset_type as u8).to_le_bytes());
+                buf.extend_from_slice(&(config.reserve_type as u8).to_le_bytes());
                 buf.extend_from_slice(&rate_limiter_config.window_duration.to_le_bytes());
                 buf.extend_from_slice(&rate_limiter_config.max_outflow.to_le_bytes());
             }
@@ -1593,7 +1593,7 @@ mod test {
                         protocol_liquidation_fee: rng.gen::<u8>(),
                         protocol_take_rate: rng.gen::<u8>(),
                         added_borrow_weight_bps: rng.gen::<u64>(),
-                        asset_type: ReserveType::from_u8(rng.gen::<u8>() % 2).unwrap(),
+                        reserve_type: ReserveType::from_u8(rng.gen::<u8>() % 2).unwrap(),
                     },
                 };
 
@@ -1749,7 +1749,7 @@ mod test {
                         protocol_liquidation_fee: rng.gen::<u8>(),
                         protocol_take_rate: rng.gen::<u8>(),
                         added_borrow_weight_bps: rng.gen::<u64>(),
-                        asset_type: ReserveType::from_u8(rng.gen::<u8>() % 2).unwrap(),
+                        reserve_type: ReserveType::from_u8(rng.gen::<u8>() % 2).unwrap(),
                     },
                     rate_limiter_config: RateLimiterConfig {
                         window_duration: rng.gen::<u64>(),

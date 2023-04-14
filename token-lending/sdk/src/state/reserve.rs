@@ -782,7 +782,7 @@ pub struct ReserveConfig {
     /// borrow_weight()
     pub added_borrow_weight_bps: u64,
     /// Type of the reserve (Regular, Isolated)
-    pub asset_type: ReserveType,
+    pub reserve_type: ReserveType,
 }
 
 /// validates reserve configs
@@ -831,7 +831,7 @@ pub fn validate_reserve_config(config: ReserveConfig) -> ProgramResult {
         return Err(LendingError::InvalidConfig.into());
     }
 
-    if config.asset_type == ReserveType::Isolated
+    if config.reserve_type == ReserveType::Isolated
         && !(config.loan_to_value_ratio == 0 && config.liquidation_threshold == 0)
     {
         msg!("open/close LTV must be 0 for isolated reserves");
@@ -1103,7 +1103,7 @@ impl Pack for Reserve {
         config_fee_receiver.copy_from_slice(self.config.fee_receiver.as_ref());
         *config_protocol_liquidation_fee = self.config.protocol_liquidation_fee.to_le_bytes();
         *config_protocol_take_rate = self.config.protocol_take_rate.to_le_bytes();
-        *config_asset_type = (self.config.asset_type as u8).to_le_bytes();
+        *config_asset_type = (self.config.reserve_type as u8).to_le_bytes();
 
         self.rate_limiter.pack_into_slice(rate_limiter);
 
@@ -1247,7 +1247,7 @@ impl Pack for Reserve {
                 protocol_liquidation_fee: u8::from_le_bytes(*config_protocol_liquidation_fee),
                 protocol_take_rate: u8::from_le_bytes(*config_protocol_take_rate),
                 added_borrow_weight_bps: u64::from_le_bytes(*config_added_borrow_weight_bps),
-                asset_type: ReserveType::from_u8(config_asset_type[0]).unwrap(),
+                reserve_type: ReserveType::from_u8(config_asset_type[0]).unwrap(),
             },
             rate_limiter: RateLimiter::unpack_from_slice(rate_limiter)?,
         })
@@ -1316,7 +1316,7 @@ mod test {
                     protocol_liquidation_fee: rng.gen(),
                     protocol_take_rate: rng.gen(),
                     added_borrow_weight_bps: rng.gen(),
-                    asset_type: ReserveType::from_u8(rng.gen::<u8>() % 2).unwrap(),
+                    reserve_type: ReserveType::from_u8(rng.gen::<u8>() % 2).unwrap(),
                 },
                 rate_limiter: rand_rate_limiter(),
             };
@@ -1709,7 +1709,7 @@ mod test {
         prop_oneof![
             Just(ReserveConfigTestCase {
                 config: ReserveConfig {
-                    asset_type: ReserveType::Isolated,
+                    reserve_type: ReserveType::Isolated,
                     loan_to_value_ratio: 1,
                     ..ReserveConfig::default()
                 },
@@ -1717,7 +1717,7 @@ mod test {
             }),
             Just(ReserveConfigTestCase {
                 config: ReserveConfig {
-                    asset_type: ReserveType::Isolated,
+                    reserve_type: ReserveType::Isolated,
                     liquidation_threshold: 1,
                     ..ReserveConfig::default()
                 },
@@ -1725,7 +1725,7 @@ mod test {
             }),
             Just(ReserveConfigTestCase {
                 config: ReserveConfig {
-                    asset_type: ReserveType::Isolated,
+                    reserve_type: ReserveType::Isolated,
                     loan_to_value_ratio: 0,
                     liquidation_threshold: 0,
                     ..ReserveConfig::default()

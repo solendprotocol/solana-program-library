@@ -973,7 +973,7 @@ fn process_refresh_obligation(program_id: &Pubkey, accounts: &[AccountInfo]) -> 
             return Err(LendingError::ReserveStale.into());
         }
 
-        if borrow_reserve.config.asset_type == ReserveType::Isolated {
+        if borrow_reserve.config.reserve_type == ReserveType::Isolated {
             borrowing_isolated_asset = true;
         }
 
@@ -1474,7 +1474,7 @@ fn process_borrow_obligation_liquidity(
         return Err(LendingError::InvalidMarketAuthority.into());
     }
 
-    match borrow_reserve.config.asset_type {
+    match borrow_reserve.config.reserve_type {
         ReserveType::Isolated => match obligation.borrows.len() {
             0 => {}
             1 => {

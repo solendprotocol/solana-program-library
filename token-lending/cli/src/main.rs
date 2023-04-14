@@ -956,7 +956,7 @@ fn main() {
                     protocol_liquidation_fee,
                     protocol_take_rate,
                     added_borrow_weight_bps: 10000,
-                    asset_type: ReserveType::Regular,
+                    reserve_type: ReserveType::Regular,
                 },
                 source_liquidity_pubkey,
                 source_liquidity_owner_keypair,

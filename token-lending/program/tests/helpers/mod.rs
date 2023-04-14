@@ -54,7 +54,7 @@ pub fn test_reserve_config() -> ReserveConfig {
         protocol_liquidation_fee: 0,
         protocol_take_rate: 0,
         added_borrow_weight_bps: 0,
-        asset_type: ReserveType::Regular,
+        reserve_type: ReserveType::Regular,
     }
 }
 
