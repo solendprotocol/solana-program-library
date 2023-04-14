@@ -8,6 +8,7 @@ use solend_sdk::{
         refresh_obligation, refresh_reserve,
     },
     state::Obligation,
+    state::ReserveType,
 };
 
 mod lending_state;
@@ -955,6 +956,7 @@ fn main() {
                     protocol_liquidation_fee,
                     protocol_take_rate,
                     added_borrow_weight_bps: 10000,
+                    reserve_type: ReserveType::Regular,
                 },
                 source_liquidity_pubkey,
                 source_liquidity_owner_keypair,

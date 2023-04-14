@@ -200,6 +200,9 @@ pub enum LendingError {
     /// Not a whitelisted liquidator
     #[error("Not a whitelisted liquidator")]
     NotWhitelistedLiquidator,
+    /// Isolated Tier Asset Violation
+    #[error("Isolated Tier Asset Violation")]
+    IsolatedTierAssetViolation,
 }
 
 impl From<LendingError> for ProgramError {

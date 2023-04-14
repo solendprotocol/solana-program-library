@@ -1,9 +1,11 @@
 //! Instruction types
 
+use crate::state::ReserveType;
 use crate::{
     error::LendingError,
     state::{RateLimiterConfig, ReserveConfig, ReserveFees},
 };
+use num_traits::FromPrimitive;
 use solana_program::{
     instruction::{AccountMeta, Instruction},
     msg,
@@ -522,7 +524,8 @@ impl LendingInstruction {
                 let (fee_receiver, rest) = Self::unpack_pubkey(rest)?;
                 let (protocol_liquidation_fee, rest) = Self::unpack_u8(rest)?;
                 let (protocol_take_rate, rest) = Self::unpack_u8(rest)?;
-                let (added_borrow_weight_bps, _rest) = Self::unpack_u64(rest)?;
+                let (added_borrow_weight_bps, rest) = Self::unpack_u64(rest)?;
+                let (asset_type, _rest) = Self::unpack_u8(rest)?;
                 Self::InitReserve {
                     liquidity_amount,
                     config: ReserveConfig {
@@ -544,6 +547,7 @@ impl LendingInstruction {
                         protocol_liquidation_fee,
                         protocol_take_rate,
                         added_borrow_weight_bps,
+                        reserve_type: ReserveType::from_u8(asset_type).unwrap(),
                     },
                 }
             }
@@ -607,6 +611,7 @@ impl LendingInstruction {
                 let (protocol_liquidation_fee, rest) = Self::unpack_u8(rest)?;
                 let (protocol_take_rate, rest) = Self::unpack_u8(rest)?;
                 let (added_borrow_weight_bps, rest) = Self::unpack_u64(rest)?;
+                let (asset_type, rest) = Self::unpack_u8(rest)?;
                 let (window_duration, rest) = Self::unpack_u64(rest)?;
                 let (max_outflow, _rest) = Self::unpack_u64(rest)?;
 
@@ -630,6 +635,7 @@ impl LendingInstruction {
                         protocol_liquidation_fee,
                         protocol_take_rate,
                         added_borrow_weight_bps,
+                        reserve_type: ReserveType::from_u8(asset_type).unwrap(),
                     },
                     rate_limiter_config: RateLimiterConfig {
                         window_duration,
@@ -768,6 +774,7 @@ impl LendingInstruction {
                         protocol_liquidation_fee,
                         protocol_take_rate,
                         added_borrow_weight_bps: borrow_weight_bps,
+                        reserve_type: asset_type,
                     },
             } => {
                 buf.push(2);
@@ -788,6 +795,7 @@ impl LendingInstruction {
                 buf.extend_from_slice(&protocol_liquidation_fee.to_le_bytes());
                 buf.extend_from_slice(&protocol_take_rate.to_le_bytes());
                 buf.extend_from_slice(&borrow_weight_bps.to_le_bytes());
+                buf.extend_from_slice(&(asset_type as u8).to_le_bytes());
             }
             Self::RefreshReserve => {
                 buf.push(3);
@@ -859,6 +867,7 @@ impl LendingInstruction {
                 buf.extend_from_slice(&config.protocol_liquidation_fee.to_le_bytes());
                 buf.extend_from_slice(&config.protocol_take_rate.to_le_bytes());
                 buf.extend_from_slice(&config.added_borrow_weight_bps.to_le_bytes());
+                buf.extend_from_slice(&(config.reserve_type as u8).to_le_bytes());
                 buf.extend_from_slice(&rate_limiter_config.window_duration.to_le_bytes());
                 buf.extend_from_slice(&rate_limiter_config.max_outflow.to_le_bytes());
             }
@@ -1580,6 +1589,7 @@ mod test {
                         window_duration: rng.gen::<u64>(),
                         max_outflow: rng.gen::<u64>(),
                     },
+                    whitelisted_liquidator: if rng.gen_bool(0.5) { None } else { Some(Pubkey::new_unique()) },
                 };
 
                 let packed = instruction.pack();
@@ -1609,6 +1619,7 @@ mod test {
                         protocol_liquidation_fee: rng.gen::<u8>(),
                         protocol_take_rate: rng.gen::<u8>(),
                         added_borrow_weight_bps: rng.gen::<u64>(),
+                        reserve_type: ReserveType::from_u8(rng.gen::<u8>() % 2).unwrap(),
                     },
                 };
 
@@ -1764,6 +1775,7 @@ mod test {
                         protocol_liquidation_fee: rng.gen::<u8>(),
                         protocol_take_rate: rng.gen::<u8>(),
                         added_borrow_weight_bps: rng.gen::<u64>(),
+                        reserve_type: ReserveType::from_u8(rng.gen::<u8>() % 2).unwrap(),
                     },
                     rate_limiter_config: RateLimiterConfig {
                         window_duration: rng.gen::<u64>(),

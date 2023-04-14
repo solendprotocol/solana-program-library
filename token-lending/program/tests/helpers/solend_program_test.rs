@@ -90,6 +90,7 @@ impl SolendProgramTest {
         add_mint(&mut test, usdc_mint::id(), 6, authority.pubkey());
         add_mint(&mut test, usdt_mint::id(), 6, authority.pubkey());
         add_mint(&mut test, wsol_mint::id(), 9, authority.pubkey());
+        add_mint(&mut test, bonk_mint::id(), 5, authority.pubkey());
 
         let mut context = test.start_with_context().await;
         let rent = context.banks_client.get_rent().await.unwrap();
@@ -102,6 +103,7 @@ impl SolendProgramTest {
                 (usdc_mint::id(), None),
                 (wsol_mint::id(), None),
                 (usdt_mint::id(), None),
+                (bonk_mint::id(), None),
             ]),
         }
     }
@@ -1518,6 +1520,7 @@ pub async fn custom_scenario(
     Vec<Info<Reserve>>,
     Info<Obligation>,
     User,
+    User,
 ) {
     let mut test = SolendProgramTest::start_new().await;
     let mints_and_liquidity_amounts = reserve_args
@@ -1632,7 +1635,27 @@ pub async fn custom_scenario(
             .unwrap();
     }
 
-    (test, lending_market, reserves, obligation, obligation_owner)
+    lending_market
+        .refresh_obligation(&mut test, &obligation)
+        .await
+        .unwrap();
+    let obligation = test.load_account::<Obligation>(obligation.pubkey).await;
+
+    // load accounts into reserve
+    for reserve in reserves.iter_mut() {
+        *reserve = test.load_account(reserve.pubkey).await;
+    }
+
+    let lending_market = test.load_account(lending_market.pubkey).await;
+
+    (
+        test,
+        lending_market,
+        reserves,
+        obligation,
+        obligation_owner,
+        lending_market_owner,
+    )
 }
 
 pub fn find_reserve(reserves: &[Info<Reserve>], mint: &Pubkey) -> Option<Info<Reserve>> {

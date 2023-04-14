@@ -29,7 +29,7 @@ use std::collections::HashSet;
 
 #[tokio::test]
 async fn test_borrow() {
-    let (mut test, lending_market, reserves, obligation, user) = custom_scenario(
+    let (mut test, lending_market, reserves, obligation, user, _) = custom_scenario(
         &[
             ReserveArgs {
                 mint: usdc_mint::id(),
@@ -152,7 +152,7 @@ async fn test_borrow() {
 
 #[tokio::test]
 async fn test_withdraw() {
-    let (mut test, lending_market, reserves, obligation, user) = custom_scenario(
+    let (mut test, lending_market, reserves, obligation, user, _) = custom_scenario(
         &[
             ReserveArgs {
                 mint: usdc_mint::id(),
@@ -298,7 +298,7 @@ async fn test_withdraw() {
 
 #[tokio::test]
 async fn test_liquidation_doesnt_use_smoothed_price() {
-    let (mut test, lending_market, reserves, obligation, user) = custom_scenario(
+    let (mut test, lending_market, reserves, obligation, user, _) = custom_scenario(
         &[
             ReserveArgs {
                 mint: usdc_mint::id(),

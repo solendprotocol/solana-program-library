@@ -198,6 +198,7 @@ mod test {
             oracle_program_id: Pubkey::new_unique(),
             switchboard_oracle_program_id: Pubkey::new_unique(),
             rate_limiter: rand_rate_limiter(),
+            whitelisted_liquidator: if rng.gen_bool(0.5) { None } else { Some(Pubkey::new_unique()) },
         };
 
         let mut packed = vec![0u8; LendingMarket::LEN];
