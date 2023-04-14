@@ -52,6 +52,8 @@ pub struct Obligation {
     /// ie sum(d.deposited_amount * d.liquidation_threshold * d.current_spot_price for d in deposits)
     /// if borrowed_value >= unhealthy_borrow_value, the obligation can be liquidated
     pub unhealthy_borrow_value: Decimal,
+    /// True if the obligation is currently borrowing an isolated tier asset
+    pub borrowing_isolated_asset: bool,
 }
 
 impl Obligation {
@@ -419,6 +421,7 @@ impl Pack for Obligation {
             allowed_borrow_value,
             unhealthy_borrow_value,
             borrowed_value_upper_bound,
+            borrowing_isolated_asset,
             _padding,
             deposits_len,
             borrows_len,
@@ -435,7 +438,8 @@ impl Pack for Obligation {
             16,
             16,
             16,
-            48,
+            1,
+            47,
             1,
             1,
             OBLIGATION_COLLATERAL_LEN + (OBLIGATION_LIQUIDITY_LEN * (MAX_OBLIGATION_RESERVES - 1))
@@ -452,6 +456,8 @@ impl Pack for Obligation {
         pack_decimal(self.borrowed_value_upper_bound, borrowed_value_upper_bound);
         pack_decimal(self.allowed_borrow_value, allowed_borrow_value);
         pack_decimal(self.unhealthy_borrow_value, unhealthy_borrow_value);
+        pack_bool(self.borrowing_isolated_asset, borrowing_isolated_asset);
+
         *deposits_len = u8::try_from(self.deposits.len()).unwrap().to_le_bytes();
         *borrows_len = u8::try_from(self.borrows.len()).unwrap().to_le_bytes();
 
@@ -506,6 +512,7 @@ impl Pack for Obligation {
             allowed_borrow_value,
             unhealthy_borrow_value,
             borrowed_value_upper_bound,
+            borrowing_isolated_asset,
             _padding,
             deposits_len,
             borrows_len,
@@ -522,7 +529,8 @@ impl Pack for Obligation {
             16,
             16,
             16,
-            48,
+            1,
+            47,
             1,
             1,
             OBLIGATION_COLLATERAL_LEN + (OBLIGATION_LIQUIDITY_LEN * (MAX_OBLIGATION_RESERVES - 1))
@@ -586,6 +594,7 @@ impl Pack for Obligation {
             borrowed_value_upper_bound: unpack_decimal(borrowed_value_upper_bound),
             allowed_borrow_value: unpack_decimal(allowed_borrow_value),
             unhealthy_borrow_value: unpack_decimal(unhealthy_borrow_value),
+            borrowing_isolated_asset: unpack_bool(borrowing_isolated_asset)?,
         })
     }
 }
@@ -632,6 +641,7 @@ mod test {
                 borrowed_value_upper_bound: rand_decimal(),
                 allowed_borrow_value: rand_decimal(),
                 unhealthy_borrow_value: rand_decimal(),
+                borrowing_isolated_asset: rng.gen(),
             };
 
             let mut packed = [0u8; OBLIGATION_LEN];

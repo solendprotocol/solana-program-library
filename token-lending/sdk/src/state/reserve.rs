@@ -4,6 +4,8 @@ use crate::{
     math::{Decimal, Rate, TryAdd, TryDiv, TryMul, TrySub},
 };
 use arrayref::{array_mut_ref, array_ref, array_refs, mut_array_refs};
+use num_derive::FromPrimitive;
+use num_traits::FromPrimitive;
 use solana_program::{
     clock::Slot,
     entrypoint::ProgramResult,
@@ -779,6 +781,73 @@ pub struct ReserveConfig {
     /// Added borrow weight in basis points. THIS FIELD SHOULD NEVER BE USED DIRECTLY. Always use
     /// borrow_weight()
     pub added_borrow_weight_bps: u64,
+    /// Type of the reserve (Regular, Isolated)
+    pub reserve_type: ReserveType,
+}
+
+/// validates reserve configs
+#[inline(always)]
+pub fn validate_reserve_config(config: ReserveConfig) -> ProgramResult {
+    if config.optimal_utilization_rate > 100 {
+        msg!("Optimal utilization rate must be in range [0, 100]");
+        return Err(LendingError::InvalidConfig.into());
+    }
+    if config.loan_to_value_ratio >= 100 {
+        msg!("Loan to value ratio must be in range [0, 100)");
+        return Err(LendingError::InvalidConfig.into());
+    }
+    if config.liquidation_bonus > 100 {
+        msg!("Liquidation bonus must be in range [0, 100]");
+        return Err(LendingError::InvalidConfig.into());
+    }
+    if config.liquidation_threshold < config.loan_to_value_ratio
+        || config.liquidation_threshold > 100
+    {
+        msg!("Liquidation threshold must be in range [LTV, 100]");
+        return Err(LendingError::InvalidConfig.into());
+    }
+    if config.optimal_borrow_rate < config.min_borrow_rate {
+        msg!("Optimal borrow rate must be >= min borrow rate");
+        return Err(LendingError::InvalidConfig.into());
+    }
+    if config.optimal_borrow_rate > config.max_borrow_rate {
+        msg!("Optimal borrow rate must be <= max borrow rate");
+        return Err(LendingError::InvalidConfig.into());
+    }
+    if config.fees.borrow_fee_wad >= WAD {
+        msg!("Borrow fee must be in range [0, 1_000_000_000_000_000_000)");
+        return Err(LendingError::InvalidConfig.into());
+    }
+    if config.fees.host_fee_percentage > 100 {
+        msg!("Host fee percentage must be in range [0, 100]");
+        return Err(LendingError::InvalidConfig.into());
+    }
+    if config.protocol_liquidation_fee > 100 {
+        msg!("Protocol liquidation fee must be in range [0, 100]");
+        return Err(LendingError::InvalidConfig.into());
+    }
+    if config.protocol_take_rate > 100 {
+        msg!("Protocol take rate must be in range [0, 100]");
+        return Err(LendingError::InvalidConfig.into());
+    }
+
+    if config.reserve_type == ReserveType::Isolated
+        && !(config.loan_to_value_ratio == 0 && config.liquidation_threshold == 0)
+    {
+        msg!("open/close LTV must be 0 for isolated reserves");
+        return Err(LendingError::InvalidConfig.into());
+    }
+    Ok(())
+}
+
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, FromPrimitive)]
+/// Asset Type of the reserve
+pub enum ReserveType {
+    #[default]
+    /// this asset can be used as collateral
+    Regular = 0,
+    /// this asset cannot be used as collateral and can only be borrowed in isolation
+    Isolated = 1,
 }
 
 /// Additional fee information on a reserve
@@ -938,6 +1007,7 @@ impl Pack for Reserve {
             rate_limiter,
             config_added_borrow_weight_bps,
             liquidity_smoothed_market_price,
+            config_asset_type,
             _padding,
         ) = mut_array_refs![
             output,
@@ -976,7 +1046,8 @@ impl Pack for Reserve {
             RATE_LIMITER_LEN,
             8,
             16,
-            150
+            1,
+            149
         ];
 
         // reserve
@@ -1032,6 +1103,7 @@ impl Pack for Reserve {
         config_fee_receiver.copy_from_slice(self.config.fee_receiver.as_ref());
         *config_protocol_liquidation_fee = self.config.protocol_liquidation_fee.to_le_bytes();
         *config_protocol_take_rate = self.config.protocol_take_rate.to_le_bytes();
+        *config_asset_type = (self.config.reserve_type as u8).to_le_bytes();
 
         self.rate_limiter.pack_into_slice(rate_limiter);
 
@@ -1078,6 +1150,7 @@ impl Pack for Reserve {
             rate_limiter,
             config_added_borrow_weight_bps,
             liquidity_smoothed_market_price,
+            config_asset_type,
             _padding,
         ) = array_refs![
             input,
@@ -1116,7 +1189,8 @@ impl Pack for Reserve {
             RATE_LIMITER_LEN,
             8,
             16,
-            150
+            1,
+            149
         ];
 
         let version = u8::from_le_bytes(*version);
@@ -1173,6 +1247,7 @@ impl Pack for Reserve {
                 protocol_liquidation_fee: u8::from_le_bytes(*config_protocol_liquidation_fee),
                 protocol_take_rate: u8::from_le_bytes(*config_protocol_take_rate),
                 added_borrow_weight_bps: u64::from_le_bytes(*config_added_borrow_weight_bps),
+                reserve_type: ReserveType::from_u8(config_asset_type[0]).unwrap(),
             },
             rate_limiter: RateLimiter::unpack_from_slice(rate_limiter)?,
         })
@@ -1241,6 +1316,7 @@ mod test {
                     protocol_liquidation_fee: rng.gen(),
                     protocol_take_rate: rng.gen(),
                     added_borrow_weight_bps: rng.gen(),
+                    reserve_type: ReserveType::from_u8(rng.gen::<u8>() % 2).unwrap(),
                 },
                 rate_limiter: rand_rate_limiter(),
             };
@@ -1621,6 +1697,49 @@ mod test {
 
         assert_eq!(total_fee, 10); // 1% of 1000
         assert_eq!(host_fee, 0); // 0 host fee
+    }
+
+    #[derive(Debug, Clone)]
+    struct ReserveConfigTestCase {
+        config: ReserveConfig,
+        result: Result<(), ProgramError>,
+    }
+
+    fn reserve_config_test_cases() -> impl Strategy<Value = ReserveConfigTestCase> {
+        prop_oneof![
+            Just(ReserveConfigTestCase {
+                config: ReserveConfig {
+                    reserve_type: ReserveType::Isolated,
+                    loan_to_value_ratio: 1,
+                    ..ReserveConfig::default()
+                },
+                result: Err(LendingError::InvalidConfig.into()),
+            }),
+            Just(ReserveConfigTestCase {
+                config: ReserveConfig {
+                    reserve_type: ReserveType::Isolated,
+                    liquidation_threshold: 1,
+                    ..ReserveConfig::default()
+                },
+                result: Err(LendingError::InvalidConfig.into()),
+            }),
+            Just(ReserveConfigTestCase {
+                config: ReserveConfig {
+                    reserve_type: ReserveType::Isolated,
+                    loan_to_value_ratio: 0,
+                    liquidation_threshold: 0,
+                    ..ReserveConfig::default()
+                },
+                result: Ok(()),
+            })
+        ]
+    }
+
+    proptest! {
+        #[test]
+        fn test_validate_reserve_config(test_case in reserve_config_test_cases()) {
+            assert_eq!(validate_reserve_config(test_case.config), test_case.result);
+        }
     }
 
     #[derive(Debug, Clone)]
