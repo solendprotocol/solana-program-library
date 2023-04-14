@@ -24,10 +24,10 @@ use solana_sdk::{
 };
 use solend_program::{
     instruction::{
-        deposit_obligation_collateral, deposit_reserve_liquidity, init_lending_market,
-        init_reserve, liquidate_obligation_and_redeem_reserve_collateral, redeem_fees,
-        redeem_reserve_collateral, repay_obligation_liquidity, set_lending_market_owner_and_config,
-        withdraw_obligation_collateral,
+        deposit_obligation_collateral, deposit_reserve_liquidity, forgive_debt,
+        init_lending_market, init_reserve, liquidate_obligation_and_redeem_reserve_collateral,
+        redeem_fees, redeem_reserve_collateral, repay_obligation_liquidity,
+        set_lending_market_owner_and_config, withdraw_obligation_collateral,
     },
     processor::process_instruction,
     state::{LendingMarket, Reserve, ReserveConfig},
@@ -1126,6 +1126,33 @@ impl Info<LendingMarket> {
         test.process_transaction(&instructions, Some(&[&lending_market_owner.keypair]))
             .await
     }
+
+    pub async fn forgive_debt(
+        &self,
+        test: &mut SolendProgramTest,
+        obligation: &Info<Obligation>,
+        lending_market_owner: &User,
+        reserve: &Info<Reserve>,
+        liquidity_amount: u64,
+    ) -> Result<(), BanksClientError> {
+        let obligation = test.load_account::<Obligation>(obligation.pubkey).await;
+
+        let mut instructions = self
+            .build_refresh_instructions(test, &obligation, None)
+            .await;
+
+        instructions.push(forgive_debt(
+            solend_program::id(),
+            liquidity_amount,
+            reserve.pubkey,
+            obligation.pubkey,
+            self.pubkey,
+            lending_market_owner.keypair.pubkey(),
+        ));
+
+        test.process_transaction(&instructions, Some(&[&lending_market_owner.keypair]))
+            .await
+    }
 }
 
 /// Track token balance changes across transactions.
@@ -1509,13 +1536,13 @@ pub struct ObligationArgs {
 
 pub async fn custom_scenario(
     reserve_args: &[ReserveArgs],
-    obligation_args: &ObligationArgs,
+    obligation_args: &[ObligationArgs],
 ) -> (
     SolendProgramTest,
     Info<LendingMarket>,
     Vec<Info<Reserve>>,
-    Info<Obligation>,
-    User,
+    Vec<Info<Obligation>>,
+    Vec<User>,
     User,
 ) {
     let mut test = SolendProgramTest::start_new().await;
@@ -1532,18 +1559,27 @@ pub async fn custom_scenario(
         .await
         .unwrap();
 
-    let deposits_and_balances = obligation_args
-        .deposits
-        .iter()
-        .map(|(mint, amount)| (mint, *amount))
-        .collect::<Vec<_>>();
+    let mut obligation_owners = vec![];
+    let mut obligations = vec![];
+    for obligation_arg in obligation_args {
+        let obligation_owner = User::new_with_balances(
+            &mut test,
+            &obligation_arg
+                .deposits
+                .iter()
+                .map(|(mint, amount)| (mint, *amount))
+                .collect::<Vec<_>>(),
+        )
+        .await;
 
-    let mut obligation_owner = User::new_with_balances(&mut test, &deposits_and_balances).await;
+        let obligation = lending_market
+            .init_obligation(&mut test, Keypair::new(), &obligation_owner)
+            .await
+            .unwrap();
 
-    let obligation = lending_market
-        .init_obligation(&mut test, Keypair::new(), &obligation_owner)
-        .await
-        .unwrap();
+        obligation_owners.push(obligation_owner);
+        obligations.push(obligation);
+    }
 
     test.advance_clock_by_slots(999).await;
 
@@ -1566,76 +1602,81 @@ pub async fn custom_scenario(
             .await
             .unwrap();
 
-        let user = User::new_with_balances(
-            &mut test,
-            &[
-                (&reserve_arg.mint, reserve_arg.liquidity_amount),
-                (&reserve.account.collateral.mint_pubkey, 0),
-            ],
-        )
-        .await;
-
-        lending_market
-            .deposit(&mut test, &reserve, &user, reserve_arg.liquidity_amount)
-            .await
-            .unwrap();
-
-        obligation_owner
-            .create_token_account(&reserve_arg.mint, &mut test)
-            .await;
+        for obligation_owner in obligation_owners.iter_mut() {
+            obligation_owner
+                .create_token_account(&reserve_arg.mint, &mut test)
+                .await;
+        }
 
         reserves.push(reserve);
     }
 
-    for (mint, amount) in obligation_args.deposits.iter() {
-        let reserve = reserves
-            .iter()
-            .find(|reserve| reserve.account.liquidity.mint_pubkey == *mint)
-            .unwrap();
+    for (i, obligation_arg) in obligation_args.iter().enumerate() {
+        for (mint, amount) in obligation_arg.deposits.iter() {
+            let reserve = reserves
+                .iter()
+                .find(|reserve| reserve.account.liquidity.mint_pubkey == *mint)
+                .unwrap();
 
-        obligation_owner
-            .create_token_account(&reserve.account.collateral.mint_pubkey, &mut test)
-            .await;
+            obligation_owners[i]
+                .create_token_account(&reserve.account.liquidity.mint_pubkey, &mut test)
+                .await;
 
-        lending_market
-            .deposit_reserve_liquidity_and_obligation_collateral(
-                &mut test,
-                reserve,
-                &obligation,
-                &obligation_owner,
-                *amount,
-            )
-            .await
-            .unwrap();
+            obligation_owners[i]
+                .create_token_account(&reserve.account.collateral.mint_pubkey, &mut test)
+                .await;
+
+            lending_market
+                .deposit_reserve_liquidity_and_obligation_collateral(
+                    &mut test,
+                    reserve,
+                    &obligations[i],
+                    &obligation_owners[i],
+                    *amount,
+                )
+                .await
+                .unwrap();
+        }
     }
 
-    for (mint, amount) in obligation_args.borrows.iter() {
-        let reserve = reserves
-            .iter()
-            .find(|reserve| reserve.account.liquidity.mint_pubkey == *mint)
-            .unwrap();
+    for (i, obligation_arg) in obligation_args.iter().enumerate() {
+        for (mint, amount) in obligation_arg.borrows.iter() {
+            let reserve = reserves
+                .iter()
+                .find(|reserve| reserve.account.liquidity.mint_pubkey == *mint)
+                .unwrap();
 
-        obligation_owner.create_token_account(mint, &mut test).await;
-        let fee_receiver = User::new_with_balances(&mut test, &[(mint, 0)]).await;
+            obligation_owners[i]
+                .create_token_account(mint, &mut test)
+                .await;
+            obligation_owners[i]
+                .create_token_account(&reserve.account.collateral.mint_pubkey, &mut test)
+                .await;
 
-        lending_market
-            .borrow_obligation_liquidity(
-                &mut test,
-                reserve,
-                &obligation,
-                &obligation_owner,
-                &fee_receiver.get_account(mint).unwrap(),
-                *amount,
-            )
-            .await
-            .unwrap();
+            let fee_receiver = User::new_with_balances(&mut test, &[(mint, 0)]).await;
+
+            lending_market
+                .borrow_obligation_liquidity(
+                    &mut test,
+                    reserve,
+                    &obligations[i],
+                    &obligation_owners[i],
+                    &fee_receiver.get_account(mint).unwrap(),
+                    *amount,
+                )
+                .await
+                .unwrap();
+        }
     }
 
-    lending_market
-        .refresh_obligation(&mut test, &obligation)
-        .await
-        .unwrap();
-    let obligation = test.load_account::<Obligation>(obligation.pubkey).await;
+    for obligation in obligations.iter_mut() {
+        lending_market
+            .refresh_obligation(&mut test, obligation)
+            .await
+            .unwrap();
+
+        *obligation = test.load_account::<Obligation>(obligation.pubkey).await;
+    }
 
     // load accounts into reserve
     for reserve in reserves.iter_mut() {
@@ -1648,8 +1689,8 @@ pub async fn custom_scenario(
         test,
         lending_market,
         reserves,
-        obligation,
-        obligation_owner,
+        obligations,
+        obligation_owners,
         lending_market_owner,
     )
 }

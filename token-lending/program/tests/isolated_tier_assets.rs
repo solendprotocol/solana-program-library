@@ -24,7 +24,7 @@ use solana_program_test::*;
 
 #[tokio::test]
 async fn test_refresh_obligation() {
-    let (mut test, lending_market, reserves, obligation, user, _) = custom_scenario(
+    let (mut test, lending_market, reserves, obligations, users, _) = custom_scenario(
         &[
             ReserveArgs {
                 mint: usdc_mint::id(),
@@ -63,19 +63,19 @@ async fn test_refresh_obligation() {
                 },
             },
         ],
-        &ObligationArgs {
+        &[ObligationArgs {
             deposits: vec![(usdc_mint::id(), 100 * FRACTIONAL_TO_USDC)],
             borrows: vec![],
-        },
+        }],
     )
     .await;
 
     lending_market
-        .refresh_obligation(&mut test, &obligation)
+        .refresh_obligation(&mut test, &obligations[0])
         .await
         .unwrap();
 
-    let obligation = test.load_account::<Obligation>(obligation.pubkey).await;
+    let obligation = test.load_account::<Obligation>(obligations[0].pubkey).await;
     assert!(!obligation.account.borrowing_isolated_asset);
 
     test.advance_clock_by_slots(1).await;
@@ -90,8 +90,8 @@ async fn test_refresh_obligation() {
         .borrow_obligation_liquidity(
             &mut test,
             wsol_reserve,
-            &obligation,
-            &user,
+            &obligations[0],
+            &users[0],
             &NULL_PUBKEY,
             LAMPORTS_PER_SOL,
         )
@@ -99,11 +99,11 @@ async fn test_refresh_obligation() {
         .unwrap();
 
     lending_market
-        .refresh_obligation(&mut test, &obligation)
+        .refresh_obligation(&mut test, &obligations[0])
         .await
         .unwrap();
 
-    let obligation_post = test.load_account::<Obligation>(obligation.pubkey).await;
+    let obligation_post = test.load_account::<Obligation>(obligations[0].pubkey).await;
 
     assert_eq!(
         obligation_post.account,
@@ -121,14 +121,14 @@ async fn test_refresh_obligation() {
             borrowed_value: Decimal::from(10u64),
             borrowed_value_upper_bound: Decimal::from(10u64),
             borrowing_isolated_asset: true,
-            ..obligation.account
+            ..obligations[0].account.clone()
         }
     );
 }
 
 #[tokio::test]
 async fn borrow_isolated_asset() {
-    let (mut test, lending_market, reserves, obligation, user, _) = custom_scenario(
+    let (mut test, lending_market, reserves, obligations, users, _) = custom_scenario(
         &[
             ReserveArgs {
                 mint: usdc_mint::id(),
@@ -164,10 +164,10 @@ async fn borrow_isolated_asset() {
                 },
             },
         ],
-        &ObligationArgs {
+        &[ObligationArgs {
             deposits: vec![(usdc_mint::id(), 100 * FRACTIONAL_TO_USDC)],
             borrows: vec![],
-        },
+        }],
     )
     .await;
 
@@ -180,8 +180,8 @@ async fn borrow_isolated_asset() {
         .borrow_obligation_liquidity(
             &mut test,
             bonk_reserve,
-            &obligation,
-            &user,
+            &obligations[0],
+            &users[0],
             &NULL_PUBKEY,
             10,
         )
@@ -193,8 +193,8 @@ async fn borrow_isolated_asset() {
         .borrow_obligation_liquidity(
             &mut test,
             bonk_reserve,
-            &obligation,
-            &user,
+            &obligations[0],
+            &users[0],
             &NULL_PUBKEY,
             u64::MAX,
         )
@@ -204,7 +204,7 @@ async fn borrow_isolated_asset() {
 
 #[tokio::test]
 async fn borrow_isolated_asset_invalid() {
-    let (mut test, lending_market, reserves, obligation, user, _) = custom_scenario(
+    let (mut test, lending_market, reserves, obligations, users, _) = custom_scenario(
         &[
             ReserveArgs {
                 mint: usdc_mint::id(),
@@ -260,10 +260,10 @@ async fn borrow_isolated_asset_invalid() {
                 },
             },
         ],
-        &ObligationArgs {
+        &[ObligationArgs {
             deposits: vec![(usdc_mint::id(), 100 * FRACTIONAL_TO_USDC)],
             borrows: vec![(wsol_mint::id(), 1)],
-        },
+        }],
     )
     .await;
 
@@ -274,7 +274,14 @@ async fn borrow_isolated_asset_invalid() {
         .unwrap();
 
     let err = lending_market
-        .borrow_obligation_liquidity(&mut test, bonk_reserve, &obligation, &user, &NULL_PUBKEY, 1)
+        .borrow_obligation_liquidity(
+            &mut test,
+            bonk_reserve,
+            &obligations[0],
+            &users[0],
+            &NULL_PUBKEY,
+            1,
+        )
         .await
         .unwrap_err()
         .unwrap();
@@ -289,7 +296,7 @@ async fn borrow_isolated_asset_invalid() {
 
 #[tokio::test]
 async fn borrow_regular_asset_invalid() {
-    let (mut test, lending_market, reserves, obligation, user, _) = custom_scenario(
+    let (mut test, lending_market, reserves, obligations, users, _) = custom_scenario(
         &[
             ReserveArgs {
                 mint: usdc_mint::id(),
@@ -345,10 +352,10 @@ async fn borrow_regular_asset_invalid() {
                 },
             },
         ],
-        &ObligationArgs {
+        &[ObligationArgs {
             deposits: vec![(usdc_mint::id(), 100 * FRACTIONAL_TO_USDC)],
             borrows: vec![(bonk_mint::id(), 1)],
-        },
+        }],
     )
     .await;
 
@@ -363,8 +370,8 @@ async fn borrow_regular_asset_invalid() {
         .borrow_obligation_liquidity(
             &mut test,
             wsol_reserve,
-            &obligation,
-            &user,
+            &obligations[0],
+            &users[0],
             &NULL_PUBKEY,
             LAMPORTS_PER_SOL,
         )
@@ -383,7 +390,7 @@ async fn borrow_regular_asset_invalid() {
 
 #[tokio::test]
 async fn invalid_borrow_due_to_reserve_config_change() {
-    let (mut test, lending_market, reserves, obligation, user, lending_market_owner) =
+    let (mut test, lending_market, reserves, obligations, users, lending_market_owner) =
         custom_scenario(
             &[
                 ReserveArgs {
@@ -440,10 +447,10 @@ async fn invalid_borrow_due_to_reserve_config_change() {
                     },
                 },
             ],
-            &ObligationArgs {
+            &[ObligationArgs {
                 deposits: vec![(usdc_mint::id(), 100 * FRACTIONAL_TO_USDC)],
                 borrows: vec![(bonk_mint::id(), 1), (wsol_mint::id(), LAMPORTS_PER_SOL)],
-            },
+            }],
         )
         .await;
 
@@ -471,7 +478,14 @@ async fn invalid_borrow_due_to_reserve_config_change() {
     // borrow 1 more unit of BONK. this should fail because the reserve is now isolated but the
     // obligation has two borrows
     let err = lending_market
-        .borrow_obligation_liquidity(&mut test, bonk_reserve, &obligation, &user, &NULL_PUBKEY, 1)
+        .borrow_obligation_liquidity(
+            &mut test,
+            bonk_reserve,
+            &obligations[0],
+            &users[0],
+            &NULL_PUBKEY,
+            1,
+        )
         .await
         .unwrap_err()
         .unwrap();
