@@ -2682,10 +2682,23 @@ fn process_forgive_debt(
         return Err(LendingError::InvalidAccountInput.into());
     }
 
+    // in the case where the entire reserve got rugged for whatever reason, we still don't
+    // want to forgive the entire reserve's supply because that'll mess with the ctoken ratio
+    // and cause overflow/div by zero issues in other places. therefore, we want to make sure the ctoken
+    // ratio is >= 1% after forgiveness.
+    //
+    // new ctoken ratio = (total_liquidity_supply - forgive_amount) / collateral_mint_supply >= 0.01
+    // -> forgive_amount <= (total_liquidity_supply - collateral_mint_supply * 0.01)
+    const MIN_CTOKEN_RATIO_PERCENT: u8 = 1;
+    let max_forgive_amount = reserve.liquidity.total_supply()?.try_sub(
+        Decimal::from(reserve.collateral.mint_total_supply)
+            .try_mul(Decimal::from_percent(MIN_CTOKEN_RATIO_PERCENT))?,
+    )?;
+
     let (liquidity, liquidity_index) = obligation.find_liquidity_in_borrows(*reserve_info.key)?;
     let forgive_amount = min(
         Decimal::from(liquidity_amount),
-        liquidity.borrowed_amount_wads,
+        min(liquidity.borrowed_amount_wads, max_forgive_amount),
     );
 
     reserve.liquidity.forgive_debt(forgive_amount)?;
