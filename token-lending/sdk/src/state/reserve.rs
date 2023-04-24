@@ -307,6 +307,52 @@ impl Reserve {
         })
     }
 
+    /// Calculate bonus as a percentage
+    pub fn calculate_bonus(&self, obligation: &Obligation) -> Result<Decimal, ProgramError> {
+        if obligation.borrowed_value < obligation.unhealthy_borrow_value {
+            msg!("Obligation is healthy so a liquidation bonus can't be calculated");
+            return Err(LendingError::ObligationHealthy.into());
+        }
+
+        // could also return the average of liquidation bonus and max liquidation bonus here, but
+        // i don't think it matters
+        if obligation.unhealthy_borrow_value == obligation.super_unhealthy_borrow_value {
+            return Ok(Decimal::from_percent(self.config.liquidation_bonus));
+        }
+
+        // safety:
+        // - super_unhealthy_borrow value > unhealthy borrow value because we verify
+        // the ge condition in Reserve::unpack and then verify that they're not equal from check
+        // above
+        // - borrowed_value is >= unhealthy_borrow_value bc of the check above
+        // => weight is always between 0 and 1
+        let weight = min(
+            obligation
+                .borrowed_value
+                .try_sub(obligation.unhealthy_borrow_value)?
+                .try_div(
+                    obligation
+                        .super_unhealthy_borrow_value
+                        .try_sub(obligation.unhealthy_borrow_value)?,
+                )?,
+            Decimal::one(),
+        );
+
+        let liquidation_bonus = Decimal::from_percent(self.config.liquidation_bonus);
+        let max_liquidation_bonus = Decimal::from_percent(self.config.max_liquidation_bonus);
+
+        let bonus = liquidation_bonus
+            .try_add(weight.try_mul(max_liquidation_bonus.try_sub(liquidation_bonus)?)?)?;
+
+        // paranoia checks
+        if bonus > max_liquidation_bonus {
+            msg!("Liquidation bonus is greater than maximum liquidation bonus");
+            return Err(LendingError::MathOverflow.into());
+        }
+
+        Ok(bonus)
+    }
+
     /// Liquidate some or all of an unhealthy obligation
     pub fn calculate_liquidation(
         &self,
@@ -315,7 +361,7 @@ impl Reserve {
         liquidity: &ObligationLiquidity,
         collateral: &ObligationCollateral,
     ) -> Result<CalculateLiquidationResult, ProgramError> {
-        let bonus_rate = Rate::from_percent(self.config.liquidation_bonus).try_add(Rate::one())?;
+        let bonus_rate = self.calculate_bonus(obligation)?.try_add(Decimal::one())?;
 
         let max_amount = if amount_to_liquidate == u64::MAX {
             liquidity.borrowed_amount_wads
@@ -786,10 +832,14 @@ pub struct ReserveConfig {
     /// Target ratio of the value of borrows to deposits, as a percentage
     /// 0 if use as collateral is disabled
     pub loan_to_value_ratio: u8,
-    /// Bonus a liquidator gets when repaying part of an unhealthy obligation, as a percentage
+    /// The minimum bonus a liquidator gets when repaying part of an unhealthy obligation, as a percentage
     pub liquidation_bonus: u8,
+    /// The maximum bonus a liquidator gets when repaying part of an unhealthy obligation, as a percentage
+    pub max_liquidation_bonus: u8,
     /// Loan to value ratio at which an obligation can be liquidated, as a percentage
     pub liquidation_threshold: u8,
+    /// Loan to value ratio at which the obligation can be liquidated for the maximum bonus
+    pub max_liquidation_threshold: u8,
     /// Min borrow APY
     pub min_borrow_rate: u8,
     /// Optimal (utilization) borrow APY
@@ -838,10 +888,21 @@ pub fn validate_reserve_config(config: ReserveConfig) -> ProgramResult {
         msg!("Liquidation bonus must be in range [0, 100]");
         return Err(LendingError::InvalidConfig.into());
     }
+    if config.max_liquidation_bonus < config.liquidation_bonus || config.max_liquidation_bonus > 100
+    {
+        msg!("Max liquidation bonus must be in range [liquidation_bonus, 100]");
+        return Err(LendingError::InvalidConfig.into());
+    }
     if config.liquidation_threshold < config.loan_to_value_ratio
         || config.liquidation_threshold > 100
     {
         msg!("Liquidation threshold must be in range [LTV, 100]");
+        return Err(LendingError::InvalidConfig.into());
+    }
+    if config.max_liquidation_threshold < config.liquidation_threshold
+        || config.max_liquidation_threshold > 100
+    {
+        msg!("Max liquidation threshold must be in range [liquidation threshold, 100]");
         return Err(LendingError::InvalidConfig.into());
     }
     if config.optimal_borrow_rate < config.min_borrow_rate {
@@ -1052,6 +1113,8 @@ impl Pack for Reserve {
             config_asset_type,
             config_max_utilization_rate,
             config_super_max_borrow_rate,
+            config_max_liquidation_bonus,
+            config_max_liquidation_threshold,
             _padding,
         ) = mut_array_refs![
             output,
@@ -1093,7 +1156,9 @@ impl Pack for Reserve {
             1,
             1,
             8,
-            140
+            1,
+            1,
+            138
         ];
 
         // reserve
@@ -1156,6 +1221,8 @@ impl Pack for Reserve {
         self.rate_limiter.pack_into_slice(rate_limiter);
 
         *config_added_borrow_weight_bps = self.config.added_borrow_weight_bps.to_le_bytes();
+        *config_max_liquidation_bonus = self.config.max_liquidation_bonus.to_le_bytes();
+        *config_max_liquidation_threshold = self.config.max_liquidation_threshold.to_le_bytes();
     }
 
     /// Unpacks a byte buffer into a [ReserveInfo](struct.ReserveInfo.html).
@@ -1201,6 +1268,8 @@ impl Pack for Reserve {
             config_asset_type,
             config_max_utilization_rate,
             config_super_max_borrow_rate,
+            config_max_liquidation_bonus,
+            config_max_liquidation_threshold,
             _padding,
         ) = array_refs![
             input,
@@ -1242,7 +1311,9 @@ impl Pack for Reserve {
             1,
             1,
             8,
-            140
+            1,
+            1,
+            138
         ];
 
         let version = u8::from_le_bytes(*version);
@@ -1253,6 +1324,18 @@ impl Pack for Reserve {
 
         let optimal_utilization_rate = u8::from_le_bytes(*config_optimal_utilization_rate);
         let max_borrow_rate = u8::from_le_bytes(*config_max_borrow_rate);
+
+        // on program upgrade, the max_* values are zero, so we need to safely account for that.
+        let liquidation_bonus = u8::from_le_bytes(*config_liquidation_bonus);
+        let max_liquidation_bonus = max(
+            liquidation_bonus,
+            u8::from_le_bytes(*config_max_liquidation_bonus),
+        );
+        let liquidation_threshold = u8::from_le_bytes(*config_liquidation_threshold);
+        let max_liquidation_threshold = max(
+            liquidation_threshold,
+            u8::from_le_bytes(*config_max_liquidation_threshold),
+        );
 
         Ok(Self {
             version,
@@ -1290,8 +1373,10 @@ impl Pack for Reserve {
                     u8::from_le_bytes(*config_max_utilization_rate),
                 ),
                 loan_to_value_ratio: u8::from_le_bytes(*config_loan_to_value_ratio),
-                liquidation_bonus: u8::from_le_bytes(*config_liquidation_bonus),
-                liquidation_threshold: u8::from_le_bytes(*config_liquidation_threshold),
+                liquidation_bonus,
+                max_liquidation_bonus,
+                liquidation_threshold,
+                max_liquidation_threshold,
                 min_borrow_rate: u8::from_le_bytes(*config_min_borrow_rate),
                 optimal_borrow_rate: u8::from_le_bytes(*config_optimal_borrow_rate),
                 max_borrow_rate,
@@ -1336,6 +1421,9 @@ mod test {
         let mut rng = rand::thread_rng();
         for _ in 0..100 {
             let optimal_utilization_rate = rng.gen();
+            let liquidation_bonus: u8 = rng.gen();
+            let liquidation_threshold: u8 = rng.gen();
+
             let reserve = Reserve {
                 version: PROGRAM_VERSION,
                 last_update: LastUpdate {
@@ -1365,8 +1453,10 @@ mod test {
                     optimal_utilization_rate,
                     max_utilization_rate: max(optimal_utilization_rate, rng.gen()),
                     loan_to_value_ratio: rng.gen(),
-                    liquidation_bonus: rng.gen(),
-                    liquidation_threshold: rng.gen(),
+                    liquidation_bonus,
+                    max_liquidation_bonus: max(liquidation_bonus, rng.gen()),
+                    liquidation_threshold,
+                    max_liquidation_threshold: max(liquidation_threshold, rng.gen()),
                     min_borrow_rate: rng.gen(),
                     optimal_borrow_rate: rng.gen(),
                     max_borrow_rate: rng.gen(),
@@ -1864,6 +1954,98 @@ mod test {
     }
 
     #[derive(Debug, Clone)]
+    struct LiquidationBonusTestCase {
+        borrowed_value: Decimal,
+        unhealthy_borrow_value: Decimal,
+        super_unhealthy_borrow_value: Decimal,
+
+        liquidation_bonus: u8,
+        max_liquidation_bonus: u8,
+
+        result: Result<Decimal, ProgramError>,
+    }
+
+    fn calculate_bonus_test_cases() -> impl Strategy<Value = LiquidationBonusTestCase> {
+        prop_oneof![
+            // healthy obligation
+            Just(LiquidationBonusTestCase {
+                borrowed_value: Decimal::from(100u64),
+                unhealthy_borrow_value: Decimal::from(101u64),
+                super_unhealthy_borrow_value: Decimal::from(150u64),
+                liquidation_bonus: 10,
+                max_liquidation_bonus: 20,
+                result: Err(LendingError::ObligationHealthy.into()),
+            }),
+            Just(LiquidationBonusTestCase {
+                borrowed_value: Decimal::from(100u64),
+                unhealthy_borrow_value: Decimal::from(100u64),
+                super_unhealthy_borrow_value: Decimal::from(150u64),
+                liquidation_bonus: 10,
+                max_liquidation_bonus: 20,
+                result: Ok(Decimal::from_percent(10))
+            }),
+            Just(LiquidationBonusTestCase {
+                borrowed_value: Decimal::from(100u64),
+                unhealthy_borrow_value: Decimal::from(50u64),
+                super_unhealthy_borrow_value: Decimal::from(150u64),
+                liquidation_bonus: 10,
+                max_liquidation_bonus: 20,
+                result: Ok(Decimal::from_percent(15))
+            }),
+            Just(LiquidationBonusTestCase {
+                borrowed_value: Decimal::from(100u64),
+                unhealthy_borrow_value: Decimal::from(50u64),
+                super_unhealthy_borrow_value: Decimal::from(100u64),
+                liquidation_bonus: 10,
+                max_liquidation_bonus: 20,
+                result: Ok(Decimal::from_percent(20))
+            }),
+            Just(LiquidationBonusTestCase {
+                borrowed_value: Decimal::from(200u64),
+                unhealthy_borrow_value: Decimal::from(50u64),
+                super_unhealthy_borrow_value: Decimal::from(100u64),
+                liquidation_bonus: 10,
+                max_liquidation_bonus: 20,
+                result: Ok(Decimal::from_percent(20))
+            }),
+            Just(LiquidationBonusTestCase {
+                borrowed_value: Decimal::from(60u64),
+                unhealthy_borrow_value: Decimal::from(50u64),
+                super_unhealthy_borrow_value: Decimal::from(50u64),
+                liquidation_bonus: 10,
+                max_liquidation_bonus: 20,
+                result: Ok(Decimal::from_percent(10))
+            }),
+        ]
+    }
+
+    proptest! {
+        #[test]
+        fn calculate_bonus(test_case in calculate_bonus_test_cases()) {
+            let reserve = Reserve {
+                config: ReserveConfig {
+                    liquidation_bonus: test_case.liquidation_bonus,
+                    max_liquidation_bonus: test_case.max_liquidation_bonus,
+                    ..ReserveConfig::default()
+                },
+                ..Reserve::default()
+            };
+
+            let obligation = Obligation {
+                borrowed_value: test_case.borrowed_value,
+                unhealthy_borrow_value: test_case.unhealthy_borrow_value,
+                super_unhealthy_borrow_value: test_case.super_unhealthy_borrow_value,
+                ..Obligation::default()
+            };
+
+            assert_eq!(
+                reserve.calculate_bonus(&obligation),
+                test_case.result
+            );
+        }
+    }
+
+    #[derive(Debug, Clone)]
     struct LiquidationTestCase {
         deposit_amount: u64,
         deposit_market_value: Decimal,
@@ -2002,6 +2184,7 @@ mod test {
             let reserve = Reserve {
                 config: ReserveConfig {
                     liquidation_bonus: 5,
+                    max_liquidation_bonus: 5,
                     ..ReserveConfig::default()
                 },
                 ..Reserve::default()
@@ -2020,6 +2203,8 @@ mod test {
                     market_value: test_case.borrow_market_value,
                 }],
                 borrowed_value: test_case.borrow_market_value,
+                unhealthy_borrow_value: test_case.borrow_market_value,
+                super_unhealthy_borrow_value: test_case.borrow_market_value,
                 ..Obligation::default()
             };
 

@@ -914,6 +914,7 @@ fn process_refresh_obligation(program_id: &Pubkey, accounts: &[AccountInfo]) -> 
     let mut borrowed_value_upper_bound = Decimal::zero();
     let mut allowed_borrow_value = Decimal::zero();
     let mut unhealthy_borrow_value = Decimal::zero();
+    let mut super_unhealthy_borrow_value = Decimal::zero();
 
     for (index, collateral) in obligation.deposits.iter_mut().enumerate() {
         let deposit_reserve_info = next_account_info(account_info_iter)?;
@@ -952,6 +953,8 @@ fn process_refresh_obligation(program_id: &Pubkey, accounts: &[AccountInfo]) -> 
         let loan_to_value_rate = Rate::from_percent(deposit_reserve.config.loan_to_value_ratio);
         let liquidation_threshold_rate =
             Rate::from_percent(deposit_reserve.config.liquidation_threshold);
+        let max_liquidation_threshold_rate =
+            Rate::from_percent(deposit_reserve.config.max_liquidation_threshold);
 
         collateral.market_value = market_value;
         deposited_value = deposited_value.try_add(market_value)?;
@@ -959,6 +962,8 @@ fn process_refresh_obligation(program_id: &Pubkey, accounts: &[AccountInfo]) -> 
             allowed_borrow_value.try_add(market_value_lower_bound.try_mul(loan_to_value_rate)?)?;
         unhealthy_borrow_value =
             unhealthy_borrow_value.try_add(market_value.try_mul(liquidation_threshold_rate)?)?;
+        super_unhealthy_borrow_value = super_unhealthy_borrow_value
+            .try_add(market_value.try_mul(max_liquidation_threshold_rate)?)?;
     }
 
     let mut borrowing_isolated_asset = false;
@@ -1038,6 +1043,8 @@ fn process_refresh_obligation(program_id: &Pubkey, accounts: &[AccountInfo]) -> 
 
     obligation.allowed_borrow_value = min(allowed_borrow_value, global_allowed_borrow_value);
     obligation.unhealthy_borrow_value = min(unhealthy_borrow_value, global_unhealthy_borrow_value);
+    obligation.super_unhealthy_borrow_value =
+        min(super_unhealthy_borrow_value, global_unhealthy_borrow_value);
 
     obligation.last_update.update_slot(clock.slot);
 
