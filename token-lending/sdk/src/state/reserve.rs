@@ -340,12 +340,14 @@ impl Reserve {
 
         let liquidation_bonus = Decimal::from_percent(self.config.liquidation_bonus);
         let max_liquidation_bonus = Decimal::from_percent(self.config.max_liquidation_bonus);
+        let protocol_liquidation_fee = Decimal::from_percent(self.config.protocol_liquidation_fee);
 
         let bonus = liquidation_bonus
-            .try_add(weight.try_mul(max_liquidation_bonus.try_sub(liquidation_bonus)?)?)?;
+            .try_add(weight.try_mul(max_liquidation_bonus.try_sub(liquidation_bonus)?)?)?
+            .try_add(protocol_liquidation_fee)?;
 
         // paranoia checks
-        if bonus > max_liquidation_bonus {
+        if bonus > max_liquidation_bonus.try_add(protocol_liquidation_fee)? {
             msg!("Liquidation bonus is greater than maximum liquidation bonus");
             return Err(LendingError::MathOverflow.into());
         }
@@ -452,6 +454,7 @@ impl Reserve {
             settle_amount,
             repay_amount,
             withdraw_amount,
+            bonus_rate,
         })
     }
 
@@ -459,15 +462,14 @@ impl Reserve {
     pub fn calculate_protocol_liquidation_fee(
         &self,
         amount_liquidated: u64,
+        // includes liquidator bonus and protocol fee. also >= 1
+        bonus_rate: Decimal,
     ) -> Result<u64, ProgramError> {
-        let bonus_rate = Rate::from_percent(self.config.liquidation_bonus).try_add(Rate::one())?;
         let amount_liquidated_wads = Decimal::from(amount_liquidated);
-
-        let bonus = amount_liquidated_wads.try_sub(amount_liquidated_wads.try_div(bonus_rate)?)?;
-
+        let nonbonus_amount = amount_liquidated_wads.try_div(bonus_rate)?;
         // After deploying must update all reserves to set liquidation fee then redeploy with this line instead of hardcode
         let protocol_fee = std::cmp::max(
-            bonus
+            nonbonus_amount
                 .try_mul(Rate::from_percent(self.config.protocol_liquidation_fee))?
                 .try_ceil_u64()?,
             1,
@@ -534,6 +536,9 @@ pub struct CalculateLiquidationResult {
     pub repay_amount: u64,
     /// Amount of collateral to withdraw in exchange for repay amount
     pub withdraw_amount: u64,
+    /// Liquidator bonus as a percentage, including the protocol fee
+    /// always greater than 1.
+    pub bonus_rate: Decimal,
 }
 
 /// Reserve liquidity
@@ -1392,7 +1397,15 @@ impl Pack for Reserve {
                 deposit_limit: u64::from_le_bytes(*config_deposit_limit),
                 borrow_limit: u64::from_le_bytes(*config_borrow_limit),
                 fee_receiver: Pubkey::new_from_array(*config_fee_receiver),
-                protocol_liquidation_fee: u8::from_le_bytes(*config_protocol_liquidation_fee),
+                protocol_liquidation_fee: min(
+                    u8::from_le_bytes(*config_protocol_liquidation_fee),
+                    // the behaviour of this variable changed in v2.0.2 and now represents a
+                    // percentage of the total liquidation value that the protocol receives as
+                    // a bonus. Prior to v2.0.2, this variable used to represent a percentage of of
+                    // the liquidator's bonus that would be sent to the protocol. For safety, we
+                    // cap the value here to 5%.
+                    5,
+                ),
                 protocol_take_rate: u8::from_le_bytes(*config_protocol_take_rate),
                 added_borrow_weight_bps: u64::from_le_bytes(*config_added_borrow_weight_bps),
                 reserve_type: ReserveType::from_u8(config_asset_type[0]).unwrap(),
@@ -1469,7 +1482,7 @@ mod test {
                     deposit_limit: rng.gen(),
                     borrow_limit: rng.gen(),
                     fee_receiver: Pubkey::new_unique(),
-                    protocol_liquidation_fee: rng.gen(),
+                    protocol_liquidation_fee: min(rng.gen(), 5),
                     protocol_take_rate: rng.gen(),
                     added_borrow_weight_bps: rng.gen(),
                     reserve_type: ReserveType::from_u8(rng.gen::<u8>() % 2).unwrap(),
@@ -2085,6 +2098,7 @@ mod test {
                         .unwrap()
                         .try_floor_u64()
                         .unwrap(),
+                    bonus_rate: liquidation_bonus
                 },
             }),
             // collateral market value == liquidation_value
@@ -2100,6 +2114,7 @@ mod test {
                     settle_amount: Decimal::from((8000 * LIQUIDATION_CLOSE_FACTOR as u64) / 100),
                     repay_amount: (8000 * LIQUIDATION_CLOSE_FACTOR as u64) / 100,
                     withdraw_amount: (8000 * LIQUIDATION_CLOSE_FACTOR as u64) * 105 / 10000,
+                    bonus_rate: liquidation_bonus
                 },
             }),
             // collateral market value < liquidation_value
@@ -2119,6 +2134,7 @@ mod test {
                     ),
                     repay_amount: (8000 * LIQUIDATION_CLOSE_FACTOR as u64) / 100 / 2,
                     withdraw_amount: (8000 * LIQUIDATION_CLOSE_FACTOR as u64) * 105 / 10000 / 2,
+                    bonus_rate: liquidation_bonus
                 },
             }),
             // dust ObligationLiquidity where collateral market value > liquidation value
@@ -2133,6 +2149,7 @@ mod test {
                     repay_amount: 100,
                     // $0.5 * 1.05 = $0.525
                     withdraw_amount: 52,
+                    bonus_rate: liquidation_bonus
                 },
             }),
             // dust ObligationLiquidity where collateral market value == liquidation value
@@ -2146,6 +2163,7 @@ mod test {
                     settle_amount: Decimal::from(1u64),
                     repay_amount: 1,
                     withdraw_amount: 1000,
+                    bonus_rate: liquidation_bonus
                 },
             }),
             // dust ObligationLiquidity where collateral market value < liquidation value
@@ -2159,6 +2177,7 @@ mod test {
                     settle_amount: Decimal::from(5u64),
                     repay_amount: 5,
                     withdraw_amount: 10,
+                    bonus_rate: liquidation_bonus
                 },
             }),
             // dust ObligationLiquidity where collateral market value > liquidation value and the
@@ -2173,6 +2192,7 @@ mod test {
                     settle_amount: Decimal::from(1u64),
                     repay_amount: 1,
                     withdraw_amount: 1,
+                    bonus_rate: liquidation_bonus
                 },
             }),
         ]

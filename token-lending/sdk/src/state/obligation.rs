@@ -53,7 +53,7 @@ pub struct Obligation {
     /// if borrowed_value >= unhealthy_borrow_value, the obligation can be liquidated
     pub unhealthy_borrow_value: Decimal,
     /// ie sum(d.deposited_amount * d.max_liquidation_threshold * d.current_spot_price for d in
-    /// deposits). This field is used to calculate the liquidator bonus. 
+    /// deposits). This field is used to calculate the liquidator bonus.
     /// An obligation with a borrowed value >= super_unhealthy_borrow_value is eligible for the max
     /// bonus
     pub super_unhealthy_borrow_value: Decimal,
@@ -464,7 +464,10 @@ impl Pack for Obligation {
         pack_decimal(self.allowed_borrow_value, allowed_borrow_value);
         pack_decimal(self.unhealthy_borrow_value, unhealthy_borrow_value);
         pack_bool(self.borrowing_isolated_asset, borrowing_isolated_asset);
-        pack_decimal(self.super_unhealthy_borrow_value, super_unhealthy_borrow_value);
+        pack_decimal(
+            self.super_unhealthy_borrow_value,
+            super_unhealthy_borrow_value,
+        );
 
         *deposits_len = u8::try_from(self.deposits.len()).unwrap().to_le_bytes();
         *borrows_len = u8::try_from(self.borrows.len()).unwrap().to_le_bytes();

@@ -1774,7 +1774,7 @@ fn _liquidate_obligation<'a>(
     user_transfer_authority_info: &AccountInfo<'a>,
     clock: &Clock,
     token_program_id: &AccountInfo<'a>,
-) -> Result<u64, ProgramError> {
+) -> Result<(u64, Decimal), ProgramError> {
     let lending_market = LendingMarket::unpack(&lending_market_info.data.borrow())?;
     if lending_market_info.owner != program_id {
         msg!("Lending market provided is not owned by the lending program");
@@ -1900,6 +1900,7 @@ fn _liquidate_obligation<'a>(
         settle_amount,
         repay_amount,
         withdraw_amount,
+        bonus_rate,
     } = withdraw_reserve.calculate_liquidation(
         liquidity_amount,
         &obligation,
@@ -1943,7 +1944,7 @@ fn _liquidate_obligation<'a>(
         token_program: token_program_id.clone(),
     })?;
 
-    Ok(withdraw_amount)
+    Ok((withdraw_amount, bonus_rate))
 }
 
 #[inline(never)] // avoid stack frame limit
@@ -1975,7 +1976,7 @@ fn process_liquidate_obligation_and_redeem_reserve_collateral(
     let token_program_id = next_account_info(account_info_iter)?;
     let clock = &Clock::get()?;
 
-    let withdrawn_collateral_amount = _liquidate_obligation(
+    let (withdrawn_collateral_amount, bonus_rate) = _liquidate_obligation(
         program_id,
         liquidity_amount,
         source_liquidity_info,
@@ -2021,8 +2022,8 @@ fn process_liquidate_obligation_and_redeem_reserve_collateral(
             msg!("Withdraw reserve liquidity fee receiver does not match the reserve liquidity fee receiver provided");
             return Err(LendingError::InvalidAccountInput.into());
         }
-        let protocol_fee =
-            withdraw_reserve.calculate_protocol_liquidation_fee(withdraw_liquidity_amount)?;
+        let protocol_fee = withdraw_reserve
+            .calculate_protocol_liquidation_fee(withdraw_liquidity_amount, bonus_rate)?;
 
         spl_token_transfer(TokenTransferParams {
             source: destination_liquidity_info.clone(),

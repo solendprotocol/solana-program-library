@@ -42,6 +42,7 @@ async fn test_forgive_debt_success_easy() {
                     config: ReserveConfig {
                         liquidation_bonus: 0,
                         max_liquidation_bonus: 0,
+                        protocol_liquidation_fee: 0,
                         ..test_reserve_config()
                     },
                     liquidity_amount: 100_000 * FRACTIONAL_TO_USDC,
