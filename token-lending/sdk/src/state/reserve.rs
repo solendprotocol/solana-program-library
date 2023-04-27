@@ -459,6 +459,9 @@ impl Reserve {
     }
 
     /// Calculate protocol cut of liquidation bonus always at least 1 lamport
+    /// the bonus rate is always >=1 and includes both liquidator bonus and protocol fee.
+    /// the bonus rate has to be passed into this function because bonus calculations are dynamic 
+    /// and can't be recalculated after liquidation.
     pub fn calculate_protocol_liquidation_fee(
         &self,
         amount_liquidated: u64,
