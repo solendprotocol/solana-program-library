@@ -460,14 +460,18 @@ impl Reserve {
 
     /// Calculate protocol cut of liquidation bonus always at least 1 lamport
     /// the bonus rate is always >=1 and includes both liquidator bonus and protocol fee.
-    /// the bonus rate has to be passed into this function because bonus calculations are dynamic 
+    /// the bonus rate has to be passed into this function because bonus calculations are dynamic
     /// and can't be recalculated after liquidation.
     pub fn calculate_protocol_liquidation_fee(
         &self,
         amount_liquidated: u64,
-        // includes liquidator bonus and protocol fee. also >= 1
         bonus_rate: Decimal,
     ) -> Result<u64, ProgramError> {
+        if bonus_rate < Decimal::one().try_add(Decimal::from_percent(self.config.protocol_liquidation_fee))? {
+            msg!("bonus rate is less than one + protocol liquidation fee");
+            return Err(LendingError::MathOverflow.into());
+        }
+
         let amount_liquidated_wads = Decimal::from(amount_liquidated);
         let nonbonus_amount = amount_liquidated_wads.try_div(bonus_rate)?;
         // After deploying must update all reserves to set liquidation fee then redeploy with this line instead of hardcode
@@ -1886,6 +1890,28 @@ mod test {
 
         assert_eq!(total_fee, 10); // 1% of 1000
         assert_eq!(host_fee, 0); // 0 host fee
+    }
+
+    #[test]
+    fn calculate_protocol_liquidation_fee() {
+        let mut reserve = Reserve {
+            config: ReserveConfig {
+                protocol_liquidation_fee: 1,
+                ..Default::default()
+            },
+            ..Reserve::default()
+        };
+
+        assert_eq!(
+            reserve.calculate_protocol_liquidation_fee(105, Decimal::from_percent(105)).unwrap(),
+            1
+        );
+
+        reserve.config.protocol_liquidation_fee = 2;
+        assert_eq!(
+            reserve.calculate_protocol_liquidation_fee(105, Decimal::from_percent(105)).unwrap(),
+            2
+        );
     }
 
     #[test]
