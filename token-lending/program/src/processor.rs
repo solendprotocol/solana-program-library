@@ -983,13 +983,18 @@ fn process_refresh_obligation(program_id: &Pubkey, accounts: &[AccountInfo]) -> 
         }
 
         liquidity.accrue_interest(borrow_reserve.liquidity.cumulative_borrow_rate_wads)?;
+
+        let borrow_weight_and_pubkey = (
+            borrow_reserve.config.added_borrow_weight_bps,
+            borrow_reserve.liquidity.mint_pubkey,
+        );
         max_borrow_weight = match max_borrow_weight {
-            None => Some((borrow_reserve.borrow_weight(), index)),
-            Some((cur_max_weight, _)) => {
-                if borrow_reserve.borrow_weight() > cur_max_weight
-                    && liquidity.borrowed_amount_wads > Decimal::zero()
+            None => Some((borrow_weight_and_pubkey, index)),
+            Some((max_borrow_weight_and_pubkey, _)) => {
+                if liquidity.borrowed_amount_wads > Decimal::zero()
+                    && borrow_weight_and_pubkey > max_borrow_weight_and_pubkey
                 {
-                    Some((borrow_reserve.borrow_weight(), index))
+                    Some((borrow_weight_and_pubkey, index))
                 } else {
                     max_borrow_weight
                 }

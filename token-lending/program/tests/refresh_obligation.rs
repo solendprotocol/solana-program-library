@@ -401,6 +401,9 @@ async fn test_obligation_liquidity_ordering() {
         )
         .await
         .unwrap();
+
+    test.advance_clock_by_slots(1).await;
+
     lending_market
         .refresh_obligation(&mut test, &obligations[0])
         .await
