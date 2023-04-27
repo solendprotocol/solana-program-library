@@ -77,7 +77,7 @@ impl IsInitialized for LendingMarket {
     }
 }
 
-const LENDING_MARKET_LEN: usize = 290; // 1 + 1 + 32 + 32 + 32 + 32 + 32 + 128
+const LENDING_MARKET_LEN: usize = 290; // 1 + 1 + 32 + 32 + 32 + 32 + 32 + 56 + 32 + 40
 impl Pack for LendingMarket {
     const LEN: usize = LENDING_MARKET_LEN;
 
@@ -155,16 +155,24 @@ impl Pack for LendingMarket {
             return Err(ProgramError::InvalidAccountData);
         }
 
+        let owner_pubkey = Pubkey::new_from_array(*owner);
         Ok(Self {
             version,
             bump_seed: u8::from_le_bytes(*bump_seed),
-            owner: Pubkey::new_from_array(*owner),
+            owner: owner_pubkey,
             quote_currency: *quote_currency,
             token_program_id: Pubkey::new_from_array(*token_program_id),
             oracle_program_id: Pubkey::new_from_array(*oracle_program_id),
             switchboard_oracle_program_id: Pubkey::new_from_array(*switchboard_oracle_program_id),
             rate_limiter: RateLimiter::unpack_from_slice(rate_limiter)?,
-            risk_authority: Pubkey::new_from_array(*risk_authority),
+            // the risk authority can equal [0; 32] when the program is upgraded to v2.0.2. in that
+            // case, we set the risk authority to be the owner. This isn't strictly necessary, but
+            // better to be safe i guess.
+            risk_authority: if *risk_authority == [0; 32] {
+                owner_pubkey
+            } else {
+                Pubkey::new_from_array(*risk_authority)
+            },
         })
     }
 }
