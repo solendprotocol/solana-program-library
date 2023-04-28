@@ -28,6 +28,12 @@ pub const LIQUIDATION_CLOSE_AMOUNT: u64 = 2;
 /// Maximum quote currency value that can be liquidated in 1 liquidate_obligation call
 pub const MAX_LIQUIDATABLE_VALUE_AT_ONCE: u64 = 500_000;
 
+/// Maximum bonus received during liquidation. includes protocol fee.
+pub const MAX_BONUS_PCT: u8 = 20;
+
+/// Maximum protocol liquidation fee
+pub const MAX_PROTOCOL_LIQUIDATION_FEE: u8 = 5;
+
 /// Lending market reserve state
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct Reserve {
@@ -308,6 +314,7 @@ impl Reserve {
     }
 
     /// Calculate bonus as a percentage
+    /// the value will be in range [0, MAX_BONUS_PCT]
     pub fn calculate_bonus(&self, obligation: &Obligation) -> Result<Decimal, ProgramError> {
         if obligation.borrowed_value < obligation.unhealthy_borrow_value {
             msg!("Obligation is healthy so a liquidation bonus can't be calculated");
@@ -346,13 +353,7 @@ impl Reserve {
             .try_add(weight.try_mul(max_liquidation_bonus.try_sub(liquidation_bonus)?)?)?
             .try_add(protocol_liquidation_fee)?;
 
-        // paranoia checks
-        if bonus > max_liquidation_bonus.try_add(protocol_liquidation_fee)? {
-            msg!("Liquidation bonus is greater than maximum liquidation bonus");
-            return Err(LendingError::MathOverflow.into());
-        }
-
-        Ok(bonus)
+        Ok(min(bonus, Decimal::from_percent(MAX_BONUS_PCT)))
     }
 
     /// Liquidate some or all of an unhealthy obligation
@@ -467,7 +468,9 @@ impl Reserve {
         amount_liquidated: u64,
         bonus_rate: Decimal,
     ) -> Result<u64, ProgramError> {
-        if bonus_rate < Decimal::one().try_add(Decimal::from_percent(self.config.protocol_liquidation_fee))? {
+        if bonus_rate
+            < Decimal::one().try_add(Decimal::from_percent(self.config.protocol_liquidation_fee))?
+        {
             msg!("bonus rate is less than one + protocol liquidation fee");
             return Err(LendingError::MathOverflow.into());
         }
@@ -544,7 +547,7 @@ pub struct CalculateLiquidationResult {
     /// Amount of collateral to withdraw in exchange for repay amount
     pub withdraw_amount: u64,
     /// Liquidator bonus as a percentage, including the protocol fee
-    /// always greater than 1.
+    /// always greater than or equal to 1.
     pub bonus_rate: Decimal,
 }
 
@@ -937,8 +940,18 @@ pub fn validate_reserve_config(config: ReserveConfig) -> ProgramResult {
         msg!("Host fee percentage must be in range [0, 100]");
         return Err(LendingError::InvalidConfig.into());
     }
-    if config.protocol_liquidation_fee > 100 {
-        msg!("Protocol liquidation fee must be in range [0, 100]");
+    if config.protocol_liquidation_fee > MAX_PROTOCOL_LIQUIDATION_FEE {
+        msg!(
+            "Protocol liquidation fee must be in range [0, {}]",
+            MAX_PROTOCOL_LIQUIDATION_FEE
+        );
+        return Err(LendingError::InvalidConfig.into());
+    }
+    if config.max_liquidation_bonus + config.protocol_liquidation_fee > MAX_BONUS_PCT {
+        msg!(
+            "Max liquidation bonus + protocol liquidation fee must be in range [0, {}]",
+            MAX_BONUS_PCT
+        );
         return Err(LendingError::InvalidConfig.into());
     }
     if config.protocol_take_rate > 100 {
@@ -1410,8 +1423,8 @@ impl Pack for Reserve {
                     // percentage of the total liquidation value that the protocol receives as
                     // a bonus. Prior to v2.0.2, this variable used to represent a percentage of of
                     // the liquidator's bonus that would be sent to the protocol. For safety, we
-                    // cap the value here to 5%.
-                    5,
+                    // cap the value here to MAX_PROTOCOL_LIQUIDATION_FEE.
+                    MAX_PROTOCOL_LIQUIDATION_FEE,
                 ),
                 protocol_take_rate: u8::from_le_bytes(*config_protocol_take_rate),
                 added_borrow_weight_bps: u64::from_le_bytes(*config_added_borrow_weight_bps),
@@ -1489,7 +1502,7 @@ mod test {
                     deposit_limit: rng.gen(),
                     borrow_limit: rng.gen(),
                     fee_receiver: Pubkey::new_unique(),
-                    protocol_liquidation_fee: min(rng.gen(), 5),
+                    protocol_liquidation_fee: min(rng.gen(), MAX_PROTOCOL_LIQUIDATION_FEE),
                     protocol_take_rate: rng.gen(),
                     added_borrow_weight_bps: rng.gen(),
                     reserve_type: ReserveType::from_u8(rng.gen::<u8>() % 2).unwrap(),
@@ -1903,13 +1916,17 @@ mod test {
         };
 
         assert_eq!(
-            reserve.calculate_protocol_liquidation_fee(105, Decimal::from_percent(105)).unwrap(),
+            reserve
+                .calculate_protocol_liquidation_fee(105, Decimal::from_percent(105))
+                .unwrap(),
             1
         );
 
         reserve.config.protocol_liquidation_fee = 2;
         assert_eq!(
-            reserve.calculate_protocol_liquidation_fee(105, Decimal::from_percent(105)).unwrap(),
+            reserve
+                .calculate_protocol_liquidation_fee(105, Decimal::from_percent(105))
+                .unwrap(),
             2
         );
     }
@@ -1984,6 +2001,37 @@ mod test {
                     ..ReserveConfig::default()
                 },
                 result: Ok(()),
+            }),
+            Just(ReserveConfigTestCase {
+                config: ReserveConfig {
+                    liquidation_threshold: 85,
+                    max_liquidation_threshold: 75,
+                    ..ReserveConfig::default()
+                },
+                result: Err(LendingError::InvalidConfig.into()),
+            }),
+            Just(ReserveConfigTestCase {
+                config: ReserveConfig {
+                    max_liquidation_bonus: 5,
+                    liquidation_bonus: 10,
+                    ..ReserveConfig::default()
+                },
+                result: Err(LendingError::InvalidConfig.into()),
+            }),
+            Just(ReserveConfigTestCase {
+                config: ReserveConfig {
+                    max_liquidation_bonus: 20,
+                    protocol_liquidation_fee: 20,
+                    ..ReserveConfig::default()
+                },
+                result: Err(LendingError::InvalidConfig.into()),
+            }),
+            Just(ReserveConfigTestCase {
+                config: ReserveConfig {
+                    protocol_liquidation_fee: 6,
+                    ..ReserveConfig::default()
+                },
+                result: Err(LendingError::InvalidConfig.into()),
             })
         ]
     }
@@ -2057,6 +2105,14 @@ mod test {
                 liquidation_bonus: 10,
                 max_liquidation_bonus: 20,
                 result: Ok(Decimal::from_percent(10))
+            }),
+            Just(LiquidationBonusTestCase {
+                borrowed_value: Decimal::from(60u64),
+                unhealthy_borrow_value: Decimal::from(40u64),
+                super_unhealthy_borrow_value: Decimal::from(60u64),
+                liquidation_bonus: 10,
+                max_liquidation_bonus: 30,
+                result: Ok(Decimal::from_percent(20))
             }),
         ]
     }
