@@ -29,7 +29,7 @@ pub const LIQUIDATION_CLOSE_AMOUNT: u64 = 2;
 pub const MAX_LIQUIDATABLE_VALUE_AT_ONCE: u64 = 500_000;
 
 /// Maximum bonus received during liquidation. includes protocol fee.
-pub const MAX_BONUS_PCT: u8 = 20;
+pub const MAX_BONUS_PCT: u8 = 25;
 
 /// Maximum protocol liquidation fee
 pub const MAX_PROTOCOL_LIQUIDATION_FEE: u8 = 5;
@@ -321,10 +321,14 @@ impl Reserve {
             return Err(LendingError::ObligationHealthy.into());
         }
 
+        let liquidation_bonus = Decimal::from_percent(self.config.liquidation_bonus);
+        let max_liquidation_bonus = Decimal::from_percent(self.config.max_liquidation_bonus);
+        let protocol_liquidation_fee = Decimal::from_percent(self.config.protocol_liquidation_fee);
+
         // could also return the average of liquidation bonus and max liquidation bonus here, but
         // i don't think it matters
         if obligation.unhealthy_borrow_value == obligation.super_unhealthy_borrow_value {
-            return Ok(Decimal::from_percent(self.config.liquidation_bonus));
+            return liquidation_bonus.try_add(protocol_liquidation_fee);
         }
 
         // safety:
@@ -344,10 +348,6 @@ impl Reserve {
                 )?,
             Decimal::one(),
         );
-
-        let liquidation_bonus = Decimal::from_percent(self.config.liquidation_bonus);
-        let max_liquidation_bonus = Decimal::from_percent(self.config.max_liquidation_bonus);
-        let protocol_liquidation_fee = Decimal::from_percent(self.config.protocol_liquidation_fee);
 
         let bonus = liquidation_bonus
             .try_add(weight.try_mul(max_liquidation_bonus.try_sub(liquidation_bonus)?)?)?
@@ -2051,6 +2051,7 @@ mod test {
 
         liquidation_bonus: u8,
         max_liquidation_bonus: u8,
+        protocol_liquidation_fee: u8,
 
         result: Result<Decimal, ProgramError>,
     }
@@ -2064,6 +2065,7 @@ mod test {
                 super_unhealthy_borrow_value: Decimal::from(150u64),
                 liquidation_bonus: 10,
                 max_liquidation_bonus: 20,
+                protocol_liquidation_fee: 1,
                 result: Err(LendingError::ObligationHealthy.into()),
             }),
             Just(LiquidationBonusTestCase {
@@ -2072,7 +2074,8 @@ mod test {
                 super_unhealthy_borrow_value: Decimal::from(150u64),
                 liquidation_bonus: 10,
                 max_liquidation_bonus: 20,
-                result: Ok(Decimal::from_percent(10))
+                protocol_liquidation_fee: 1,
+                result: Ok(Decimal::from_percent(11))
             }),
             Just(LiquidationBonusTestCase {
                 borrowed_value: Decimal::from(100u64),
@@ -2080,7 +2083,8 @@ mod test {
                 super_unhealthy_borrow_value: Decimal::from(150u64),
                 liquidation_bonus: 10,
                 max_liquidation_bonus: 20,
-                result: Ok(Decimal::from_percent(15))
+                protocol_liquidation_fee: 1,
+                result: Ok(Decimal::from_percent(16))
             }),
             Just(LiquidationBonusTestCase {
                 borrowed_value: Decimal::from(100u64),
@@ -2088,7 +2092,8 @@ mod test {
                 super_unhealthy_borrow_value: Decimal::from(100u64),
                 liquidation_bonus: 10,
                 max_liquidation_bonus: 20,
-                result: Ok(Decimal::from_percent(20))
+                protocol_liquidation_fee: 1,
+                result: Ok(Decimal::from_percent(21))
             }),
             Just(LiquidationBonusTestCase {
                 borrowed_value: Decimal::from(200u64),
@@ -2096,7 +2101,8 @@ mod test {
                 super_unhealthy_borrow_value: Decimal::from(100u64),
                 liquidation_bonus: 10,
                 max_liquidation_bonus: 20,
-                result: Ok(Decimal::from_percent(20))
+                protocol_liquidation_fee: 1,
+                result: Ok(Decimal::from_percent(21))
             }),
             Just(LiquidationBonusTestCase {
                 borrowed_value: Decimal::from(60u64),
@@ -2104,7 +2110,8 @@ mod test {
                 super_unhealthy_borrow_value: Decimal::from(50u64),
                 liquidation_bonus: 10,
                 max_liquidation_bonus: 20,
-                result: Ok(Decimal::from_percent(10))
+                protocol_liquidation_fee: 1,
+                result: Ok(Decimal::from_percent(11))
             }),
             Just(LiquidationBonusTestCase {
                 borrowed_value: Decimal::from(60u64),
@@ -2112,7 +2119,8 @@ mod test {
                 super_unhealthy_borrow_value: Decimal::from(60u64),
                 liquidation_bonus: 10,
                 max_liquidation_bonus: 30,
-                result: Ok(Decimal::from_percent(20))
+                protocol_liquidation_fee: 1,
+                result: Ok(Decimal::from_percent(25))
             }),
         ]
     }
@@ -2124,6 +2132,7 @@ mod test {
                 config: ReserveConfig {
                     liquidation_bonus: test_case.liquidation_bonus,
                     max_liquidation_bonus: test_case.max_liquidation_bonus,
+                    protocol_liquidation_fee: test_case.protocol_liquidation_fee,
                     ..ReserveConfig::default()
                 },
                 ..Reserve::default()
