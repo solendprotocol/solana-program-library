@@ -36,7 +36,7 @@ use solend_program::{
     error::LendingError,
     instruction::init_reserve,
     math::Decimal,
-    state::{ReserveConfig, ReserveFees},
+    state::{ReserveConfig, ReserveFees, RateLimiterConfig},
 };
 use solend_sdk::state::LendingMarket;
 use spl_token::state::{Account as Token, Mint};
@@ -177,7 +177,7 @@ async fn test_success() {
                 supply_pubkey: reserve_collateral_supply_pubkey,
             },
             config: reserve_config,
-            rate_limiter: RateLimiter::new(RateLimiter::default().config, 1001)
+            rate_limiter: RateLimiter::new(RateLimiterConfig::default(), 1001)
         }
     );
 }

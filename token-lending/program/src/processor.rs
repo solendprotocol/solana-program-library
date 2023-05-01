@@ -1281,6 +1281,7 @@ fn process_withdraw_obligation_collateral(
         obligation_owner_info,
         clock,
         token_program_id,
+        false,
     )?;
     Ok(())
 }
@@ -1298,6 +1299,7 @@ fn _withdraw_obligation_collateral<'a>(
     obligation_owner_info: &AccountInfo<'a>,
     clock: &Clock,
     token_program_id: &AccountInfo<'a>,
+    account_for_rate_limiter: bool,
 ) -> Result<u64, ProgramError> {
     let lending_market = LendingMarket::unpack(&lending_market_info.data.borrow())?;
     if lending_market_info.owner != program_id {
@@ -1373,8 +1375,49 @@ fn _withdraw_obligation_collateral<'a>(
         return Err(LendingError::InvalidMarketAuthority.into());
     }
 
+    // account for lending market and reserve rate limiter when withdrawing. this is needed to
+    // support max withdraws.
+    let max_outflow_collateral_amount = if account_for_rate_limiter {
+        let max_outflow_usd = lending_market
+            .rate_limiter
+            .clone() // remaining_outflow is a mutable call, but we don't have mutable access here
+            .remaining_outflow(clock.slot)?;
+
+        let max_lending_market_outflow_liquidity_amount = withdraw_reserve
+            .usd_to_liquidity_amount_lower_bound(min(
+                max_outflow_usd,
+                // min here bc this function can overflow if max_outflow_usd is u64::MAX
+                // the actual value doesn't matter too much as long as its sensible
+                obligation.deposited_value.try_mul(2)?,
+            ))?;
+
+        let max_lending_market_outflow_collateral_amount = withdraw_reserve
+            .collateral_exchange_rate()?
+            .decimal_liquidity_to_collateral(max_lending_market_outflow_liquidity_amount)?;
+
+        let max_reserve_outflow_liquidity_amount = withdraw_reserve
+            .rate_limiter
+            .clone()
+            .remaining_outflow(clock.slot)?;
+
+        let max_reserve_outflow_collateral_amount = withdraw_reserve
+            .collateral_exchange_rate()?
+            .decimal_liquidity_to_collateral(max_reserve_outflow_liquidity_amount)?;
+
+        min(
+            max_lending_market_outflow_collateral_amount,
+            max_reserve_outflow_collateral_amount,
+        )
+        .try_floor_u64()?
+    } else {
+        u64::MAX
+    };
+
     let max_withdraw_amount = obligation.max_withdraw_amount(collateral, &withdraw_reserve)?;
-    let withdraw_amount = std::cmp::min(collateral_amount, max_withdraw_amount);
+    let withdraw_amount = min(
+        collateral_amount,
+        min(max_withdraw_amount, max_outflow_collateral_amount),
+    );
 
     if withdraw_amount == 0 {
         msg!("Maximum withdraw value is zero");
@@ -1552,6 +1595,21 @@ fn process_borrow_obligation_liquidity(
         .try_sub(borrow_reserve.liquidity.borrowed_amount_wads)
         .unwrap_or_else(|_| Decimal::zero());
 
+    // account for rate limiter restrictions when calculating max borrow amount.
+    let max_outflow_liquidity_amount = {
+        let max_outflow_usd = lending_market.rate_limiter.remaining_outflow(clock.slot)?;
+        let max_outflow_tokens = borrow_reserve.rate_limiter.remaining_outflow(clock.slot)?;
+
+        min(
+            borrow_reserve.usd_to_liquidity_amount_lower_bound(min(
+                max_outflow_usd,
+                // min here bc this function can overflow if max_outflow_usd is u64::MAX
+                remaining_borrow_value,
+            ))?,
+            max_outflow_tokens,
+        )
+    };
+
     let CalculateBorrowResult {
         borrow_amount,
         receive_amount,
@@ -1561,6 +1619,7 @@ fn process_borrow_obligation_liquidity(
         liquidity_amount,
         remaining_borrow_value,
         remaining_reserve_capacity,
+        max_outflow_liquidity_amount,
     )?;
 
     if receive_amount == 0 {
@@ -2066,6 +2125,7 @@ fn process_withdraw_obligation_collateral_and_redeem_reserve_liquidity(
         obligation_owner_info,
         clock,
         token_program_id,
+        true,
     )?;
 
     _redeem_reserve_collateral(

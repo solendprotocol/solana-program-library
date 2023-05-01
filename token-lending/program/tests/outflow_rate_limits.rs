@@ -190,7 +190,7 @@ async fn test_outflow_reserve() {
             res,
             TransactionError::InstructionError(
                 1,
-                InstructionError::Custom(LendingError::OutflowRateLimitExceeded as u32)
+                InstructionError::Custom(LendingError::WithdrawTooLarge as u32)
             )
         );
 

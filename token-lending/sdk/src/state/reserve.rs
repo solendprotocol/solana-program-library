@@ -78,6 +78,25 @@ impl Reserve {
         Rate::from_percent(self.config.loan_to_value_ratio)
     }
 
+    /// Convert USD to liquidity tokens.
+    /// eg how much SOL can you get for 100USD?
+    pub fn usd_to_liquidity_amount_lower_bound(
+        &self,
+        quote_amount: Decimal,
+    ) -> Result<Decimal, ProgramError> {
+        // quote amount / max(market price, smoothed price) * 10**decimals
+        quote_amount
+            .try_mul(Decimal::from(
+                (10u128)
+                    .checked_pow(self.liquidity.mint_decimals as u32)
+                    .ok_or(LendingError::MathOverflow)?,
+            ))?
+            .try_div(max(
+                self.liquidity.smoothed_market_price,
+                self.liquidity.market_price,
+            ))
+    }
+
     /// find current market value of tokens
     pub fn market_value(&self, liquidity_amount: Decimal) -> Result<Decimal, ProgramError> {
         self.liquidity
@@ -232,6 +251,7 @@ impl Reserve {
         amount_to_borrow: u64,
         max_borrow_value: Decimal,
         remaining_reserve_borrow: Decimal,
+        remaining_liquidity_outflow: Decimal,
     ) -> Result<CalculateBorrowResult, ProgramError> {
         // @TODO: add lookup table https://git.io/JOCYq
         let decimals = 10u64
@@ -246,7 +266,8 @@ impl Reserve {
                 ))?
                 .try_div(self.borrow_weight())?
                 .min(remaining_reserve_borrow)
-                .min(self.liquidity.available_amount.into());
+                .min(self.liquidity.available_amount.into())
+                .min(remaining_liquidity_outflow);
             let (borrow_fee, host_fee) = self
                 .config
                 .fees
@@ -1820,6 +1841,26 @@ mod test {
         );
     }
 
+    #[test]
+    fn usd_to_liquidity_amount_lower_bound() {
+        let reserve = Reserve {
+            liquidity: ReserveLiquidity {
+                mint_decimals: 9,
+                market_price: Decimal::from(25u64),
+                smoothed_market_price: Decimal::from(50u64),
+                ..ReserveLiquidity::default()
+            },
+            ..Reserve::default()
+        };
+
+        assert_eq!(
+            reserve
+                .usd_to_liquidity_amount_lower_bound(Decimal::from(100u64))
+                .unwrap(),
+            Decimal::from(2 * LAMPORTS_PER_SOL)
+        );
+    }
+
     #[derive(Debug, Clone)]
     struct ReserveConfigTestCase {
         config: ReserveConfig,
@@ -2223,6 +2264,7 @@ mod test {
                 test_case.borrow_amount,
                 test_case.remaining_borrow_value,
                 test_case.remaining_reserve_capacity,
+                Decimal::from(u64::MAX),
             ), test_case.result);
         }
     }
