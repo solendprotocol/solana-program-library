@@ -110,7 +110,7 @@ async fn setup() -> (
             &wsol_reserve,
             &obligation,
             &user,
-            &lending_market_owner.get_account(&wsol_mint::id()).unwrap(),
+            lending_market_owner.get_account(&wsol_mint::id()),
             u64::MAX,
         )
         .await

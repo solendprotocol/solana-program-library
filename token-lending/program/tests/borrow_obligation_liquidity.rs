@@ -1,26 +1,21 @@
 #![cfg(feature = "test-bpf")]
 
+use crate::helpers::solend_program_test::*;
+
 use solend_program::math::TryDiv;
 mod helpers;
 
 use solend_program::state::{RateLimiterConfig, ReserveFees};
 use std::collections::HashSet;
 
-use helpers::solend_program_test::{
-    setup_world, BalanceChecker, Info, SolendProgramTest, TokenBalanceChange, User,
-};
-use helpers::{test_reserve_config, wsol_mint};
+use helpers::*;
 use solana_program::native_token::LAMPORTS_PER_SOL;
 use solana_program_test::*;
 use solana_sdk::{
     instruction::InstructionError, signature::Keypair, transaction::TransactionError,
 };
-use solend_program::state::{LastUpdate, ObligationLiquidity, ReserveConfig, ReserveLiquidity};
-use solend_program::{
-    error::LendingError,
-    math::Decimal,
-    state::{LendingMarket, Obligation, Reserve},
-};
+use solend_program::state::*;
+use solend_program::{error::LendingError, math::Decimal};
 
 async fn setup(
     wsol_reserve_config: &ReserveConfig,
@@ -137,7 +132,7 @@ async fn test_success() {
             &wsol_reserve,
             &obligation,
             &user,
-            &host_fee_receiver.get_account(&wsol_mint::id()).unwrap(),
+            host_fee_receiver.get_account(&wsol_mint::id()),
             4 * LAMPORTS_PER_SOL,
         )
         .await
@@ -290,7 +285,7 @@ async fn test_borrow_max() {
             &wsol_reserve,
             &obligation,
             &user,
-            &host_fee_receiver.get_account(&wsol_mint::id()).unwrap(),
+            host_fee_receiver.get_account(&wsol_mint::id()),
             u64::MAX,
         )
         .await
@@ -346,7 +341,7 @@ async fn test_fail_borrow_over_reserve_borrow_limit() {
             &wsol_reserve,
             &obligation,
             &user,
-            &host_fee_receiver.get_account(&wsol_mint::id()).unwrap(),
+            host_fee_receiver.get_account(&wsol_mint::id()),
             LAMPORTS_PER_SOL + 1,
         )
         .await
@@ -402,7 +397,7 @@ async fn test_fail_reserve_borrow_rate_limit_exceeded() {
             &wsol_reserve,
             &obligation,
             &user,
-            &host_fee_receiver.get_account(&wsol_mint::id()).unwrap(),
+            host_fee_receiver.get_account(&wsol_mint::id()),
             LAMPORTS_PER_SOL,
         )
         .await
@@ -417,7 +412,7 @@ async fn test_fail_reserve_borrow_rate_limit_exceeded() {
                 &wsol_reserve,
                 &obligation,
                 &user,
-                &host_fee_receiver.get_account(&wsol_mint::id()).unwrap(),
+                host_fee_receiver.get_account(&wsol_mint::id()),
                 1,
             )
             .await
@@ -443,7 +438,7 @@ async fn test_fail_reserve_borrow_rate_limit_exceeded() {
             &wsol_reserve,
             &obligation,
             &user,
-            &host_fee_receiver.get_account(&wsol_mint::id()).unwrap(),
+            host_fee_receiver.get_account(&wsol_mint::id()),
             LAMPORTS_PER_SOL / 10 + 1,
         )
         .await
@@ -465,9 +460,82 @@ async fn test_fail_reserve_borrow_rate_limit_exceeded() {
             &wsol_reserve,
             &obligation,
             &user,
-            &host_fee_receiver.get_account(&wsol_mint::id()).unwrap(),
+            host_fee_receiver.get_account(&wsol_mint::id()),
             LAMPORTS_PER_SOL / 10,
         )
         .await
         .unwrap();
 }
+
+// #[tokio::test]
+// async fn test_borrow_max_rate_limiter() {
+//     let (mut test, lending_market, reserves, obligations, users, lending_market_owner) =
+//         custom_scenario(
+//             &[
+//                 ReserveArgs {
+//                     mint: usdc_mint::id(),
+//                     config: test_reserve_config(),
+//                     liquidity_amount: 100_000 * FRACTIONAL_TO_USDC,
+//                     price: PriceArgs {
+//                         price: 10,
+//                         conf: 0,
+//                         expo: -1,
+//                         ema_price: 10,
+//                         ema_conf: 1,
+//                     },
+//                 },
+//                 ReserveArgs {
+//                     mint: wsol_mint::id(),
+//                     config: ReserveConfig {
+//                         loan_to_value_ratio: 50,
+//                         liquidation_threshold: 55,
+//                         fees: ReserveFees::default(),
+//                         optimal_borrow_rate: 0,
+//                         max_borrow_rate: 0,
+//                         ..test_reserve_config()
+//                     },
+//                     liquidity_amount: 100 * LAMPORTS_PER_SOL,
+//                     price: PriceArgs {
+//                         price: 10,
+//                         conf: 0,
+//                         expo: 0,
+//                         ema_price: 10,
+//                         ema_conf: 0,
+//                     },
+//                 },
+//             ],
+//             &[ObligationArgs {
+//                 deposits: vec![(usdc_mint::id(), 100 * FRACTIONAL_TO_USDC)],
+//                 borrows: vec![],
+//             }],
+//         )
+//         .await;
+
+//     let wsol_reserve = &reserves[1];
+//     lending_market
+//         .update_reserve_config(
+//             &mut test,
+//             &lending_market_owner,
+//             &wsol_reserve,
+//             wsol_reserve.account.config,
+//             RateLimiterConfig {
+//                 window_duration: 20,
+//                 max_outflow: LAMPORTS_PER_SOL,
+//             },
+//             None,
+//         )
+//         .await
+//         .unwrap();
+
+//     test.advance_clock_by_slots(1).await;
+
+//     lending_market.borrow_obligation_liquidity(
+//         &mut test,
+//         &wsol_reserve,
+//         &obligations[0],
+//         &users[0],
+//         &users[0],
+//         LAMPORTS_PER_SOL,
+//     )
+
+// }
