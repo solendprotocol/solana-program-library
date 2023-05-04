@@ -884,9 +884,11 @@ impl Info<LendingMarket> {
         test: &mut SolendProgramTest,
         obligation: &Info<Obligation>,
     ) -> Result<(), BanksClientError> {
-        let instructions = self
-            .build_refresh_instructions(test, obligation, None)
-            .await;
+        let mut instructions = vec![ComputeBudgetInstruction::set_compute_unit_limit(80_000)];
+        instructions.extend(
+            self.build_refresh_instructions(test, obligation, None)
+                .await,
+        );
 
         test.process_transaction(&instructions, None).await
     }
