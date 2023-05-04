@@ -939,12 +939,14 @@ fn main() {
                 liquidity_amount,
                 ReserveConfig {
                     optimal_utilization_rate,
+                    unhealthy_utilization_rate: optimal_utilization_rate,
                     loan_to_value_ratio,
                     liquidation_bonus,
                     liquidation_threshold,
                     min_borrow_rate,
                     optimal_borrow_rate,
                     max_borrow_rate,
+                    super_max_borrow_rate: max_borrow_rate as u64,
                     fees: ReserveFees {
                         borrow_fee_wad,
                         flash_loan_fee_wad,

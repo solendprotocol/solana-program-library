@@ -511,12 +511,14 @@ impl LendingInstruction {
             2 => {
                 let (liquidity_amount, rest) = Self::unpack_u64(rest)?;
                 let (optimal_utilization_rate, rest) = Self::unpack_u8(rest)?;
+                let (unhealthy_utilization_rate, rest) = Self::unpack_u8(rest)?;
                 let (loan_to_value_ratio, rest) = Self::unpack_u8(rest)?;
                 let (liquidation_bonus, rest) = Self::unpack_u8(rest)?;
                 let (liquidation_threshold, rest) = Self::unpack_u8(rest)?;
                 let (min_borrow_rate, rest) = Self::unpack_u8(rest)?;
                 let (optimal_borrow_rate, rest) = Self::unpack_u8(rest)?;
                 let (max_borrow_rate, rest) = Self::unpack_u8(rest)?;
+                let (super_max_borrow_rate, rest) = Self::unpack_u64(rest)?;
                 let (borrow_fee_wad, rest) = Self::unpack_u64(rest)?;
                 let (flash_loan_fee_wad, rest) = Self::unpack_u64(rest)?;
                 let (host_fee_percentage, rest) = Self::unpack_u8(rest)?;
@@ -531,12 +533,14 @@ impl LendingInstruction {
                     liquidity_amount,
                     config: ReserveConfig {
                         optimal_utilization_rate,
+                        unhealthy_utilization_rate,
                         loan_to_value_ratio,
                         liquidation_bonus,
                         liquidation_threshold,
                         min_borrow_rate,
                         optimal_borrow_rate,
                         max_borrow_rate,
+                        super_max_borrow_rate,
                         fees: ReserveFees {
                             borrow_fee_wad,
                             flash_loan_fee_wad,
@@ -597,12 +601,14 @@ impl LendingInstruction {
             }
             16 => {
                 let (optimal_utilization_rate, rest) = Self::unpack_u8(rest)?;
+                let (unhealthy_utilization_rate, rest) = Self::unpack_u8(rest)?;
                 let (loan_to_value_ratio, rest) = Self::unpack_u8(rest)?;
                 let (liquidation_bonus, rest) = Self::unpack_u8(rest)?;
                 let (liquidation_threshold, rest) = Self::unpack_u8(rest)?;
                 let (min_borrow_rate, rest) = Self::unpack_u8(rest)?;
                 let (optimal_borrow_rate, rest) = Self::unpack_u8(rest)?;
                 let (max_borrow_rate, rest) = Self::unpack_u8(rest)?;
+                let (super_max_borrow_rate, rest) = Self::unpack_u64(rest)?;
                 let (borrow_fee_wad, rest) = Self::unpack_u64(rest)?;
                 let (flash_loan_fee_wad, rest) = Self::unpack_u64(rest)?;
                 let (host_fee_percentage, rest) = Self::unpack_u8(rest)?;
@@ -619,12 +625,14 @@ impl LendingInstruction {
                 Self::UpdateReserveConfig {
                     config: ReserveConfig {
                         optimal_utilization_rate,
+                        unhealthy_utilization_rate,
                         loan_to_value_ratio,
                         liquidation_bonus,
                         liquidation_threshold,
                         min_borrow_rate,
                         optimal_borrow_rate,
                         max_borrow_rate,
+                        super_max_borrow_rate,
                         fees: ReserveFees {
                             borrow_fee_wad,
                             flash_loan_fee_wad,
@@ -750,12 +758,14 @@ impl LendingInstruction {
                 config:
                     ReserveConfig {
                         optimal_utilization_rate,
+                        unhealthy_utilization_rate,
                         loan_to_value_ratio,
                         liquidation_bonus,
                         liquidation_threshold,
                         min_borrow_rate,
                         optimal_borrow_rate,
                         max_borrow_rate,
+                        super_max_borrow_rate,
                         fees:
                             ReserveFees {
                                 borrow_fee_wad,
@@ -774,12 +784,14 @@ impl LendingInstruction {
                 buf.push(2);
                 buf.extend_from_slice(&liquidity_amount.to_le_bytes());
                 buf.extend_from_slice(&optimal_utilization_rate.to_le_bytes());
+                buf.extend_from_slice(&unhealthy_utilization_rate.to_le_bytes());
                 buf.extend_from_slice(&loan_to_value_ratio.to_le_bytes());
                 buf.extend_from_slice(&liquidation_bonus.to_le_bytes());
                 buf.extend_from_slice(&liquidation_threshold.to_le_bytes());
                 buf.extend_from_slice(&min_borrow_rate.to_le_bytes());
                 buf.extend_from_slice(&optimal_borrow_rate.to_le_bytes());
                 buf.extend_from_slice(&max_borrow_rate.to_le_bytes());
+                buf.extend_from_slice(&super_max_borrow_rate.to_le_bytes());
                 buf.extend_from_slice(&borrow_fee_wad.to_le_bytes());
                 buf.extend_from_slice(&flash_loan_fee_wad.to_le_bytes());
                 buf.extend_from_slice(&host_fee_percentage.to_le_bytes());
@@ -846,12 +858,14 @@ impl LendingInstruction {
             } => {
                 buf.push(16);
                 buf.extend_from_slice(&config.optimal_utilization_rate.to_le_bytes());
+                buf.extend_from_slice(&config.unhealthy_utilization_rate.to_le_bytes());
                 buf.extend_from_slice(&config.loan_to_value_ratio.to_le_bytes());
                 buf.extend_from_slice(&config.liquidation_bonus.to_le_bytes());
                 buf.extend_from_slice(&config.liquidation_threshold.to_le_bytes());
                 buf.extend_from_slice(&config.min_borrow_rate.to_le_bytes());
                 buf.extend_from_slice(&config.optimal_borrow_rate.to_le_bytes());
                 buf.extend_from_slice(&config.max_borrow_rate.to_le_bytes());
+                buf.extend_from_slice(&config.super_max_borrow_rate.to_le_bytes());
                 buf.extend_from_slice(&config.fees.borrow_fee_wad.to_le_bytes());
                 buf.extend_from_slice(&config.fees.flash_loan_fee_wad.to_le_bytes());
                 buf.extend_from_slice(&config.fees.host_fee_percentage.to_le_bytes());
@@ -1618,12 +1632,14 @@ mod test {
                     liquidity_amount: rng.gen::<u64>(),
                     config: ReserveConfig {
                         optimal_utilization_rate: rng.gen::<u8>(),
+                        unhealthy_utilization_rate: rng.gen::<u8>(),
                         loan_to_value_ratio: rng.gen::<u8>(),
                         liquidation_bonus: rng.gen::<u8>(),
                         liquidation_threshold: rng.gen::<u8>(),
                         min_borrow_rate: rng.gen::<u8>(),
                         optimal_borrow_rate: rng.gen::<u8>(),
                         max_borrow_rate: rng.gen::<u8>(),
+                        super_max_borrow_rate: rng.gen::<u64>(),
                         fees: ReserveFees {
                             borrow_fee_wad: rng.gen::<u64>(),
                             flash_loan_fee_wad: rng.gen::<u64>(),
@@ -1774,12 +1790,14 @@ mod test {
                 let instruction = LendingInstruction::UpdateReserveConfig {
                     config: ReserveConfig {
                         optimal_utilization_rate: rng.gen::<u8>(),
+                        unhealthy_utilization_rate: rng.gen::<u8>(),
                         loan_to_value_ratio: rng.gen::<u8>(),
                         liquidation_bonus: rng.gen::<u8>(),
                         liquidation_threshold: rng.gen::<u8>(),
                         min_borrow_rate: rng.gen::<u8>(),
                         optimal_borrow_rate: rng.gen::<u8>(),
                         max_borrow_rate: rng.gen::<u8>(),
+                        super_max_borrow_rate: rng.gen::<u64>(),
                         fees: ReserveFees {
                             borrow_fee_wad: rng.gen::<u64>(),
                             flash_loan_fee_wad: rng.gen::<u64>(),

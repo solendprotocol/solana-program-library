@@ -205,14 +205,28 @@ async fn test_borrow() {
 async fn test_liquidation() {
     let (mut test, lending_market, usdc_reserve, wsol_reserve, lending_market_owner, _) =
         setup_world(
-            &test_reserve_config(),
             &ReserveConfig {
                 added_borrow_weight_bps: 0,
                 fees: ReserveFees {
-                    borrow_fee_wad: 10_000_000_000_000_000, // 1%
-                    host_fee_percentage: 20,
+                    borrow_fee_wad: 0, // 1%
+                    host_fee_percentage: 0,
                     flash_loan_fee_wad: 0,
                 },
+                min_borrow_rate: 0,
+                optimal_borrow_rate: 0,
+                max_borrow_rate: 0,
+                ..test_reserve_config()
+            },
+            &ReserveConfig {
+                added_borrow_weight_bps: 0,
+                fees: ReserveFees {
+                    borrow_fee_wad: 0, // 1%
+                    host_fee_percentage: 0,
+                    flash_loan_fee_wad: 0,
+                },
+                min_borrow_rate: 0,
+                optimal_borrow_rate: 0,
+                max_borrow_rate: 0,
                 ..test_reserve_config()
             },
         )
@@ -373,10 +387,14 @@ async fn test_liquidation() {
         // there is 1 slot worth of interest that is unaccounted for)
         // note that if there were no borrow weight, we would only liquidate 10 usdc.
         let (balance_changes, _) = balance_checker.find_balance_changes(&mut test).await;
-        assert!(balance_changes.contains(&TokenBalanceChange {
-            token_account: liquidator.get_account(&wsol_mint::id()).unwrap(),
-            mint: wsol_mint::id(),
-            diff: -1100000002 // ~1.1 SOL
-        }));
+        assert!(
+            balance_changes.contains(&TokenBalanceChange {
+                token_account: liquidator.get_account(&wsol_mint::id()).unwrap(),
+                mint: wsol_mint::id(),
+                diff: -1100000001 // ~1.1 SOL
+            }),
+            "{:?}",
+            balance_changes
+        );
     }
 }
