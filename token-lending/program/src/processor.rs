@@ -951,6 +951,7 @@ fn process_refresh_obligation(program_id: &Pubkey, accounts: &[AccountInfo]) -> 
     }
 
     let mut borrowing_isolated_asset = false;
+    let mut max_borrow_weight = None;
     for (index, liquidity) in obligation.borrows.iter_mut().enumerate() {
         let borrow_reserve_info = next_account_info(account_info_iter)?;
         if borrow_reserve_info.owner != program_id {
@@ -983,6 +984,23 @@ fn process_refresh_obligation(program_id: &Pubkey, accounts: &[AccountInfo]) -> 
 
         liquidity.accrue_interest(borrow_reserve.liquidity.cumulative_borrow_rate_wads)?;
 
+        let borrow_weight_and_pubkey = (
+            borrow_reserve.config.added_borrow_weight_bps,
+            borrow_reserve.liquidity.mint_pubkey,
+        );
+        max_borrow_weight = match max_borrow_weight {
+            None => Some((borrow_weight_and_pubkey, index)),
+            Some((max_borrow_weight_and_pubkey, _)) => {
+                if liquidity.borrowed_amount_wads > Decimal::zero()
+                    && borrow_weight_and_pubkey > max_borrow_weight_and_pubkey
+                {
+                    Some((borrow_weight_and_pubkey, index))
+                } else {
+                    max_borrow_weight
+                }
+            }
+        };
+
         let market_value = borrow_reserve.market_value(liquidity.borrowed_amount_wads)?;
         let market_value_upper_bound =
             borrow_reserve.market_value_upper_bound(liquidity.borrowed_amount_wads)?;
@@ -1011,6 +1029,12 @@ fn process_refresh_obligation(program_id: &Pubkey, accounts: &[AccountInfo]) -> 
     obligation.unhealthy_borrow_value = min(unhealthy_borrow_value, global_unhealthy_borrow_value);
 
     obligation.last_update.update_slot(clock.slot);
+
+    // move the ObligationLiquidity with the max borrow weight to the front
+    if let Some((_, max_borrow_weight_index)) = max_borrow_weight {
+        obligation.borrows.swap(0, max_borrow_weight_index);
+    }
+
     Obligation::pack(obligation, &mut obligation_info.data.borrow_mut())?;
 
     Ok(())
@@ -1828,6 +1852,10 @@ fn _liquidate_obligation<'a>(
     if liquidity.market_value == Decimal::zero() {
         msg!("Obligation borrow value is zero");
         return Err(LendingError::ObligationLiquidityEmpty.into());
+    }
+    if liquidity_index != 0 {
+        msg!("Obligation borrow is not the first liquidity in the borrows list");
+        return Err(LendingError::InvalidAccountInput.into());
     }
 
     let (collateral, collateral_index) =

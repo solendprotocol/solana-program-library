@@ -2,7 +2,10 @@
 
 mod helpers;
 
+use crate::solend_program_test::custom_scenario;
+use crate::solend_program_test::ObligationArgs;
 use crate::solend_program_test::PriceArgs;
+use crate::solend_program_test::ReserveArgs;
 use std::collections::HashSet;
 
 use helpers::solend_program_test::{setup_world, BalanceChecker, Info, SolendProgramTest, User};
@@ -276,5 +279,152 @@ async fn test_success() {
 
             ..obligation.account
         }
+    );
+}
+
+#[tokio::test]
+async fn test_obligation_liquidity_ordering() {
+    let (mut test, lending_market, reserves, obligations, _users, lending_market_owner) =
+        custom_scenario(
+            &[
+                ReserveArgs {
+                    mint: usdc_mint::id(),
+                    config: ReserveConfig {
+                        optimal_borrow_rate: 0,
+                        max_borrow_rate: 0,
+                        ..test_reserve_config()
+                    },
+                    liquidity_amount: 100_000 * FRACTIONAL_TO_USDC,
+                    price: PriceArgs {
+                        price: 10,
+                        conf: 0,
+                        expo: -1,
+                        ema_price: 10,
+                        ema_conf: 1,
+                    },
+                },
+                ReserveArgs {
+                    mint: wsol_mint::id(),
+                    config: ReserveConfig {
+                        loan_to_value_ratio: 0,
+                        liquidation_threshold: 0,
+                        fees: ReserveFees {
+                            host_fee_percentage: 0,
+                            ..ReserveFees::default()
+                        },
+                        optimal_borrow_rate: 0,
+                        max_borrow_rate: 0,
+                        ..test_reserve_config()
+                    },
+                    liquidity_amount: 100 * LAMPORTS_PER_SOL,
+                    price: PriceArgs {
+                        price: 10,
+                        conf: 0,
+                        expo: 0,
+                        ema_price: 10,
+                        ema_conf: 0,
+                    },
+                },
+            ],
+            &[ObligationArgs {
+                deposits: vec![(usdc_mint::id(), 100 * FRACTIONAL_TO_USDC)],
+                borrows: vec![
+                    (wsol_mint::id(), LAMPORTS_PER_SOL),
+                    (usdc_mint::id(), FRACTIONAL_TO_USDC),
+                ],
+            }],
+        )
+        .await;
+
+    // update usdc borrow weight to 20_000
+    let usdc_reserve = reserves
+        .iter()
+        .find(|r| r.account.liquidity.mint_pubkey == usdc_mint::id())
+        .unwrap();
+    let wsol_reserve = reserves
+        .iter()
+        .find(|r| r.account.liquidity.mint_pubkey == wsol_mint::id())
+        .unwrap();
+
+    lending_market
+        .update_reserve_config(
+            &mut test,
+            &lending_market_owner,
+            usdc_reserve,
+            ReserveConfig {
+                added_borrow_weight_bps: 50_000,
+                ..usdc_reserve.account.config
+            },
+            usdc_reserve.account.rate_limiter.config,
+            None,
+        )
+        .await
+        .unwrap();
+
+    test.advance_clock_by_slots(1).await;
+
+    lending_market
+        .refresh_obligation(&mut test, &obligations[0])
+        .await
+        .unwrap();
+
+    let obligation = test.load_account::<Obligation>(obligations[0].pubkey).await;
+    assert_eq!(
+        obligation.account.borrows,
+        vec![
+            ObligationLiquidity {
+                borrow_reserve: usdc_reserve.pubkey,
+                cumulative_borrow_rate_wads: Decimal::from(1u64),
+                borrowed_amount_wads: Decimal::from(FRACTIONAL_TO_USDC),
+                market_value: Decimal::from(1u64),
+            },
+            ObligationLiquidity {
+                borrow_reserve: wsol_reserve.pubkey,
+                cumulative_borrow_rate_wads: Decimal::from(1u64),
+                borrowed_amount_wads: Decimal::from(LAMPORTS_PER_SOL),
+                market_value: Decimal::from(10u64),
+            },
+        ]
+    );
+
+    lending_market
+        .update_reserve_config(
+            &mut test,
+            &lending_market_owner,
+            wsol_reserve,
+            ReserveConfig {
+                added_borrow_weight_bps: 100_000,
+                ..wsol_reserve.account.config
+            },
+            wsol_reserve.account.rate_limiter.config,
+            None,
+        )
+        .await
+        .unwrap();
+
+    test.advance_clock_by_slots(1).await;
+
+    lending_market
+        .refresh_obligation(&mut test, &obligations[0])
+        .await
+        .unwrap();
+
+    let obligation = test.load_account::<Obligation>(obligations[0].pubkey).await;
+    assert_eq!(
+        obligation.account.borrows,
+        vec![
+            ObligationLiquidity {
+                borrow_reserve: wsol_reserve.pubkey,
+                cumulative_borrow_rate_wads: Decimal::from(1u64),
+                borrowed_amount_wads: Decimal::from(LAMPORTS_PER_SOL),
+                market_value: Decimal::from(10u64),
+            },
+            ObligationLiquidity {
+                borrow_reserve: usdc_reserve.pubkey,
+                cumulative_borrow_rate_wads: Decimal::from(1u64),
+                borrowed_amount_wads: Decimal::from(FRACTIONAL_TO_USDC),
+                market_value: Decimal::from(1u64),
+            },
+        ]
     );
 }
