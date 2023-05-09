@@ -926,7 +926,7 @@ impl Info<LendingMarket> {
             .await;
         test.process_transaction(&refresh_ixs, None).await.unwrap();
 
-        let mut instructions = vec![ComputeBudgetInstruction::set_compute_unit_limit(80_000)];
+        let mut instructions = vec![ComputeBudgetInstruction::set_compute_unit_limit(55_000)];
         instructions.push(borrow_obligation_liquidity(
             solend_program::id(),
             liquidity_amount,
@@ -953,17 +953,20 @@ impl Info<LendingMarket> {
         user: &User,
         liquidity_amount: u64,
     ) -> Result<(), BanksClientError> {
-        let instructions = [repay_obligation_liquidity(
-            solend_program::id(),
-            liquidity_amount,
-            user.get_account(&repay_reserve.account.liquidity.mint_pubkey)
-                .unwrap(),
-            repay_reserve.account.liquidity.supply_pubkey,
-            repay_reserve.pubkey,
-            obligation.pubkey,
-            self.pubkey,
-            user.keypair.pubkey(),
-        )];
+        let instructions = [
+            ComputeBudgetInstruction::set_compute_unit_limit(27_000),
+            repay_obligation_liquidity(
+                solend_program::id(),
+                liquidity_amount,
+                user.get_account(&repay_reserve.account.liquidity.mint_pubkey)
+                    .unwrap(),
+                repay_reserve.account.liquidity.supply_pubkey,
+                repay_reserve.pubkey,
+                obligation.pubkey,
+                self.pubkey,
+                user.keypair.pubkey(),
+            ),
+        ];
 
         test.process_transaction(&instructions, Some(&[&user.keypair]))
             .await
@@ -975,6 +978,7 @@ impl Info<LendingMarket> {
         reserve: &Info<Reserve>,
     ) -> Result<(), BanksClientError> {
         let instructions = [
+            ComputeBudgetInstruction::set_compute_unit_limit(40_000),
             refresh_reserve(
                 solend_program::id(),
                 reserve.pubkey,
@@ -1002,33 +1006,38 @@ impl Info<LendingMarket> {
         user: &User,
         liquidity_amount: u64,
     ) -> Result<(), BanksClientError> {
-        let mut instructions = self
+        let refresh_ixs = self
             .build_refresh_instructions(test, obligation, None)
             .await;
+        test.process_transaction(&refresh_ixs, None).await.unwrap();
 
-        instructions.push(liquidate_obligation_and_redeem_reserve_collateral(
-            solend_program::id(),
-            liquidity_amount,
-            user.get_account(&repay_reserve.account.liquidity.mint_pubkey)
-                .unwrap(),
-            user.get_account(&withdraw_reserve.account.collateral.mint_pubkey)
-                .unwrap(),
-            user.get_account(&withdraw_reserve.account.liquidity.mint_pubkey)
-                .unwrap(),
-            repay_reserve.pubkey,
-            repay_reserve.account.liquidity.supply_pubkey,
-            withdraw_reserve.pubkey,
-            withdraw_reserve.account.collateral.mint_pubkey,
-            withdraw_reserve.account.collateral.supply_pubkey,
-            withdraw_reserve.account.liquidity.supply_pubkey,
-            withdraw_reserve.account.config.fee_receiver,
-            obligation.pubkey,
-            self.pubkey,
-            user.keypair.pubkey(),
-        ));
-
-        test.process_transaction(&instructions, Some(&[&user.keypair]))
-            .await
+        test.process_transaction(
+            &[
+                ComputeBudgetInstruction::set_compute_unit_limit(100_000),
+                liquidate_obligation_and_redeem_reserve_collateral(
+                    solend_program::id(),
+                    liquidity_amount,
+                    user.get_account(&repay_reserve.account.liquidity.mint_pubkey)
+                        .unwrap(),
+                    user.get_account(&withdraw_reserve.account.collateral.mint_pubkey)
+                        .unwrap(),
+                    user.get_account(&withdraw_reserve.account.liquidity.mint_pubkey)
+                        .unwrap(),
+                    repay_reserve.pubkey,
+                    repay_reserve.account.liquidity.supply_pubkey,
+                    withdraw_reserve.pubkey,
+                    withdraw_reserve.account.collateral.mint_pubkey,
+                    withdraw_reserve.account.collateral.supply_pubkey,
+                    withdraw_reserve.account.liquidity.supply_pubkey,
+                    withdraw_reserve.account.config.fee_receiver,
+                    obligation.pubkey,
+                    self.pubkey,
+                    user.keypair.pubkey(),
+                ),
+            ],
+            Some(&[&user.keypair]),
+        )
+        .await
     }
 
     pub async fn liquidate_obligation(
@@ -1074,31 +1083,34 @@ impl Info<LendingMarket> {
     ) -> Result<(), BanksClientError> {
         let obligation = test.load_account::<Obligation>(obligation.pubkey).await;
 
-        let mut instructions = self
-            .build_refresh_instructions(test, &obligation, Some(withdraw_reserve))
+        let refresh_ixs = self
+            .build_refresh_instructions(test, &obligation, None)
             .await;
+        test.process_transaction(&refresh_ixs, None).await.unwrap();
 
-        instructions.push(
-            withdraw_obligation_collateral_and_redeem_reserve_collateral(
-                solend_program::id(),
-                collateral_amount,
-                withdraw_reserve.account.collateral.supply_pubkey,
-                user.get_account(&withdraw_reserve.account.collateral.mint_pubkey)
-                    .unwrap(),
-                withdraw_reserve.pubkey,
-                obligation.pubkey,
-                self.pubkey,
-                user.get_account(&withdraw_reserve.account.liquidity.mint_pubkey)
-                    .unwrap(),
-                withdraw_reserve.account.collateral.mint_pubkey,
-                withdraw_reserve.account.liquidity.supply_pubkey,
-                user.keypair.pubkey(),
-                user.keypair.pubkey(),
-            ),
-        );
-
-        test.process_transaction(&instructions, Some(&[&user.keypair]))
-            .await
+        test.process_transaction(
+            &[
+                ComputeBudgetInstruction::set_compute_unit_limit(70_000),
+                withdraw_obligation_collateral_and_redeem_reserve_collateral(
+                    solend_program::id(),
+                    collateral_amount,
+                    withdraw_reserve.account.collateral.supply_pubkey,
+                    user.get_account(&withdraw_reserve.account.collateral.mint_pubkey)
+                        .unwrap(),
+                    withdraw_reserve.pubkey,
+                    obligation.pubkey,
+                    self.pubkey,
+                    user.get_account(&withdraw_reserve.account.liquidity.mint_pubkey)
+                        .unwrap(),
+                    withdraw_reserve.account.collateral.mint_pubkey,
+                    withdraw_reserve.account.liquidity.supply_pubkey,
+                    user.keypair.pubkey(),
+                    user.keypair.pubkey(),
+                ),
+            ],
+            Some(&[&user.keypair]),
+        )
+        .await
     }
 
     pub async fn withdraw_obligation_collateral(
@@ -1109,24 +1121,29 @@ impl Info<LendingMarket> {
         user: &User,
         collateral_amount: u64,
     ) -> Result<(), BanksClientError> {
-        let mut instructions = self
-            .build_refresh_instructions(test, obligation, Some(withdraw_reserve))
+        let refresh_ixs = self
+            .build_refresh_instructions(test, obligation, None)
             .await;
+        test.process_transaction(&refresh_ixs, None).await.unwrap();
 
-        instructions.push(withdraw_obligation_collateral(
-            solend_program::id(),
-            collateral_amount,
-            withdraw_reserve.account.collateral.supply_pubkey,
-            user.get_account(&withdraw_reserve.account.collateral.mint_pubkey)
-                .unwrap(),
-            withdraw_reserve.pubkey,
-            obligation.pubkey,
-            self.pubkey,
-            user.keypair.pubkey(),
-        ));
-
-        test.process_transaction(&instructions, Some(&[&user.keypair]))
-            .await
+        test.process_transaction(
+            &[
+                ComputeBudgetInstruction::set_compute_unit_limit(40_000),
+                withdraw_obligation_collateral(
+                    solend_program::id(),
+                    collateral_amount,
+                    withdraw_reserve.account.collateral.supply_pubkey,
+                    user.get_account(&withdraw_reserve.account.collateral.mint_pubkey)
+                        .unwrap(),
+                    withdraw_reserve.pubkey,
+                    obligation.pubkey,
+                    self.pubkey,
+                    user.keypair.pubkey(),
+                ),
+            ],
+            Some(&[&user.keypair]),
+        )
+        .await
     }
 
     pub async fn set_lending_market_owner_and_config(
