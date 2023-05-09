@@ -130,6 +130,7 @@ async fn test_outflow_reserve() {
                 window_duration: 10,
                 max_outflow: 10,
             },
+            lending_market.account.risk_authority,
         )
         .await
         .unwrap();

@@ -48,6 +48,8 @@ pub enum LendingInstruction {
         new_owner: Pubkey,
         /// The new config
         rate_limiter_config: RateLimiterConfig,
+        /// The risk authority
+        risk_authority: Pubkey,
     },
 
     // 2
@@ -499,13 +501,15 @@ impl LendingInstruction {
             1 => {
                 let (new_owner, rest) = Self::unpack_pubkey(rest)?;
                 let (window_duration, rest) = Self::unpack_u64(rest)?;
-                let (max_outflow, _rest) = Self::unpack_u64(rest)?;
+                let (max_outflow, rest) = Self::unpack_u64(rest)?;
+                let (risk_authority, _rest) = Self::unpack_pubkey(rest)?;
                 Self::SetLendingMarketOwnerAndConfig {
                     new_owner,
                     rate_limiter_config: RateLimiterConfig {
                         window_duration,
                         max_outflow,
                     },
+                    risk_authority,
                 }
             }
             2 => {
@@ -739,11 +743,13 @@ impl LendingInstruction {
             Self::SetLendingMarketOwnerAndConfig {
                 new_owner,
                 rate_limiter_config: config,
+                risk_authority,
             } => {
                 buf.push(1);
                 buf.extend_from_slice(new_owner.as_ref());
                 buf.extend_from_slice(&config.window_duration.to_le_bytes());
                 buf.extend_from_slice(&config.max_outflow.to_le_bytes());
+                buf.extend_from_slice(risk_authority.as_ref());
             }
             Self::InitReserve {
                 liquidity_amount,
@@ -926,6 +932,7 @@ pub fn set_lending_market_owner_and_config(
     lending_market_owner: Pubkey,
     new_owner: Pubkey,
     rate_limiter_config: RateLimiterConfig,
+    risk_authority: Pubkey,
 ) -> Instruction {
     Instruction {
         program_id,
@@ -936,6 +943,7 @@ pub fn set_lending_market_owner_and_config(
         data: LendingInstruction::SetLendingMarketOwnerAndConfig {
             new_owner,
             rate_limiter_config,
+            risk_authority,
         }
         .pack(),
     }
@@ -1606,6 +1614,7 @@ mod test {
                         window_duration: rng.gen::<u64>(),
                         max_outflow: rng.gen::<u64>(),
                     },
+                    risk_authority: Pubkey::new_unique(),
                 };
 
                 let packed = instruction.pack();

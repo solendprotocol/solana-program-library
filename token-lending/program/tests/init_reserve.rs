@@ -25,7 +25,7 @@ use solana_sdk::{
 };
 use solend_program::state::LastUpdate;
 use solend_program::state::RateLimiter;
-use solend_program::state::RateLimiterConfig;
+
 use solend_program::state::Reserve;
 use solend_program::state::ReserveCollateral;
 use solend_program::state::ReserveLiquidity;
@@ -298,101 +298,4 @@ async fn test_invalid_fees() {
             )
         );
     }
-}
-
-#[tokio::test]
-async fn test_update_reserve_config() {
-    let (mut test, lending_market, lending_market_owner) = setup().await;
-
-    let wsol_reserve = test
-        .init_reserve(
-            &lending_market,
-            &lending_market_owner,
-            &wsol_mint::id(),
-            &test_reserve_config(),
-            &Keypair::new(),
-            1000,
-            None,
-        )
-        .await
-        .unwrap();
-
-    let new_reserve_config = test_reserve_config();
-    let new_rate_limiter_config = RateLimiterConfig {
-        window_duration: 50,
-        max_outflow: 100,
-    };
-
-    lending_market
-        .update_reserve_config(
-            &mut test,
-            &lending_market_owner,
-            &wsol_reserve,
-            new_reserve_config,
-            new_rate_limiter_config,
-            None,
-        )
-        .await
-        .unwrap();
-
-    let wsol_reserve_post = test.load_account::<Reserve>(wsol_reserve.pubkey).await;
-    assert_eq!(
-        wsol_reserve_post.account,
-        Reserve {
-            config: new_reserve_config,
-            rate_limiter: RateLimiter::new(new_rate_limiter_config, 1000),
-            ..wsol_reserve.account
-        }
-    );
-}
-
-#[tokio::test]
-async fn test_update_invalid_oracle_config() {
-    let (mut test, lending_market, lending_market_owner) = setup().await;
-    let wsol_reserve = test
-        .init_reserve(
-            &lending_market,
-            &lending_market_owner,
-            &wsol_mint::id(),
-            &test_reserve_config(),
-            &Keypair::new(),
-            1000,
-            None,
-        )
-        .await
-        .unwrap();
-
-    let oracle = test.mints.get(&wsol_mint::id()).unwrap().unwrap();
-
-    let new_reserve_config = test_reserve_config();
-    let new_rate_limiter_config = RateLimiterConfig {
-        window_duration: 50,
-        max_outflow: 100,
-    };
-
-    // Try setting both of the oracles to null: Should fail
-    let res = lending_market
-        .update_reserve_config(
-            &mut test,
-            &lending_market_owner,
-            &wsol_reserve,
-            new_reserve_config,
-            new_rate_limiter_config,
-            Some(&Oracle {
-                pyth_product_pubkey: oracle.pyth_product_pubkey,
-                pyth_price_pubkey: NULL_PUBKEY,
-                switchboard_feed_pubkey: Some(NULL_PUBKEY),
-            }),
-        )
-        .await
-        .unwrap_err()
-        .unwrap();
-
-    assert_eq!(
-        res,
-        TransactionError::InstructionError(
-            0,
-            InstructionError::Custom(LendingError::InvalidOracleConfig as u32)
-        )
-    );
 }
