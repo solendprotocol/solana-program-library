@@ -198,7 +198,7 @@ async fn test_update_invalid_oracle_config() {
     assert_eq!(
         res,
         TransactionError::InstructionError(
-            0,
+            1,
             InstructionError::Custom(LendingError::InvalidOracleConfig as u32)
         )
     );
@@ -263,7 +263,7 @@ async fn test_update_reserve_config_invalid_signers() {
     assert_eq!(
         res,
         TransactionError::InstructionError(
-            0,
+            1,
             InstructionError::Custom(LendingError::InvalidSigner as u32)
         )
     );

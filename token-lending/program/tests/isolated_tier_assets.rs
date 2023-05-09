@@ -288,7 +288,7 @@ async fn borrow_isolated_asset_invalid() {
     assert_eq!(
         err,
         TransactionError::InstructionError(
-            4,
+            1,
             InstructionError::Custom(LendingError::IsolatedTierAssetViolation as u32)
         )
     );
@@ -382,7 +382,7 @@ async fn borrow_regular_asset_invalid() {
     assert_eq!(
         err,
         TransactionError::InstructionError(
-            4,
+            1,
             InstructionError::Custom(LendingError::IsolatedTierAssetViolation as u32)
         )
     );
@@ -493,7 +493,7 @@ async fn invalid_borrow_due_to_reserve_config_change() {
     assert_eq!(
         err,
         TransactionError::InstructionError(
-            4,
+            1,
             InstructionError::Custom(LendingError::IsolatedTierAssetViolation as u32)
         )
     );

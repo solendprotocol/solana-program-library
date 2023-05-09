@@ -626,19 +626,22 @@ impl Info<LendingMarket> {
         user: &User,
         liquidity_amount: u64,
     ) -> Result<(), BanksClientError> {
-        let instructions = [deposit_reserve_liquidity(
-            solend_program::id(),
-            liquidity_amount,
-            user.get_account(&reserve.account.liquidity.mint_pubkey)
-                .unwrap(),
-            user.get_account(&reserve.account.collateral.mint_pubkey)
-                .unwrap(),
-            reserve.pubkey,
-            reserve.account.liquidity.supply_pubkey,
-            reserve.account.collateral.mint_pubkey,
-            self.pubkey,
-            user.keypair.pubkey(),
-        )];
+        let instructions = [
+            ComputeBudgetInstruction::set_compute_unit_limit(50_000),
+            deposit_reserve_liquidity(
+                solend_program::id(),
+                liquidity_amount,
+                user.get_account(&reserve.account.liquidity.mint_pubkey)
+                    .unwrap(),
+                user.get_account(&reserve.account.collateral.mint_pubkey)
+                    .unwrap(),
+                reserve.pubkey,
+                reserve.account.liquidity.supply_pubkey,
+                reserve.account.collateral.mint_pubkey,
+                self.pubkey,
+                user.keypair.pubkey(),
+            ),
+        ];
 
         test.process_transaction(&instructions, Some(&[&user.keypair]))
             .await
@@ -660,17 +663,20 @@ impl Info<LendingMarket> {
             .unwrap();
         let oracle = oracle.unwrap_or(&default_oracle);
 
-        let instructions = [update_reserve_config(
-            solend_program::id(),
-            config,
-            rate_limiter_config,
-            reserve.pubkey,
-            self.pubkey,
-            signer.keypair.pubkey(),
-            oracle.pyth_product_pubkey,
-            oracle.pyth_price_pubkey,
-            oracle.switchboard_feed_pubkey.unwrap_or(NULL_PUBKEY),
-        )];
+        let instructions = [
+            ComputeBudgetInstruction::set_compute_unit_limit(20_000),
+            update_reserve_config(
+                solend_program::id(),
+                config,
+                rate_limiter_config,
+                reserve.pubkey,
+                self.pubkey,
+                signer.keypair.pubkey(),
+                oracle.pyth_product_pubkey,
+                oracle.pyth_price_pubkey,
+                oracle.switchboard_feed_pubkey.unwrap_or(NULL_PUBKEY),
+            ),
+        ];
 
         test.process_transaction(&instructions, Some(&[&signer.keypair]))
             .await
@@ -684,24 +690,27 @@ impl Info<LendingMarket> {
         user: &User,
         liquidity_amount: u64,
     ) -> Result<(), BanksClientError> {
-        let instructions = [deposit_reserve_liquidity_and_obligation_collateral(
-            solend_program::id(),
-            liquidity_amount,
-            user.get_account(&reserve.account.liquidity.mint_pubkey)
-                .unwrap(),
-            user.get_account(&reserve.account.collateral.mint_pubkey)
-                .unwrap(),
-            reserve.pubkey,
-            reserve.account.liquidity.supply_pubkey,
-            reserve.account.collateral.mint_pubkey,
-            self.pubkey,
-            reserve.account.collateral.supply_pubkey,
-            obligation.pubkey,
-            user.keypair.pubkey(),
-            reserve.account.liquidity.pyth_oracle_pubkey,
-            reserve.account.liquidity.switchboard_oracle_pubkey,
-            user.keypair.pubkey(),
-        )];
+        let instructions = [
+            ComputeBudgetInstruction::set_compute_unit_limit(70_000),
+            deposit_reserve_liquidity_and_obligation_collateral(
+                solend_program::id(),
+                liquidity_amount,
+                user.get_account(&reserve.account.liquidity.mint_pubkey)
+                    .unwrap(),
+                user.get_account(&reserve.account.collateral.mint_pubkey)
+                    .unwrap(),
+                reserve.pubkey,
+                reserve.account.liquidity.supply_pubkey,
+                reserve.account.collateral.mint_pubkey,
+                self.pubkey,
+                reserve.account.collateral.supply_pubkey,
+                obligation.pubkey,
+                user.keypair.pubkey(),
+                reserve.account.liquidity.pyth_oracle_pubkey,
+                reserve.account.liquidity.switchboard_oracle_pubkey,
+                user.keypair.pubkey(),
+            ),
+        ];
 
         test.process_transaction(&instructions, Some(&[&user.keypair]))
             .await
@@ -715,6 +724,7 @@ impl Info<LendingMarket> {
         collateral_amount: u64,
     ) -> Result<(), BanksClientError> {
         let instructions = [
+            ComputeBudgetInstruction::set_compute_unit_limit(48_000),
             refresh_reserve(
                 solend_program::id(),
                 reserve.pubkey,
@@ -747,6 +757,7 @@ impl Info<LendingMarket> {
         user: &User,
     ) -> Result<Info<Obligation>, BanksClientError> {
         let instructions = [
+            ComputeBudgetInstruction::set_compute_unit_limit(10_000),
             system_instruction::create_account(
                 &test.context.payer.pubkey(),
                 &obligation_keypair.pubkey(),
@@ -781,18 +792,21 @@ impl Info<LendingMarket> {
         user: &User,
         collateral_amount: u64,
     ) -> Result<(), BanksClientError> {
-        let instructions = [deposit_obligation_collateral(
-            solend_program::id(),
-            collateral_amount,
-            user.get_account(&reserve.account.collateral.mint_pubkey)
-                .unwrap(),
-            reserve.account.collateral.supply_pubkey,
-            reserve.pubkey,
-            obligation.pubkey,
-            self.pubkey,
-            user.keypair.pubkey(),
-            user.keypair.pubkey(),
-        )];
+        let instructions = [
+            ComputeBudgetInstruction::set_compute_unit_limit(38_000),
+            deposit_obligation_collateral(
+                solend_program::id(),
+                collateral_amount,
+                user.get_account(&reserve.account.collateral.mint_pubkey)
+                    .unwrap(),
+                reserve.account.collateral.supply_pubkey,
+                reserve.pubkey,
+                obligation.pubkey,
+                self.pubkey,
+                user.keypair.pubkey(),
+                user.keypair.pubkey(),
+            ),
+        ];
 
         test.process_transaction(&instructions, Some(&[&user.keypair]))
             .await
@@ -804,12 +818,15 @@ impl Info<LendingMarket> {
         reserve: &Info<Reserve>,
     ) -> Result<(), BanksClientError> {
         test.process_transaction(
-            &[refresh_reserve(
-                solend_program::id(),
-                reserve.pubkey,
-                reserve.account.liquidity.pyth_oracle_pubkey,
-                reserve.account.liquidity.switchboard_oracle_pubkey,
-            )],
+            &[
+                ComputeBudgetInstruction::set_compute_unit_limit(40_000),
+                refresh_reserve(
+                    solend_program::id(),
+                    reserve.pubkey,
+                    reserve.account.liquidity.pyth_oracle_pubkey,
+                    reserve.account.liquidity.switchboard_oracle_pubkey,
+                ),
+            ],
             None,
         )
         .await
@@ -904,10 +921,12 @@ impl Info<LendingMarket> {
     ) -> Result<(), BanksClientError> {
         let obligation = test.load_account::<Obligation>(obligation.pubkey).await;
 
-        let mut instructions = self
+        let refresh_ixs = self
             .build_refresh_instructions(test, &obligation, Some(borrow_reserve))
             .await;
+        test.process_transaction(&refresh_ixs, None).await.unwrap();
 
+        let mut instructions = vec![ComputeBudgetInstruction::set_compute_unit_limit(80_000)];
         instructions.push(borrow_obligation_liquidity(
             solend_program::id(),
             liquidity_amount,
