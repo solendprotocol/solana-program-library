@@ -520,7 +520,7 @@ async fn test_liquidity_ordering() {
     assert_eq!(
         err,
         TransactionError::InstructionError(
-            3,
+            1,
             InstructionError::Custom(LendingError::InvalidAccountInput as u32)
         )
     );

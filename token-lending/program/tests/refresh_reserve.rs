@@ -227,7 +227,7 @@ async fn test_fail_pyth_price_stale() {
     assert_eq!(
         res,
         TransactionError::InstructionError(
-            0,
+            1,
             InstructionError::Custom(LendingError::NullOracleConfig as u32),
         ),
     );

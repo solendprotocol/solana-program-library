@@ -144,7 +144,7 @@ async fn test_borrow() {
     assert_eq!(
         err,
         TransactionError::InstructionError(
-            3,
+            1,
             InstructionError::Custom(LendingError::BorrowTooLarge as u32)
         )
     );
@@ -289,7 +289,7 @@ async fn test_withdraw() {
         assert_eq!(
             err,
             TransactionError::InstructionError(
-                4,
+                1,
                 InstructionError::Custom(LendingError::WithdrawTooLarge as u32)
             )
         );
@@ -372,7 +372,7 @@ async fn test_liquidation_doesnt_use_smoothed_price() {
     assert_eq!(
         err,
         TransactionError::InstructionError(
-            3,
+            1,
             InstructionError::Custom(LendingError::ObligationHealthy as u32)
         )
     );
@@ -408,7 +408,7 @@ async fn test_liquidation_doesnt_use_smoothed_price() {
     assert_eq!(
         err,
         TransactionError::InstructionError(
-            3,
+            1,
             InstructionError::Custom(LendingError::ObligationHealthy as u32)
         )
     );
