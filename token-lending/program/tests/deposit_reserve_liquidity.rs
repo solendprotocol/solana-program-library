@@ -125,7 +125,7 @@ async fn test_fail_exceed_deposit_limit() {
     assert_eq!(
         res,
         TransactionError::InstructionError(
-            0,
+            1,
             InstructionError::Custom(LendingError::InvalidAmount as u32)
         )
     );
@@ -157,9 +157,9 @@ async fn test_fail_deposit_too_much() {
 
     match res {
         // InsufficientFunds
-        TransactionError::InstructionError(0, InstructionError::Custom(1)) => (),
+        TransactionError::InstructionError(1, InstructionError::Custom(1)) => (),
         // LendingError::TokenTransferFailed
-        TransactionError::InstructionError(0, InstructionError::Custom(17)) => (),
+        TransactionError::InstructionError(1, InstructionError::Custom(17)) => (),
         e => panic!("unexpected error: {:#?}", e),
     };
 }

@@ -169,7 +169,7 @@ async fn test_outflow_reserve() {
         assert_eq!(
             res,
             TransactionError::InstructionError(
-                3,
+                1,
                 InstructionError::Custom(LendingError::OutflowRateLimitExceeded as u32)
             )
         );
@@ -190,7 +190,7 @@ async fn test_outflow_reserve() {
         assert_eq!(
             res,
             TransactionError::InstructionError(
-                3,
+                1,
                 InstructionError::Custom(LendingError::OutflowRateLimitExceeded as u32)
             )
         );
@@ -205,7 +205,7 @@ async fn test_outflow_reserve() {
         assert_eq!(
             res,
             TransactionError::InstructionError(
-                1,
+                2,
                 InstructionError::Custom(LendingError::OutflowRateLimitExceeded as u32)
             )
         );

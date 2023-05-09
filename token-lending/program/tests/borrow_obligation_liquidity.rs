@@ -357,7 +357,7 @@ async fn test_fail_borrow_over_reserve_borrow_limit() {
     assert_eq!(
         res,
         TransactionError::InstructionError(
-            3,
+            1,
             InstructionError::Custom(LendingError::InvalidAmount as u32)
         )
     );
@@ -428,7 +428,7 @@ async fn test_fail_reserve_borrow_rate_limit_exceeded() {
         assert_eq!(
             res,
             TransactionError::InstructionError(
-                3,
+                1,
                 InstructionError::Custom(LendingError::OutflowRateLimitExceeded as u32)
             )
         );
@@ -454,7 +454,7 @@ async fn test_fail_reserve_borrow_rate_limit_exceeded() {
     assert_eq!(
         res,
         TransactionError::InstructionError(
-            3,
+            1,
             InstructionError::Custom(LendingError::OutflowRateLimitExceeded as u32)
         )
     );

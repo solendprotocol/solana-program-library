@@ -156,7 +156,7 @@ async fn test_borrow() {
         assert_eq!(
             res,
             TransactionError::InstructionError(
-                3,
+                1,
                 InstructionError::Custom(LendingError::WithdrawTooLarge as u32)
             )
         );
@@ -324,7 +324,7 @@ async fn test_liquidation() {
         assert_eq!(
             res,
             TransactionError::InstructionError(
-                3,
+                1,
                 InstructionError::Custom(LendingError::ObligationHealthy as u32)
             )
         );
