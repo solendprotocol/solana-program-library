@@ -1251,6 +1251,9 @@ impl Pack for Reserve {
             return Err(ProgramError::InvalidAccountData);
         }
 
+        let optimal_utilization_rate = u8::from_le_bytes(*config_optimal_utilization_rate);
+        let max_borrow_rate = u8::from_le_bytes(*config_max_borrow_rate);
+
         Ok(Self {
             version,
             last_update: LastUpdate {
@@ -1281,15 +1284,21 @@ impl Pack for Reserve {
                 supply_pubkey: Pubkey::new_from_array(*collateral_supply_pubkey),
             },
             config: ReserveConfig {
-                optimal_utilization_rate: u8::from_le_bytes(*config_optimal_utilization_rate),
-                unhealthy_utilization_rate: u8::from_le_bytes(*config_unhealthy_utilization_rate),
+                optimal_utilization_rate,
+                unhealthy_utilization_rate: max(
+                    optimal_utilization_rate,
+                    u8::from_le_bytes(*config_unhealthy_utilization_rate),
+                ),
                 loan_to_value_ratio: u8::from_le_bytes(*config_loan_to_value_ratio),
                 liquidation_bonus: u8::from_le_bytes(*config_liquidation_bonus),
                 liquidation_threshold: u8::from_le_bytes(*config_liquidation_threshold),
                 min_borrow_rate: u8::from_le_bytes(*config_min_borrow_rate),
                 optimal_borrow_rate: u8::from_le_bytes(*config_optimal_borrow_rate),
-                max_borrow_rate: u8::from_le_bytes(*config_max_borrow_rate),
-                super_max_borrow_rate: u64::from_le_bytes(*config_super_max_borrow_rate),
+                max_borrow_rate,
+                super_max_borrow_rate: max(
+                    max_borrow_rate as u64,
+                    u64::from_le_bytes(*config_super_max_borrow_rate),
+                ),
                 fees: ReserveFees {
                     borrow_fee_wad: u64::from_le_bytes(*config_fees_borrow_fee_wad),
                     flash_loan_fee_wad: u64::from_le_bytes(*config_fees_flash_loan_fee_wad),
@@ -1326,6 +1335,7 @@ mod test {
     fn pack_and_unpack_reserve() {
         let mut rng = rand::thread_rng();
         for _ in 0..100 {
+            let optimal_utilization_rate = rng.gen();
             let reserve = Reserve {
                 version: PROGRAM_VERSION,
                 last_update: LastUpdate {
@@ -1352,15 +1362,15 @@ mod test {
                     supply_pubkey: Pubkey::new_unique(),
                 },
                 config: ReserveConfig {
-                    optimal_utilization_rate: rng.gen(),
-                    unhealthy_utilization_rate: rng.gen(),
+                    optimal_utilization_rate,
+                    unhealthy_utilization_rate: max(optimal_utilization_rate, rng.gen()),
                     loan_to_value_ratio: rng.gen(),
                     liquidation_bonus: rng.gen(),
                     liquidation_threshold: rng.gen(),
                     min_borrow_rate: rng.gen(),
                     optimal_borrow_rate: rng.gen(),
                     max_borrow_rate: rng.gen(),
-                    super_max_borrow_rate: rng.gen(),
+                    super_max_borrow_rate: max(u8::MAX as u64, rng.gen()),
                     fees: ReserveFees {
                         borrow_fee_wad: rng.gen(),
                         flash_loan_fee_wad: rng.gen(),
