@@ -50,6 +50,8 @@ pub enum LendingInstruction {
         rate_limiter_config: RateLimiterConfig,
         /// whitelist liquidator
         whitelisted_liquidator: Option<Pubkey>,
+        /// The risk authority
+        risk_authority: Pubkey,
     },
 
     // 2
@@ -502,7 +504,7 @@ impl LendingInstruction {
                 let (new_owner, rest) = Self::unpack_pubkey(rest)?;
                 let (window_duration, rest) = Self::unpack_u64(rest)?;
                 let (max_outflow, rest) = Self::unpack_u64(rest)?;
-                let (whitelisted_liquidator, _rest) = match Self::unpack_u8(rest)? {
+                let (whitelisted_liquidator, rest) = match Self::unpack_u8(rest)? {
                     (0, rest) => (None, rest),
                     (1, rest) => {
                         let (pubkey, rest) = Self::unpack_pubkey(rest)?;
@@ -511,6 +513,7 @@ impl LendingInstruction {
                     _ => return Err(LendingError::InstructionUnpackError.into()),
                 };
 
+                let (risk_authority, _rest) = Self::unpack_pubkey(rest)?;
                 Self::SetLendingMarketOwnerAndConfig {
                     new_owner,
                     rate_limiter_config: RateLimiterConfig {
@@ -518,6 +521,7 @@ impl LendingInstruction {
                         max_outflow,
                     },
                     whitelisted_liquidator,
+                    risk_authority,
                 }
             }
             2 => {
@@ -752,12 +756,12 @@ impl LendingInstruction {
                 new_owner,
                 rate_limiter_config: config,
                 whitelisted_liquidator,
+                risk_authority,
             } => {
                 buf.push(1);
                 buf.extend_from_slice(new_owner.as_ref());
                 buf.extend_from_slice(&config.window_duration.to_le_bytes());
                 buf.extend_from_slice(&config.max_outflow.to_le_bytes());
-
                 match whitelisted_liquidator {
                     Some(liquidator) => {
                         buf.push(1);
@@ -767,6 +771,7 @@ impl LendingInstruction {
                         buf.push(0);
                     }
                 };
+                buf.extend_from_slice(risk_authority.as_ref());
             }
             Self::InitReserve {
                 liquidity_amount,
@@ -950,6 +955,7 @@ pub fn set_lending_market_owner_and_config(
     new_owner: Pubkey,
     rate_limiter_config: RateLimiterConfig,
     whitelisted_liquidator: Option<Pubkey>,
+    risk_authority: Pubkey,
 ) -> Instruction {
     Instruction {
         program_id,
@@ -961,6 +967,7 @@ pub fn set_lending_market_owner_and_config(
             new_owner,
             rate_limiter_config,
             whitelisted_liquidator,
+            risk_authority,
         }
         .pack(),
     }
@@ -1632,6 +1639,7 @@ mod test {
                         max_outflow: rng.gen::<u64>(),
                     },
                     whitelisted_liquidator: if rng.gen_bool(0.5) { None } else { Some(Pubkey::new_unique()) },
+                    risk_authority: Pubkey::new_unique(),
                 };
 
                 let packed = instruction.pack();

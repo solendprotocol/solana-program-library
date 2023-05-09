@@ -5,6 +5,7 @@ use crate::solend_program_test::MintSupplyChange;
 use solana_sdk::instruction::InstructionError;
 use solana_sdk::signer::Signer;
 use solana_sdk::transaction::TransactionError;
+use solend_sdk::NULL_PUBKEY;
 use crate::solend_program_test::ObligationArgs;
 use crate::solend_program_test::ReserveArgs;
 use solana_sdk::native_token::LAMPORTS_PER_SOL;
@@ -276,6 +277,7 @@ async fn test_whitelisting_liquidator() {
             &lending_market_owner.keypair.pubkey(),
             lending_market.account.rate_limiter.config,
             Some(whitelisted_liquidator.keypair.pubkey()),
+            NULL_PUBKEY
         )
         .await
         .unwrap();

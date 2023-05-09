@@ -63,6 +63,7 @@ pub fn process_instruction(
             new_owner,
             rate_limiter_config,
             whitelisted_liquidator,
+            risk_authority,
         } => {
             msg!("Instruction: Set Lending Market Owner");
             process_set_lending_market_owner_and_config(
@@ -70,6 +71,7 @@ pub fn process_instruction(
                 new_owner,
                 rate_limiter_config,
                 whitelisted_liquidator,
+                risk_authority,
                 accounts,
             )
         }
@@ -225,6 +227,7 @@ fn process_set_lending_market_owner_and_config(
     new_owner: Pubkey,
     rate_limiter_config: RateLimiterConfig,
     whitelisted_liquidator: Option<Pubkey>,
+    risk_authority: Pubkey,
     accounts: &[AccountInfo],
 ) -> ProgramResult {
     let account_info_iter = &mut accounts.iter();
@@ -246,6 +249,7 @@ fn process_set_lending_market_owner_and_config(
     }
 
     lending_market.owner = new_owner;
+    lending_market.risk_authority = risk_authority;
 
     if rate_limiter_config != lending_market.rate_limiter.config {
         lending_market.rate_limiter = RateLimiter::new(rate_limiter_config, Clock::get()?.slot);
@@ -2104,7 +2108,7 @@ fn process_update_reserve_config(
     let reserve_info = next_account_info(account_info_iter)?;
     let lending_market_info = next_account_info(account_info_iter)?;
     let lending_market_authority_info = next_account_info(account_info_iter)?;
-    let lending_market_owner_info = next_account_info(account_info_iter)?;
+    let signer_info = next_account_info(account_info_iter)?;
     let pyth_product_info = next_account_info(account_info_iter)?;
     let pyth_price_info = next_account_info(account_info_iter)?;
     let switchboard_feed_info = next_account_info(account_info_iter)?;
@@ -2132,16 +2136,9 @@ fn process_update_reserve_config(
         );
         return Err(LendingError::InvalidAccountOwner.into());
     }
-    if &lending_market.owner != lending_market_owner_info.key {
-        msg!("Lending market owner does not match the lending market owner provided");
-        return Err(LendingError::InvalidMarketOwner.into());
-    }
-    if !lending_market_owner_info.is_signer {
-        msg!("Lending market owner provided must be a signer");
-        return Err(LendingError::InvalidSigner.into());
-    }
+
     // if it's a permissionless market
-    if &solend_market_owner::id() != lending_market_owner_info.key {
+    if &solend_market_owner::id() != signer_info.key {
         if reserve.config.protocol_liquidation_fee != config.protocol_liquidation_fee {
             msg!("permissionless markets can't edit protocol liquidation fees");
             return Err(LendingError::InvalidConfig.into());
@@ -2168,6 +2165,7 @@ fn process_update_reserve_config(
         lending_market_info.key.as_ref(),
         &[lending_market.bump_seed],
     ];
+
     let lending_market_authority_pubkey =
         Pubkey::create_program_address(authority_signer_seeds, program_id)?;
     if &lending_market_authority_pubkey != lending_market_authority_info.key {
@@ -2177,29 +2175,55 @@ fn process_update_reserve_config(
         return Err(LendingError::InvalidMarketAuthority.into());
     }
 
-    // if window duration or max outflow are different, then create a new rate limiter instance.
-    if rate_limiter_config != reserve.rate_limiter.config {
-        reserve.rate_limiter = RateLimiter::new(rate_limiter_config, Clock::get()?.slot);
+    if !signer_info.is_signer {
+        msg!("Lending market owner or risk authority provided must be a signer");
+        return Err(LendingError::InvalidSigner.into());
     }
 
-    if *pyth_price_info.key != reserve.liquidity.pyth_oracle_pubkey {
-        validate_pyth_keys(&lending_market, pyth_product_info, pyth_price_info)?;
-        reserve.liquidity.pyth_oracle_pubkey = *pyth_price_info.key;
+    if signer_info.key == &lending_market.owner {
+        // if window duration or max outflow are different, then create a new rate limiter instance.
+        if rate_limiter_config != reserve.rate_limiter.config {
+            reserve.rate_limiter = RateLimiter::new(rate_limiter_config, Clock::get()?.slot);
+        }
+
+        if *pyth_price_info.key != reserve.liquidity.pyth_oracle_pubkey {
+            validate_pyth_keys(&lending_market, pyth_product_info, pyth_price_info)?;
+            reserve.liquidity.pyth_oracle_pubkey = *pyth_price_info.key;
+        }
+
+        if *switchboard_feed_info.key != reserve.liquidity.switchboard_oracle_pubkey {
+            validate_switchboard_keys(&lending_market, switchboard_feed_info)?;
+            reserve.liquidity.switchboard_oracle_pubkey = *switchboard_feed_info.key;
+        }
+        if reserve.liquidity.switchboard_oracle_pubkey == solend_program::NULL_PUBKEY
+            && (*pyth_price_info.key == solend_program::NULL_PUBKEY
+                || *pyth_product_info.key == solend_program::NULL_PUBKEY)
+        {
+            msg!("At least one price oracle must have a non-null pubkey");
+            return Err(LendingError::InvalidOracleConfig.into());
+        }
+
+        reserve.config = config;
+    } else if signer_info.key == &lending_market.risk_authority {
+        // only can disable outflows
+        if rate_limiter_config.window_duration > 0 && rate_limiter_config.max_outflow == 0 {
+            reserve.rate_limiter = RateLimiter::new(rate_limiter_config, Clock::get()?.slot);
+        }
+
+        // only certain reserve config fields can be changed by the risk authority, and only in the
+        // safer direction for now
+        if config.borrow_limit < reserve.config.borrow_limit {
+            reserve.config.borrow_limit = config.borrow_limit;
+        }
+
+        if config.deposit_limit < reserve.config.deposit_limit {
+            reserve.config.deposit_limit = config.deposit_limit;
+        }
+    } else {
+        msg!("Signer must be the Lending market owner or risk authority");
+        return Err(LendingError::InvalidSigner.into());
     }
 
-    if *switchboard_feed_info.key != reserve.liquidity.switchboard_oracle_pubkey {
-        validate_switchboard_keys(&lending_market, switchboard_feed_info)?;
-        reserve.liquidity.switchboard_oracle_pubkey = *switchboard_feed_info.key;
-    }
-    if reserve.liquidity.switchboard_oracle_pubkey == solend_program::NULL_PUBKEY
-        && (*pyth_price_info.key == solend_program::NULL_PUBKEY
-            || *pyth_product_info.key == solend_program::NULL_PUBKEY)
-    {
-        msg!("At least one price oracle must have a non-null pubkey");
-        return Err(LendingError::InvalidOracleConfig.into());
-    }
-
-    reserve.config = config;
     Reserve::pack(reserve, &mut reserve_info.data.borrow_mut())?;
     Ok(())
 }

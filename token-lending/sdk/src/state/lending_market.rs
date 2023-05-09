@@ -29,6 +29,8 @@ pub struct LendingMarket {
     pub rate_limiter: RateLimiter,
     /// whitelisted liquidator
     pub whitelisted_liquidator: Option<Pubkey>,
+    /// risk authority (additional pubkey used for setting params)
+    pub risk_authority: Pubkey,
 }
 
 impl LendingMarket {
@@ -50,6 +52,7 @@ impl LendingMarket {
         self.switchboard_oracle_program_id = params.switchboard_oracle_program_id;
         self.rate_limiter = RateLimiter::default();
         self.whitelisted_liquidator = None;
+        self.risk_authority = params.owner;
     }
 }
 
@@ -77,7 +80,7 @@ impl IsInitialized for LendingMarket {
     }
 }
 
-const LENDING_MARKET_LEN: usize = 290; // 1 + 1 + 32 + 32 + 32 + 32 + 32 + 128
+const LENDING_MARKET_LEN: usize = 290; // 1 + 1 + 32 + 32 + 32 + 32 + 32 + 56 + 32 + 40
 impl Pack for LendingMarket {
     const LEN: usize = LENDING_MARKET_LEN;
 
@@ -94,6 +97,7 @@ impl Pack for LendingMarket {
             switchboard_oracle_program_id,
             rate_limiter,
             whitelisted_liquidator,
+            risk_authority,
             _padding,
         ) = mut_array_refs![
             output,
@@ -106,7 +110,8 @@ impl Pack for LendingMarket {
             PUBKEY_BYTES,
             RATE_LIMITER_LEN,
             PUBKEY_BYTES,
-            40
+            PUBKEY_BYTES,
+            8 
         ];
 
         *version = self.version.to_le_bytes();
@@ -117,7 +122,6 @@ impl Pack for LendingMarket {
         oracle_program_id.copy_from_slice(self.oracle_program_id.as_ref());
         switchboard_oracle_program_id.copy_from_slice(self.switchboard_oracle_program_id.as_ref());
         self.rate_limiter.pack_into_slice(rate_limiter);
-
         match self.whitelisted_liquidator {
             Some(pubkey) => {
                 whitelisted_liquidator.copy_from_slice(pubkey.as_ref());
@@ -126,6 +130,7 @@ impl Pack for LendingMarket {
                 whitelisted_liquidator.copy_from_slice(&[0u8; 32]);
             }
         }
+        risk_authority.copy_from_slice(self.risk_authority.as_ref());
     }
 
     /// Unpacks a byte buffer into a [LendingMarketInfo](struct.LendingMarketInfo.html)
@@ -142,6 +147,7 @@ impl Pack for LendingMarket {
             switchboard_oracle_program_id,
             rate_limiter,
             whitelisted_liquidator,
+            risk_authority,
             _padding,
         ) = array_refs![
             input,
@@ -154,7 +160,8 @@ impl Pack for LendingMarket {
             PUBKEY_BYTES,
             RATE_LIMITER_LEN,
             PUBKEY_BYTES,
-            40
+            PUBKEY_BYTES,
+            8
         ];
 
         let version = u8::from_le_bytes(*version);
@@ -163,10 +170,11 @@ impl Pack for LendingMarket {
             return Err(ProgramError::InvalidAccountData);
         }
 
+        let owner_pubkey = Pubkey::new_from_array(*owner);
         Ok(Self {
             version,
             bump_seed: u8::from_le_bytes(*bump_seed),
-            owner: Pubkey::new_from_array(*owner),
+            owner: owner_pubkey,
             quote_currency: *quote_currency,
             token_program_id: Pubkey::new_from_array(*token_program_id),
             oracle_program_id: Pubkey::new_from_array(*oracle_program_id),
@@ -176,6 +184,14 @@ impl Pack for LendingMarket {
                 None
             } else {
                 Some(Pubkey::new_from_array(*whitelisted_liquidator))
+            },
+            // the risk authority can equal [0; 32] when the program is upgraded to v2.0.2. in that
+            // case, we set the risk authority to be the owner. This isn't strictly necessary, but
+            // better to be safe i guess.
+            risk_authority: if *risk_authority == [0; 32] {
+                owner_pubkey
+            } else {
+                Pubkey::new_from_array(*risk_authority)
             },
         })
     }
@@ -199,6 +215,7 @@ mod test {
             switchboard_oracle_program_id: Pubkey::new_unique(),
             rate_limiter: rand_rate_limiter(),
             whitelisted_liquidator: if rng.gen_bool(0.5) { None } else { Some(Pubkey::new_unique()) },
+            risk_authority: Pubkey::new_unique(),
         };
 
         let mut packed = vec![0u8; LendingMarket::LEN];
