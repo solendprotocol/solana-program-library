@@ -1,3 +1,6 @@
+use solend_sdk::state::*;
+use solend_sdk::instruction::*;
+
 use super::{
     flash_loan_proxy::proxy_program,
     mock_pyth::{init_switchboard, set_switchboard_price},
@@ -1193,6 +1196,24 @@ impl Info<LendingMarket> {
         test.process_transaction(&instructions, Some(&[&lending_market_owner.keypair]))
             .await
     }
+
+    pub async fn update_metadata(
+        &self,
+        test: &mut SolendProgramTest,
+        lending_market_owner: &User,
+        params: InitLendingMarketMetadataParams
+    ) -> Result<(), BanksClientError> {
+        let instructions = [update_metadata(
+            solend_program::id(),
+            params,
+            self.pubkey,
+            lending_market_owner.keypair.pubkey(),
+        )];
+
+        test.process_transaction(&instructions, Some(&[&lending_market_owner.keypair]))
+            .await
+    }
+
 }
 
 /// Track token balance changes across transactions.
