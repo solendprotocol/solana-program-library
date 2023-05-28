@@ -1,11 +1,12 @@
 //! Instruction types
 
-use crate::state::{InitLendingMarketMetadataParams, ReserveType};
+use crate::state::{LendingMarketMetadata, ReserveType};
 use crate::{
     error::LendingError,
     state::{RateLimiterConfig, ReserveConfig, ReserveFees},
-    state::{MARKET_NAME_SIZE, MARKET_IMAGE_URL_SIZE, MARKET_DESCRIPTION_SIZE},
 };
+use bytemuck::bytes_of;
+
 use num_traits::FromPrimitive;
 use solana_program::system_program;
 use solana_program::{
@@ -494,10 +495,7 @@ pub enum LendingInstruction {
     /// 2. `[writable]` Lending market metadata account.
     /// Must be a pda with seeds [lending_market, "MetaData"]
     /// 3. `[]` System program
-    UpdateMetadata {
-        /// metadata params
-        params: InitLendingMarketMetadataParams,
-    },
+    UpdateMetadata,
 }
 
 impl LendingInstruction {
@@ -694,23 +692,7 @@ impl LendingInstruction {
                 let (liquidity_amount, _rest) = Self::unpack_u64(rest)?;
                 Self::ForgiveDebt { liquidity_amount }
             }
-            22 => {
-                let (bump_seed, rest) = Self::unpack_u8(rest)?;
-                let (market_address, rest) = Self::unpack_pubkey(rest)?;
-                let (market_name, rest) = Self::unpack_slice::<MARKET_NAME_SIZE>(rest)?;
-                let (market_description, rest) = Self::unpack_slice::<MARKET_DESCRIPTION_SIZE>(rest)?;
-                let (market_image_url, _rest) = Self::unpack_slice::<MARKET_IMAGE_URL_SIZE>(rest)?;
-
-                Self::UpdateMetadata {
-                    params: InitLendingMarketMetadataParams {
-                        bump_seed,
-                        market_address,
-                        market_name,
-                        market_description,
-                        market_image_url,
-                    },
-                }
-            }
+            22 => Self::UpdateMetadata,
             _ => {
                 msg!("Instruction cannot be unpacked");
                 return Err(LendingError::InstructionUnpackError.into());
@@ -768,21 +750,6 @@ impl LendingInstruction {
         let (key, rest) = input.split_at(PUBKEY_BYTES);
         let pk = Pubkey::new(key);
         Ok((pk, rest))
-    }
-
-    fn unpack_slice<const LEN: usize>(input: &[u8]) -> Result<([u8; LEN], &[u8]), ProgramError> {
-        if input.len() < LEN {
-            msg!("Slice cannot be unpacked");
-            return Err(LendingError::InstructionUnpackError.into());
-        }
-
-        let (bytes, rest) = input.split_at(LEN);
-        Ok((
-            bytes
-                .try_into()
-                .map_err(|_| LendingError::InstructionUnpackError)?,
-            rest,
-        ))
     }
 
     /// Packs a [LendingInstruction](enum.LendingInstruction.html) into a byte buffer.
@@ -957,14 +924,8 @@ impl LendingInstruction {
                 buf.push(21);
                 buf.extend_from_slice(&liquidity_amount.to_le_bytes());
             }
-            Self::UpdateMetadata { params } => {
-                buf.push(22);
-                buf.extend_from_slice(&params.bump_seed.to_le_bytes());
-                buf.extend_from_slice(&params.market_address.to_bytes());
-                buf.extend_from_slice(&params.market_name);
-                buf.extend_from_slice(&params.market_description);
-                buf.extend_from_slice(&params.market_image_url);
-            }
+            // special handling for this instruction, bc the instruction is too big to deserialize
+            Self::UpdateMetadata => {}
         }
         buf
     }
@@ -1659,7 +1620,7 @@ pub fn forgive_debt(
 /// Creates a `UpdateMetadata` instruction
 pub fn update_metadata(
     program_id: Pubkey,
-    mut params: InitLendingMarketMetadataParams,
+    mut metadata: LendingMarketMetadata,
     lending_market_pubkey: Pubkey,
     lending_market_owner: Pubkey,
 ) -> Instruction {
@@ -1671,7 +1632,11 @@ pub fn update_metadata(
         &program_id,
     );
 
-    params.bump_seed = bump_seed;
+    metadata.bump_seed = bump_seed;
+
+    let mut data = [0u8; 1 + std::mem::size_of::<LendingMarketMetadata>()];
+    data[0] = 22;
+    data[1..].copy_from_slice(bytes_of(&metadata));
 
     Instruction {
         program_id,
@@ -1679,9 +1644,9 @@ pub fn update_metadata(
             AccountMeta::new_readonly(lending_market_pubkey, false),
             AccountMeta::new(lending_market_owner, true),
             AccountMeta::new(lending_market_metadata_pubkey, false),
-            AccountMeta::new_readonly(system_program::id(), false)
+            AccountMeta::new_readonly(system_program::id(), false),
         ],
-        data: LendingInstruction::UpdateMetadata { params }.pack(),
+        data: data.to_vec(),
     }
 }
 
@@ -1689,7 +1654,6 @@ pub fn update_metadata(
 mod test {
     use super::*;
     use rand::Rng;
-    use rand::RngCore;
 
     #[test]
     fn pack_and_unpack_instructions() {
@@ -1966,35 +1930,6 @@ mod test {
             {
                 let instruction = LendingInstruction::ForgiveDebt {
                     liquidity_amount: rng.gen::<u64>(),
-                };
-
-                let packed = instruction.pack();
-                let unpacked = LendingInstruction::unpack(&packed).unwrap();
-                assert_eq!(instruction, unpacked);
-            }
-
-            // update metadata
-            {
-                let instruction = LendingInstruction::UpdateMetadata {
-                    params: InitLendingMarketMetadataParams {
-                        bump_seed: rng.gen(),
-                        market_address: Pubkey::new_unique(),
-                        market_name: {
-                            let mut name = [0u8; MARKET_NAME_SIZE];
-                            rng.fill_bytes(&mut name);
-                            name
-                        },
-                        market_description: {
-                            let mut description = [0u8; MARKET_DESCRIPTION_SIZE];
-                            rng.fill_bytes(&mut description);
-                            description
-                        },
-                        market_image_url: {
-                            let mut image_url = [0u8; MARKET_IMAGE_URL_SIZE];
-                            rng.fill_bytes(&mut image_url);
-                            image_url
-                        },
-                    },
                 };
 
                 let packed = instruction.pack();

@@ -1,5 +1,6 @@
-use solend_sdk::state::*;
+use bytemuck::checked::from_bytes;
 use solend_sdk::instruction::*;
+use solend_sdk::state::*;
 
 use super::{
     flash_loan_proxy::proxy_program,
@@ -164,6 +165,21 @@ impl SolendProgramTest {
         Info {
             pubkey: acc_pk,
             account: T::unpack(&acc.data).unwrap(),
+        }
+    }
+
+    pub async fn load_zeroable_account<T: Pod + Copy>(&mut self, acc_pk: Pubkey) -> Info<T> {
+        let acc = self
+            .context
+            .banks_client
+            .get_account(acc_pk)
+            .await
+            .unwrap()
+            .unwrap();
+
+        Info {
+            pubkey: acc_pk,
+            account: *from_bytes::<T>(&acc.data),
         }
     }
 
@@ -1201,11 +1217,11 @@ impl Info<LendingMarket> {
         &self,
         test: &mut SolendProgramTest,
         lending_market_owner: &User,
-        params: InitLendingMarketMetadataParams
+        metadata: LendingMarketMetadata,
     ) -> Result<(), BanksClientError> {
         let instructions = [update_metadata(
             solend_program::id(),
-            params,
+            metadata,
             self.pubkey,
             lending_market_owner.keypair.pubkey(),
         )];
@@ -1213,7 +1229,6 @@ impl Info<LendingMarket> {
         test.process_transaction(&instructions, Some(&[&lending_market_owner.keypair]))
             .await
     }
-
 }
 
 /// Track token balance changes across transactions.

@@ -9,11 +9,11 @@ use crate::{
     state::{
         validate_reserve_config, CalculateBorrowResult, CalculateLiquidationResult,
         CalculateRepayResult, InitLendingMarketParams, InitObligationParams, InitReserveParams,
-        LendingMarket, LendingMarketMetadata, NewReserveCollateralParams,
-        NewReserveLiquidityParams, Obligation, Reserve, ReserveCollateral, ReserveConfig,
-        ReserveLiquidity,
+        LendingMarket, NewReserveCollateralParams, NewReserveLiquidityParams, Obligation, Reserve,
+        ReserveCollateral, ReserveConfig, ReserveLiquidity,
     },
 };
+use bytemuck::bytes_of;
 use pyth_sdk_solana::{self, state::ProductAccount};
 use solana_program::{
     account_info::{next_account_info, AccountInfo},
@@ -32,9 +32,7 @@ use solana_program::{
         Sysvar,
     },
 };
-use solend_sdk::state::{
-    InitLendingMarketMetadataParams, RateLimiter, RateLimiterConfig, ReserveType,
-};
+use solend_sdk::state::{LendingMarketMetadata, RateLimiter, RateLimiterConfig, ReserveType};
 use solend_sdk::{switchboard_v2_devnet, switchboard_v2_mainnet};
 use spl_token::state::Mint;
 use std::{cmp::min, result::Result};
@@ -182,9 +180,10 @@ pub fn process_instruction(
             msg!("Instruction: Forgive Debt");
             process_forgive_debt(program_id, liquidity_amount, accounts)
         }
-        LendingInstruction::UpdateMetadata { params } => {
+        LendingInstruction::UpdateMetadata => {
             msg!("Instruction: Update Metadata");
-            process_update_metadata(program_id, params, accounts)
+            let metadata = LendingMarketMetadata::new_from_bytes(input)?;
+            process_update_metadata(program_id, metadata, accounts)
         }
     }
 }
@@ -2746,7 +2745,7 @@ fn assert_rent_exempt(rent: &Rent, account_info: &AccountInfo) -> ProgramResult 
 
 fn process_update_metadata(
     program_id: &Pubkey,
-    params: InitLendingMarketMetadataParams,
+    metadata: &LendingMarketMetadata,
     accounts: &[AccountInfo],
 ) -> Result<(), ProgramError> {
     let account_info_iter = &mut accounts.iter();
@@ -2777,7 +2776,7 @@ fn process_update_metadata(
         return Err(LendingError::InvalidAccountInput.into());
     }
 
-    if bump_seed != params.bump_seed {
+    if bump_seed != metadata.bump_seed {
         msg!("Provided bump seed does not match the expected derived bump seed");
         return Err(LendingError::InvalidAmount.into());
     }
@@ -2790,8 +2789,8 @@ fn process_update_metadata(
             &create_account(
                 lending_market_owner_info.key,
                 metadata_info.key,
-                Rent::get()?.minimum_balance(LendingMarketMetadata::LEN),
-                LendingMarketMetadata::LEN as u64,
+                Rent::get()?.minimum_balance(std::mem::size_of::<LendingMarketMetadata>()),
+                std::mem::size_of::<LendingMarketMetadata>() as u64,
                 program_id,
             ),
             &[lending_market_owner_info.clone(), metadata_info.clone()],
@@ -2799,11 +2798,8 @@ fn process_update_metadata(
         )?;
     }
 
-    // we don't care about versioning for this account
-    let mut metadata = LendingMarketMetadata::unpack_unchecked(&metadata_info.data.borrow())?;
-    metadata.init(params);
-
-    LendingMarketMetadata::pack(metadata, &mut metadata_info.data.borrow_mut())?;
+    let mut metadata_account_data = metadata_info.try_borrow_mut_data()?;
+    metadata_account_data.copy_from_slice(bytes_of(metadata));
 
     Ok(())
 }
