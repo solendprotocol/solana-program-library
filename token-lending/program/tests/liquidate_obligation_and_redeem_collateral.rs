@@ -1,11 +1,15 @@
 #![cfg(feature = "test-bpf")]
 
 use crate::solend_program_test::MintSupplyChange;
+use solana_sdk::instruction::InstructionError;
+use solana_sdk::signer::Signer;
+use solana_sdk::transaction::TransactionError;
 use solend_program::math::TrySub;
 use solend_program::state::LastUpdate;
 use solend_program::state::ObligationCollateral;
 use solend_program::state::ObligationLiquidity;
 use solend_program::state::ReserveConfig;
+use solend_sdk::error::LendingError;
 mod helpers;
 
 use crate::solend_program_test::scenario_1;
@@ -28,7 +32,7 @@ use std::collections::HashSet;
 
 #[tokio::test]
 async fn test_success_new() {
-    let (mut test, lending_market, usdc_reserve, wsol_reserve, user, obligation) = scenario_1(
+    let (mut test, lending_market, usdc_reserve, wsol_reserve, user, obligation, _) = scenario_1(
         &ReserveConfig {
             protocol_liquidation_fee: 30,
             ..test_reserve_config()
@@ -222,8 +226,106 @@ async fn test_success_new() {
 }
 
 #[tokio::test]
+async fn test_whitelisting_liquidator() {
+    let (
+        mut test,
+        lending_market,
+        usdc_reserve,
+        wsol_reserve,
+        _user,
+        obligation,
+        lending_market_owner,
+    ) = scenario_1(
+        &ReserveConfig {
+            protocol_liquidation_fee: 30,
+            ..test_reserve_config()
+        },
+        &test_reserve_config(),
+    )
+    .await;
+
+    let whitelisted_liquidator = User::new_with_balances(
+        &mut test,
+        &[
+            (&wsol_mint::id(), 100 * LAMPORTS_TO_SOL),
+            (&usdc_reserve.account.collateral.mint_pubkey, 0),
+            (&usdc_mint::id(), 0),
+        ],
+    )
+    .await;
+
+    let rando_liquidator = User::new_with_balances(
+        &mut test,
+        &[
+            (&wsol_mint::id(), 100 * LAMPORTS_TO_SOL),
+            (&usdc_reserve.account.collateral.mint_pubkey, 0),
+            (&usdc_mint::id(), 0),
+        ],
+    )
+    .await;
+
+    lending_market
+        .set_lending_market_owner_and_config(
+            &mut test,
+            &lending_market_owner,
+            &lending_market_owner.keypair.pubkey(),
+            lending_market.account.rate_limiter.config,
+            Some(whitelisted_liquidator.keypair.pubkey()),
+        )
+        .await
+        .unwrap();
+
+    // close LTV is 0.55, we've deposited 100k USDC and borrowed 10 SOL.
+    // obligation gets liquidated if 100k * 0.55 = 10 SOL * sol_price => sol_price = 5.5k
+    test.set_price(
+        &wsol_mint::id(),
+        &PriceArgs {
+            price: 5500,
+            conf: 0,
+            expo: 0,
+            ema_price: 5500,
+            ema_conf: 0,
+        },
+    )
+    .await;
+
+    let err = lending_market
+        .liquidate_obligation_and_redeem_reserve_collateral(
+            &mut test,
+            &wsol_reserve,
+            &usdc_reserve,
+            &obligation,
+            &rando_liquidator,
+            u64::MAX,
+        )
+        .await
+        .unwrap_err()
+        .unwrap();
+
+    assert_eq!(
+        err,
+        TransactionError::InstructionError(
+            3,
+            InstructionError::Custom(LendingError::InvalidAccountInput as u32)
+        )
+    );
+
+    lending_market
+        .liquidate_obligation_and_redeem_reserve_collateral(
+            &mut test,
+            &wsol_reserve,
+            &usdc_reserve,
+            &obligation,
+            &whitelisted_liquidator,
+            u64::MAX,
+        )
+        .await
+        .unwrap();
+}
+
+#[tokio::test]
 async fn test_success_insufficient_liquidity() {
-    let (mut test, lending_market, usdc_reserve, wsol_reserve, user, obligation) =
+    let (mut test, lending_market, usdc_reserve, wsol_reserve, user, obligation, _) =
         scenario_1(&test_reserve_config(), &test_reserve_config()).await;
 
     // basically the same test as above, but now someone borrows a lot of USDC so the liquidatior

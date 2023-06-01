@@ -14,7 +14,7 @@ use std::u64;
 
 #[tokio::test]
 async fn test_success_withdraw_fixed_amount() {
-    let (mut test, lending_market, usdc_reserve, wsol_reserve, user, obligation) =
+    let (mut test, lending_market, usdc_reserve, wsol_reserve, user, obligation, _) =
         scenario_1(&test_reserve_config(), &test_reserve_config()).await;
 
     let balance_checker =
@@ -68,7 +68,7 @@ async fn test_success_withdraw_fixed_amount() {
 
 #[tokio::test]
 async fn test_success_withdraw_max() {
-    let (mut test, lending_market, usdc_reserve, wsol_reserve, user, obligation) =
+    let (mut test, lending_market, usdc_reserve, wsol_reserve, user, obligation, _) =
         scenario_1(&test_reserve_config(), &test_reserve_config()).await;
 
     let balance_checker =

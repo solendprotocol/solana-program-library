@@ -37,12 +37,14 @@ async fn test_success() {
         window_duration: 5,
     };
 
+    let whitelisted_liquidator = Pubkey::new_unique();
     lending_market
         .set_lending_market_owner_and_config(
             &mut test,
             &lending_market_owner,
             &new_owner.pubkey(),
             new_config,
+            Some(whitelisted_liquidator),
         )
         .await
         .unwrap();
@@ -56,6 +58,7 @@ async fn test_success() {
         LendingMarket {
             owner: new_owner.pubkey(),
             rate_limiter: RateLimiter::new(new_config, 1000),
+            whitelisted_liquidator: Some(whitelisted_liquidator),
             ..lending_market_post.account
         }
     );
@@ -73,6 +76,7 @@ async fn test_invalid_owner() {
             &invalid_owner,
             &new_owner.pubkey(),
             RateLimiterConfig::default(),
+            None,
         )
         .await
         .unwrap_err()
@@ -102,6 +106,7 @@ async fn test_owner_not_signer() {
                 data: LendingInstruction::SetLendingMarketOwnerAndConfig {
                     new_owner,
                     rate_limiter_config: RateLimiterConfig::default(),
+                    whitelisted_liquidator: None,
                 }
                 .pack(),
             }],

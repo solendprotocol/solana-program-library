@@ -23,7 +23,7 @@ use std::collections::HashSet;
 
 #[tokio::test]
 async fn test_refresh_obligation() {
-    let (mut test, lending_market, _, _, _, obligation) = scenario_1(
+    let (mut test, lending_market, _, _, _, obligation, _) = scenario_1(
         &test_reserve_config(),
         &ReserveConfig {
             added_borrow_weight_bps: 10_000,

@@ -57,12 +57,14 @@ pub fn process_instruction(
         LendingInstruction::SetLendingMarketOwnerAndConfig {
             new_owner,
             rate_limiter_config,
+            whitelisted_liquidator,
         } => {
             msg!("Instruction: Set Lending Market Owner");
             process_set_lending_market_owner_and_config(
                 program_id,
                 new_owner,
                 rate_limiter_config,
+                whitelisted_liquidator,
                 accounts,
             )
         }
@@ -213,6 +215,7 @@ fn process_set_lending_market_owner_and_config(
     program_id: &Pubkey,
     new_owner: Pubkey,
     rate_limiter_config: RateLimiterConfig,
+    whitelisted_liquidator: Option<Pubkey>,
     accounts: &[AccountInfo],
 ) -> ProgramResult {
     let account_info_iter = &mut accounts.iter();
@@ -238,6 +241,8 @@ fn process_set_lending_market_owner_and_config(
     if rate_limiter_config != lending_market.rate_limiter.config {
         lending_market.rate_limiter = RateLimiter::new(rate_limiter_config, Clock::get()?.slot);
     }
+
+    lending_market.whitelisted_liquidator = whitelisted_liquidator;
 
     LendingMarket::pack(lending_market, &mut lending_market_info.data.borrow_mut())?;
 
@@ -1784,6 +1789,13 @@ fn _liquidate_obligation<'a>(
     if obligation.borrowed_value < obligation.unhealthy_borrow_value {
         msg!("Obligation is healthy and cannot be liquidated");
         return Err(LendingError::ObligationHealthy.into());
+    }
+
+    if let Some(liquidator) = lending_market.whitelisted_liquidator {
+        if liquidator != *user_transfer_authority_info.key {
+            msg!("Liquidator is not whitelisted");
+            return Err(LendingError::InvalidAccountInput.into());
+        }
     }
 
     let (liquidity, liquidity_index) =

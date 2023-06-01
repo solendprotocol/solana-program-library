@@ -1112,6 +1112,7 @@ impl Info<LendingMarket> {
         lending_market_owner: &User,
         new_owner: &Pubkey,
         config: RateLimiterConfig,
+        whitelisted_liquidator: Option<Pubkey>,
     ) -> Result<(), BanksClientError> {
         let instructions = [set_lending_market_owner_and_config(
             solend_program::id(),
@@ -1119,6 +1120,7 @@ impl Info<LendingMarket> {
             lending_market_owner.keypair.pubkey(),
             *new_owner,
             config,
+            whitelisted_liquidator,
         )];
 
         test.process_transaction(&instructions, Some(&[&lending_market_owner.keypair]))
@@ -1401,6 +1403,7 @@ pub async fn scenario_1(
     Info<Reserve>,
     User,
     Info<Obligation>,
+    User,
 ) {
     let (mut test, lending_market, usdc_reserve, wsol_reserve, lending_market_owner, user) =
         setup_world(usdc_reserve_config, wsol_reserve_config).await;
@@ -1490,6 +1493,7 @@ pub async fn scenario_1(
         wsol_reserve,
         user,
         obligation,
+        lending_market_owner,
     )
 }
 

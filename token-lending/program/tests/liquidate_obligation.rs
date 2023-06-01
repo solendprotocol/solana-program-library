@@ -14,7 +14,7 @@ use solend_program::error::LendingError;
 
 #[tokio::test]
 async fn test_fail_deprecated() {
-    let (mut test, lending_market, usdc_reserve, wsol_reserve, user, obligation) =
+    let (mut test, lending_market, usdc_reserve, wsol_reserve, user, obligation, _) =
         scenario_1(&test_reserve_config(), &test_reserve_config()).await;
 
     let res = lending_market

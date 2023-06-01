@@ -21,7 +21,7 @@ use solend_program::{
 
 #[tokio::test]
 async fn test_success() {
-    let (mut test, lending_market, _, wsol_reserve, user, _) = scenario_1(
+    let (mut test, lending_market, _, wsol_reserve, user, _, _) = scenario_1(
         &test_reserve_config(),
         &ReserveConfig {
             protocol_take_rate: 10,

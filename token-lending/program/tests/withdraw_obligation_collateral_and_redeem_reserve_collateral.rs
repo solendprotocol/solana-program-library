@@ -25,7 +25,7 @@ use solend_sdk::state::ReserveLiquidity;
 
 #[tokio::test]
 async fn test_success() {
-    let (mut test, lending_market, usdc_reserve, wsol_reserve, user, obligation) =
+    let (mut test, lending_market, usdc_reserve, wsol_reserve, user, obligation, _) =
         scenario_1(&test_reserve_config(), &test_reserve_config()).await;
 
     let balance_checker =
