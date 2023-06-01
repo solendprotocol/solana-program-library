@@ -158,7 +158,7 @@ impl Reserve {
     pub fn current_borrow_rate(&self) -> Result<Rate, ProgramError> {
         let utilization_rate = min(self.liquidity.utilization_rate()?, Rate::one());
         let optimal_utilization_rate = Rate::from_percent(self.config.optimal_utilization_rate);
-        let unhealthy_utilization_rate = Rate::from_percent(self.config.unhealthy_utilization_rate);
+        let max_utilization_rate = Rate::from_percent(self.config.max_utilization_rate);
         if utilization_rate <= optimal_utilization_rate {
             let min_rate = Rate::from_percent(self.config.min_borrow_rate);
 
@@ -175,10 +175,10 @@ impl Reserve {
             );
 
             Ok(normalized_rate.try_mul(rate_range)?.try_add(min_rate)?)
-        } else if utilization_rate <= unhealthy_utilization_rate {
+        } else if utilization_rate <= max_utilization_rate {
             let weight = utilization_rate
                 .try_sub(optimal_utilization_rate)?
-                .try_div(unhealthy_utilization_rate.try_sub(optimal_utilization_rate)?)?;
+                .try_div(max_utilization_rate.try_sub(optimal_utilization_rate)?)?;
 
             let optimal_borrow_rate = Rate::from_percent(self.config.optimal_borrow_rate);
             let max_borrow_rate = Rate::from_percent(self.config.max_borrow_rate);
@@ -187,10 +187,10 @@ impl Reserve {
             weight.try_mul(rate_range)?.try_add(optimal_borrow_rate)
         } else {
             let weight: Decimal = utilization_rate
-                .try_sub(unhealthy_utilization_rate)?
+                .try_sub(max_utilization_rate)?
                 .try_div(Rate::from_percent(
                     100u8
-                        .checked_sub(self.config.unhealthy_utilization_rate)
+                        .checked_sub(self.config.max_utilization_rate)
                         .ok_or(LendingError::MathOverflow)?,
                 ))?
                 .into();
@@ -782,7 +782,7 @@ pub struct ReserveConfig {
     /// Optimal utilization rate, as a percentage
     pub optimal_utilization_rate: u8,
     /// Unhealthy utilization rate, as a percentage
-    pub unhealthy_utilization_rate: u8,
+    pub max_utilization_rate: u8,
     /// Target ratio of the value of borrows to deposits, as a percentage
     /// 0 if use as collateral is disabled
     pub loan_to_value_ratio: u8,
@@ -824,8 +824,8 @@ pub fn validate_reserve_config(config: ReserveConfig) -> ProgramResult {
         msg!("Optimal utilization rate must be in range [0, 100]");
         return Err(LendingError::InvalidConfig.into());
     }
-    if config.unhealthy_utilization_rate < config.optimal_utilization_rate
-        || config.unhealthy_utilization_rate > 100
+    if config.max_utilization_rate < config.optimal_utilization_rate
+        || config.max_utilization_rate > 100
     {
         msg!("Unhealthy utilization rate must be in range [optimal_utilization_rate, 100]");
         return Err(LendingError::InvalidConfig.into());
@@ -1050,7 +1050,7 @@ impl Pack for Reserve {
             config_added_borrow_weight_bps,
             liquidity_smoothed_market_price,
             config_asset_type,
-            config_unhealthy_utilization_rate,
+            config_max_utilization_rate,
             config_super_max_borrow_rate,
             _padding,
         ) = mut_array_refs![
@@ -1135,7 +1135,7 @@ impl Pack for Reserve {
 
         // config
         *config_optimal_utilization_rate = self.config.optimal_utilization_rate.to_le_bytes();
-        *config_unhealthy_utilization_rate = self.config.unhealthy_utilization_rate.to_le_bytes();
+        *config_max_utilization_rate = self.config.max_utilization_rate.to_le_bytes();
         *config_loan_to_value_ratio = self.config.loan_to_value_ratio.to_le_bytes();
         *config_liquidation_bonus = self.config.liquidation_bonus.to_le_bytes();
         *config_liquidation_threshold = self.config.liquidation_threshold.to_le_bytes();
@@ -1199,7 +1199,7 @@ impl Pack for Reserve {
             config_added_borrow_weight_bps,
             liquidity_smoothed_market_price,
             config_asset_type,
-            config_unhealthy_utilization_rate,
+            config_max_utilization_rate,
             config_super_max_borrow_rate,
             _padding,
         ) = array_refs![
@@ -1285,9 +1285,9 @@ impl Pack for Reserve {
             },
             config: ReserveConfig {
                 optimal_utilization_rate,
-                unhealthy_utilization_rate: max(
+                max_utilization_rate: max(
                     optimal_utilization_rate,
-                    u8::from_le_bytes(*config_unhealthy_utilization_rate),
+                    u8::from_le_bytes(*config_max_utilization_rate),
                 ),
                 loan_to_value_ratio: u8::from_le_bytes(*config_loan_to_value_ratio),
                 liquidation_bonus: u8::from_le_bytes(*config_liquidation_bonus),
@@ -1363,7 +1363,7 @@ mod test {
                 },
                 config: ReserveConfig {
                     optimal_utilization_rate,
-                    unhealthy_utilization_rate: max(optimal_utilization_rate, rng.gen()),
+                    max_utilization_rate: max(optimal_utilization_rate, rng.gen()),
                     loan_to_value_ratio: rng.gen(),
                     liquidation_bonus: rng.gen(),
                     liquidation_threshold: rng.gen(),
@@ -1458,7 +1458,7 @@ mod test {
         fn current_borrow_rate(
             total_liquidity in 0..=MAX_LIQUIDITY,
             borrowed_percent in 0..=WAD,
-            (optimal_utilization_rate, unhealthy_utilization_rate) in utilizations(),
+            (optimal_utilization_rate, max_utilization_rate) in utilizations(),
             (min_borrow_rate, optimal_borrow_rate, max_borrow_rate, super_max_borrow_rate) in borrow_rates(),
         ) {
             let borrowed_amount_wads = Decimal::from(total_liquidity)
@@ -1471,7 +1471,7 @@ mod test {
                 },
                 config: ReserveConfig {
                     optimal_utilization_rate,
-                    unhealthy_utilization_rate,
+                    max_utilization_rate,
                     min_borrow_rate,
                     optimal_borrow_rate,
                     max_borrow_rate,
@@ -1490,7 +1490,7 @@ mod test {
             let current_rate = reserve.liquidity.utilization_rate()?;
             if current_rate <= Rate::from_percent(optimal_utilization_rate) {
                 assert!(current_borrow_rate <= Rate::from_percent(optimal_borrow_rate));
-            } else if current_rate <= Rate::from_percent(unhealthy_utilization_rate) {
+            } else if current_rate <= Rate::from_percent(max_utilization_rate) {
                 assert!(current_borrow_rate >= Rate::from_percent(optimal_borrow_rate));
                 assert!(current_borrow_rate <= Rate::from_percent(max_borrow_rate));
             } else {

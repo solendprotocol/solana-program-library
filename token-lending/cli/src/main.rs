@@ -939,7 +939,7 @@ fn main() {
                 liquidity_amount,
                 ReserveConfig {
                     optimal_utilization_rate,
-                    unhealthy_utilization_rate: optimal_utilization_rate,
+                    max_utilization_rate: optimal_utilization_rate,
                     loan_to_value_ratio,
                     liquidation_bonus,
                     liquidation_threshold,

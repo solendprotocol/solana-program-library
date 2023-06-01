@@ -37,7 +37,7 @@ pub const FRACTIONAL_TO_USDC: u64 = 1_000_000;
 pub fn test_reserve_config() -> ReserveConfig {
     ReserveConfig {
         optimal_utilization_rate: 80,
-        unhealthy_utilization_rate: 80,
+        max_utilization_rate: 80,
         loan_to_value_ratio: 50,
         liquidation_bonus: 5,
         liquidation_threshold: 55,

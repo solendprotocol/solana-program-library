@@ -511,7 +511,7 @@ impl LendingInstruction {
             2 => {
                 let (liquidity_amount, rest) = Self::unpack_u64(rest)?;
                 let (optimal_utilization_rate, rest) = Self::unpack_u8(rest)?;
-                let (unhealthy_utilization_rate, rest) = Self::unpack_u8(rest)?;
+                let (max_utilization_rate, rest) = Self::unpack_u8(rest)?;
                 let (loan_to_value_ratio, rest) = Self::unpack_u8(rest)?;
                 let (liquidation_bonus, rest) = Self::unpack_u8(rest)?;
                 let (liquidation_threshold, rest) = Self::unpack_u8(rest)?;
@@ -533,7 +533,7 @@ impl LendingInstruction {
                     liquidity_amount,
                     config: ReserveConfig {
                         optimal_utilization_rate,
-                        unhealthy_utilization_rate,
+                        max_utilization_rate,
                         loan_to_value_ratio,
                         liquidation_bonus,
                         liquidation_threshold,
@@ -601,7 +601,7 @@ impl LendingInstruction {
             }
             16 => {
                 let (optimal_utilization_rate, rest) = Self::unpack_u8(rest)?;
-                let (unhealthy_utilization_rate, rest) = Self::unpack_u8(rest)?;
+                let (max_utilization_rate, rest) = Self::unpack_u8(rest)?;
                 let (loan_to_value_ratio, rest) = Self::unpack_u8(rest)?;
                 let (liquidation_bonus, rest) = Self::unpack_u8(rest)?;
                 let (liquidation_threshold, rest) = Self::unpack_u8(rest)?;
@@ -625,7 +625,7 @@ impl LendingInstruction {
                 Self::UpdateReserveConfig {
                     config: ReserveConfig {
                         optimal_utilization_rate,
-                        unhealthy_utilization_rate,
+                        max_utilization_rate,
                         loan_to_value_ratio,
                         liquidation_bonus,
                         liquidation_threshold,
@@ -758,7 +758,7 @@ impl LendingInstruction {
                 config:
                     ReserveConfig {
                         optimal_utilization_rate,
-                        unhealthy_utilization_rate,
+                        max_utilization_rate,
                         loan_to_value_ratio,
                         liquidation_bonus,
                         liquidation_threshold,
@@ -784,7 +784,7 @@ impl LendingInstruction {
                 buf.push(2);
                 buf.extend_from_slice(&liquidity_amount.to_le_bytes());
                 buf.extend_from_slice(&optimal_utilization_rate.to_le_bytes());
-                buf.extend_from_slice(&unhealthy_utilization_rate.to_le_bytes());
+                buf.extend_from_slice(&max_utilization_rate.to_le_bytes());
                 buf.extend_from_slice(&loan_to_value_ratio.to_le_bytes());
                 buf.extend_from_slice(&liquidation_bonus.to_le_bytes());
                 buf.extend_from_slice(&liquidation_threshold.to_le_bytes());
@@ -858,7 +858,7 @@ impl LendingInstruction {
             } => {
                 buf.push(16);
                 buf.extend_from_slice(&config.optimal_utilization_rate.to_le_bytes());
-                buf.extend_from_slice(&config.unhealthy_utilization_rate.to_le_bytes());
+                buf.extend_from_slice(&config.max_utilization_rate.to_le_bytes());
                 buf.extend_from_slice(&config.loan_to_value_ratio.to_le_bytes());
                 buf.extend_from_slice(&config.liquidation_bonus.to_le_bytes());
                 buf.extend_from_slice(&config.liquidation_threshold.to_le_bytes());
@@ -1632,7 +1632,7 @@ mod test {
                     liquidity_amount: rng.gen::<u64>(),
                     config: ReserveConfig {
                         optimal_utilization_rate: rng.gen::<u8>(),
-                        unhealthy_utilization_rate: rng.gen::<u8>(),
+                        max_utilization_rate: rng.gen::<u8>(),
                         loan_to_value_ratio: rng.gen::<u8>(),
                         liquidation_bonus: rng.gen::<u8>(),
                         liquidation_threshold: rng.gen::<u8>(),
@@ -1790,7 +1790,7 @@ mod test {
                 let instruction = LendingInstruction::UpdateReserveConfig {
                     config: ReserveConfig {
                         optimal_utilization_rate: rng.gen::<u8>(),
-                        unhealthy_utilization_rate: rng.gen::<u8>(),
+                        max_utilization_rate: rng.gen::<u8>(),
                         loan_to_value_ratio: rng.gen::<u8>(),
                         liquidation_bonus: rng.gen::<u8>(),
                         liquidation_threshold: rng.gen::<u8>(),
