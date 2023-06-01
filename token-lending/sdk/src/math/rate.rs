@@ -56,6 +56,11 @@ impl Rate {
         Self(U128::from(percent as u64 * PERCENT_SCALER))
     }
 
+    /// Create scaled decimal from percent value
+    pub fn from_percent_u64(percent: u64) -> Self {
+        Self(U128::from(percent) * PERCENT_SCALER)
+    }
+
     /// Return raw scaled value
     #[allow(clippy::wrong_self_convention)]
     pub fn to_scaled_val(&self) -> u128 {
