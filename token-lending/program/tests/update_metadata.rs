@@ -3,6 +3,7 @@
 mod helpers;
 
 use crate::solend_program_test::custom_scenario;
+use solend_sdk::NULL_PUBKEY;
 
 use helpers::*;
 
@@ -39,6 +40,7 @@ async fn test_success() {
                 market_name: [2u8; MARKET_NAME_SIZE],
                 market_description: [3u8; MARKET_DESCRIPTION_SIZE],
                 market_image_url: [4u8; MARKET_IMAGE_URL_SIZE],
+                lookup_tables: [NULL_PUBKEY, NULL_PUBKEY, NULL_PUBKEY, NULL_PUBKEY],
                 padding: [5u8; PADDING_SIZE],
             },
         )
@@ -65,6 +67,7 @@ async fn test_success() {
             market_name: [2u8; MARKET_NAME_SIZE],
             market_description: [3u8; MARKET_DESCRIPTION_SIZE],
             market_image_url: [4u8; MARKET_IMAGE_URL_SIZE],
+            lookup_tables: [NULL_PUBKEY, NULL_PUBKEY, NULL_PUBKEY, NULL_PUBKEY,],
             padding: [5u8; PADDING_SIZE],
         }
     );
@@ -78,6 +81,7 @@ async fn test_success() {
                 market_name: [6u8; MARKET_NAME_SIZE],
                 market_description: [7u8; MARKET_DESCRIPTION_SIZE],
                 market_image_url: [8u8; MARKET_IMAGE_URL_SIZE],
+                lookup_tables: [NULL_PUBKEY, NULL_PUBKEY, NULL_PUBKEY, NULL_PUBKEY],
                 padding: [9u8; PADDING_SIZE],
             },
         )
@@ -100,6 +104,7 @@ async fn test_success() {
             market_name: [6u8; MARKET_NAME_SIZE],
             market_description: [7u8; MARKET_DESCRIPTION_SIZE],
             market_image_url: [8u8; MARKET_IMAGE_URL_SIZE],
+            lookup_tables: [NULL_PUBKEY, NULL_PUBKEY, NULL_PUBKEY, NULL_PUBKEY],
             padding: [9u8; PADDING_SIZE],
         }
     );

@@ -4,6 +4,7 @@ use crate::error::LendingError;
 use bytemuck::checked::try_from_bytes;
 use bytemuck::{Pod, Zeroable};
 use solana_program::program_error::ProgramError;
+use solana_program::pubkey::Pubkey;
 use static_assertions::{assert_eq_size, const_assert};
 
 /// market name size
@@ -16,7 +17,7 @@ pub const MARKET_DESCRIPTION_SIZE: usize = 250;
 pub const MARKET_IMAGE_URL_SIZE: usize = 250;
 
 /// padding size
-pub const PADDING_SIZE: usize = 200;
+pub const PADDING_SIZE: usize = 100;
 
 /// Lending market state
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -28,6 +29,8 @@ pub struct LendingMarketMetadata {
     pub market_description: [u8; MARKET_DESCRIPTION_SIZE],
     /// Market image url
     pub market_image_url: [u8; MARKET_IMAGE_URL_SIZE],
+    /// Lookup Tables
+    pub lookup_tables: [Pubkey; 4],
     /// Padding
     pub padding: [u8; PADDING_SIZE],
     /// Bump seed
@@ -49,7 +52,12 @@ unsafe impl Pod for LendingMarketMetadata {}
 
 assert_eq_size!(
     LendingMarketMetadata,
-    [u8; MARKET_NAME_SIZE + MARKET_DESCRIPTION_SIZE + MARKET_IMAGE_URL_SIZE + PADDING_SIZE + 1],
+    [u8; MARKET_NAME_SIZE
+        + MARKET_DESCRIPTION_SIZE
+        + MARKET_IMAGE_URL_SIZE
+        + 4 * 32
+        + PADDING_SIZE
+        + 1],
 );
 
 // transaction size limit check
