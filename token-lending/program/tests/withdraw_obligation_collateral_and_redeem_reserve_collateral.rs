@@ -1,6 +1,7 @@
 #![cfg(feature = "test-bpf")]
 
 use solana_program::native_token::LAMPORTS_PER_SOL;
+use solana_program::pubkey::Pubkey;
 use solana_sdk::signature::Signer;
 use solend_program::math::TryDiv;
 mod helpers;
@@ -246,6 +247,7 @@ async fn test_withdraw_max_rate_limiter() {
                 window_duration: 20,
                 max_outflow: 50, // $50
             },
+            Pubkey::new_unique(),
         )
         .await
         .unwrap();

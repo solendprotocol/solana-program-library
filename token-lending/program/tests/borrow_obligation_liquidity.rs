@@ -1,6 +1,7 @@
 #![cfg(feature = "test-bpf")]
 
 use crate::helpers::solend_program_test::*;
+use solana_program::pubkey::Pubkey;
 use solana_sdk::signature::Signer;
 
 use solend_program::math::TryDiv;
@@ -567,6 +568,7 @@ async fn test_borrow_max_rate_limiter() {
                 window_duration: 20,
                 max_outflow: 5, // $50
             },
+            Pubkey::new_unique(),
         )
         .await
         .unwrap();

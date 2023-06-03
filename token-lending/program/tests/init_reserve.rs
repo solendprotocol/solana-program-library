@@ -36,7 +36,7 @@ use solend_program::{
     error::LendingError,
     instruction::init_reserve,
     math::Decimal,
-    state::{ReserveConfig, ReserveFees, RateLimiterConfig},
+    state::{RateLimiterConfig, ReserveConfig, ReserveFees},
 };
 use solend_sdk::state::LendingMarket;
 use spl_token::state::{Account as Token, Mint};
