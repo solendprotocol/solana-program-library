@@ -180,10 +180,10 @@ pub fn process_instruction(
             msg!("Instruction: Forgive Debt");
             process_forgive_debt(program_id, liquidity_amount, accounts)
         }
-        LendingInstruction::UpdateMetadata => {
+        LendingInstruction::UpdateMarketMetadata => {
             msg!("Instruction: Update Metadata");
             let metadata = LendingMarketMetadata::new_from_bytes(input)?;
-            process_update_metadata(program_id, metadata, accounts)
+            process_update_market_metadata(program_id, metadata, accounts)
         }
     }
 }
@@ -2743,7 +2743,7 @@ fn assert_rent_exempt(rent: &Rent, account_info: &AccountInfo) -> ProgramResult 
     }
 }
 
-fn process_update_metadata(
+fn process_update_market_metadata(
     program_id: &Pubkey,
     metadata: &LendingMarketMetadata,
     accounts: &[AccountInfo],
@@ -2796,6 +2796,11 @@ fn process_update_metadata(
             &[lending_market_owner_info.clone(), metadata_info.clone()],
             &[&[lending_market_info.key.as_ref(), br"MetaData", &[bump_seed]]],
         )?;
+    }
+
+    if metadata_info.owner != program_id {
+        msg!("Metadata provided is not owned by the lending program");
+        return Err(LendingError::InvalidAccountOwner.into());
     }
 
     let mut metadata_account_data = metadata_info.try_borrow_mut_data()?;

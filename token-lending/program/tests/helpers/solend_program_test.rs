@@ -1219,7 +1219,7 @@ impl Info<LendingMarket> {
         lending_market_owner: &User,
         metadata: LendingMarketMetadata,
     ) -> Result<(), BanksClientError> {
-        let instructions = [update_metadata(
+        let instructions = [update_market_metadata(
             solend_program::id(),
             metadata,
             self.pubkey,

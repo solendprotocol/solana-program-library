@@ -11,7 +11,7 @@ use static_assertions::{assert_eq_size, const_assert};
 pub const MARKET_NAME_SIZE: usize = 50;
 
 /// market description size
-pub const MARKET_DESCRIPTION_SIZE: usize = 250;
+pub const MARKET_DESCRIPTION_SIZE: usize = 300;
 
 /// market image url size
 pub const MARKET_IMAGE_URL_SIZE: usize = 250;
@@ -23,6 +23,8 @@ pub const PADDING_SIZE: usize = 100;
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 #[repr(C)]
 pub struct LendingMarketMetadata {
+    /// Bump seed
+    pub bump_seed: u8,
     /// Market name null padded
     pub market_name: [u8; MARKET_NAME_SIZE],
     /// Market description null padded
@@ -33,8 +35,6 @@ pub struct LendingMarketMetadata {
     pub lookup_tables: [Pubkey; 4],
     /// Padding
     pub padding: [u8; PADDING_SIZE],
-    /// Bump seed
-    pub bump_seed: u8,
 }
 
 impl LendingMarketMetadata {
@@ -61,4 +61,4 @@ assert_eq_size!(
 );
 
 // transaction size limit check
-const_assert!(std::mem::size_of::<LendingMarketMetadata>() <= 800);
+const_assert!(std::mem::size_of::<LendingMarketMetadata>() <= 850);

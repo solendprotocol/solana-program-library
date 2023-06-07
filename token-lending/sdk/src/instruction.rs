@@ -487,7 +487,7 @@ pub enum LendingInstruction {
     },
 
     // 22
-    /// UpdateMetadata
+    /// UpdateMarketMetadata
     ///
     /// Accounts expected by this instruction:
     /// 0. `[]` Lending market account.
@@ -495,7 +495,7 @@ pub enum LendingInstruction {
     /// 2. `[writable]` Lending market metadata account.
     /// Must be a pda with seeds [lending_market, "MetaData"]
     /// 3. `[]` System program
-    UpdateMetadata,
+    UpdateMarketMetadata,
 }
 
 impl LendingInstruction {
@@ -692,7 +692,7 @@ impl LendingInstruction {
                 let (liquidity_amount, _rest) = Self::unpack_u64(rest)?;
                 Self::ForgiveDebt { liquidity_amount }
             }
-            22 => Self::UpdateMetadata,
+            22 => Self::UpdateMarketMetadata,
             _ => {
                 msg!("Instruction cannot be unpacked");
                 return Err(LendingError::InstructionUnpackError.into());
@@ -925,7 +925,7 @@ impl LendingInstruction {
                 buf.extend_from_slice(&liquidity_amount.to_le_bytes());
             }
             // special handling for this instruction, bc the instruction is too big to deserialize
-            Self::UpdateMetadata => {}
+            Self::UpdateMarketMetadata => {}
         }
         buf
     }
@@ -1617,8 +1617,8 @@ pub fn forgive_debt(
     }
 }
 
-/// Creates a `UpdateMetadata` instruction
-pub fn update_metadata(
+/// Creates a `UpdateMarketMetadata` instruction
+pub fn update_market_metadata(
     program_id: Pubkey,
     mut metadata: LendingMarketMetadata,
     lending_market_pubkey: Pubkey,
