@@ -195,6 +195,11 @@ pub enum LendingError {
     /// Outflow Rate Limit Exceeded
     #[error("Outflow Rate Limit Exceeded")]
     OutflowRateLimitExceeded,
+
+    // 55
+    /// Not a whitelisted liquidator
+    #[error("Not a whitelisted liquidator")]
+    NotWhitelistedLiquidator,
 }
 
 impl From<LendingError> for ProgramError {

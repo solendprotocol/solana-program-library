@@ -306,7 +306,7 @@ async fn test_whitelisting_liquidator() {
         err,
         TransactionError::InstructionError(
             3,
-            InstructionError::Custom(LendingError::InvalidAccountInput as u32)
+            InstructionError::Custom(LendingError::NotWhitelistedLiquidator as u32)
         )
     );
 

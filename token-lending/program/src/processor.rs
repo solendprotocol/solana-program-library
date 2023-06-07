@@ -1794,7 +1794,7 @@ fn _liquidate_obligation<'a>(
     if let Some(liquidator) = lending_market.whitelisted_liquidator {
         if liquidator != *user_transfer_authority_info.key {
             msg!("Liquidator is not whitelisted");
-            return Err(LendingError::InvalidAccountInput.into());
+            return Err(LendingError::NotWhitelistedLiquidator.into());
         }
     }
 
