@@ -131,6 +131,9 @@ impl SolendProgramTest {
 
         transaction.sign(&all_signers, self.context.last_blockhash);
 
+        let serialized = bincode::serialize(&transaction).unwrap();
+        assert!(serialized.len() <= 1232);
+
         self.context
             .banks_client
             .process_transaction(transaction)
