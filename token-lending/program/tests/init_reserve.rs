@@ -303,7 +303,6 @@ async fn test_invalid_fees() {
 #[tokio::test]
 async fn test_update_reserve_config() {
     let (mut test, lending_market, lending_market_owner) = setup().await;
-
     let wsol_reserve = test
         .init_reserve(
             &lending_market,
@@ -317,7 +316,8 @@ async fn test_update_reserve_config() {
         .await
         .unwrap();
 
-    let new_reserve_config = test_reserve_config();
+    let mut new_reserve_config = test_reserve_config();
+    new_reserve_config.fee_receiver = wsol_reserve.account.config.fee_receiver;
     let new_rate_limiter_config = RateLimiterConfig {
         window_duration: 50,
         max_outflow: 100,
@@ -364,7 +364,8 @@ async fn test_update_invalid_oracle_config() {
 
     let oracle = test.mints.get(&wsol_mint::id()).unwrap().unwrap();
 
-    let new_reserve_config = test_reserve_config();
+    let mut new_reserve_config = test_reserve_config();
+    new_reserve_config.fee_receiver = wsol_reserve.account.config.fee_receiver;
     let new_rate_limiter_config = RateLimiterConfig {
         window_duration: 50,
         max_outflow: 100,
