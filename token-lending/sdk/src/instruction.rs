@@ -1,11 +1,14 @@
 //! Instruction types
 
-use crate::state::ReserveType;
+use crate::state::{LendingMarketMetadata, ReserveType};
 use crate::{
     error::LendingError,
     state::{RateLimiterConfig, ReserveConfig, ReserveFees},
 };
+use bytemuck::bytes_of;
+
 use num_traits::FromPrimitive;
+use solana_program::system_program;
 use solana_program::{
     instruction::{AccountMeta, Instruction},
     msg,
@@ -17,6 +20,7 @@ use std::{convert::TryInto, mem::size_of};
 
 /// Instructions supported by the lending program.
 #[derive(Clone, Debug, PartialEq, Eq)]
+// #[allow(clippy::large_enum_variant)]
 pub enum LendingInstruction {
     // 0
     /// Initializes a new lending market.
@@ -483,6 +487,17 @@ pub enum LendingInstruction {
         /// Amount of debt to forgive
         liquidity_amount: u64,
     },
+
+    // 22
+    /// UpdateMarketMetadata
+    ///
+    /// Accounts expected by this instruction:
+    /// 0. `[]` Lending market account.
+    /// 1. `[signer]` Lending market owner.
+    /// 2. `[writable]` Lending market metadata account.
+    /// Must be a pda with seeds [lending_market, "MetaData"]
+    /// 3. `[]` System program
+    UpdateMarketMetadata,
 }
 
 impl LendingInstruction {
@@ -689,6 +704,7 @@ impl LendingInstruction {
                 let (liquidity_amount, _rest) = Self::unpack_u64(rest)?;
                 Self::ForgiveDebt { liquidity_amount }
             }
+            22 => Self::UpdateMarketMetadata,
             _ => {
                 msg!("Instruction cannot be unpacked");
                 return Err(LendingError::InstructionUnpackError.into());
@@ -930,6 +946,8 @@ impl LendingInstruction {
                 buf.push(21);
                 buf.extend_from_slice(&liquidity_amount.to_le_bytes());
             }
+            // special handling for this instruction, bc the instruction is too big to deserialize
+            Self::UpdateMarketMetadata => {}
         }
         buf
     }
@@ -1620,6 +1638,39 @@ pub fn forgive_debt(
             AccountMeta::new_readonly(lending_market_owner, true),
         ],
         data: LendingInstruction::ForgiveDebt { liquidity_amount }.pack(),
+    }
+}
+
+/// Creates a `UpdateMarketMetadata` instruction
+pub fn update_market_metadata(
+    program_id: Pubkey,
+    mut metadata: LendingMarketMetadata,
+    lending_market_pubkey: Pubkey,
+    lending_market_owner: Pubkey,
+) -> Instruction {
+    let (lending_market_metadata_pubkey, bump_seed) = Pubkey::find_program_address(
+        &[
+            &lending_market_pubkey.to_bytes()[..PUBKEY_BYTES],
+            b"MetaData",
+        ],
+        &program_id,
+    );
+
+    metadata.bump_seed = bump_seed;
+
+    let mut data = [0u8; 1 + std::mem::size_of::<LendingMarketMetadata>()];
+    data[0] = 22;
+    data[1..].copy_from_slice(bytes_of(&metadata));
+
+    Instruction {
+        program_id,
+        accounts: vec![
+            AccountMeta::new_readonly(lending_market_pubkey, false),
+            AccountMeta::new(lending_market_owner, true),
+            AccountMeta::new(lending_market_metadata_pubkey, false),
+            AccountMeta::new_readonly(system_program::id(), false),
+        ],
+        data: data.to_vec(),
     }
 }
 
