@@ -13,6 +13,7 @@ use crate::{
         ReserveCollateral, ReserveConfig, ReserveLiquidity,
     },
 };
+use bytemuck::bytes_of;
 use pyth_sdk_solana::{self, state::ProductAccount};
 use solana_program::{
     account_info::{next_account_info, AccountInfo},
@@ -23,6 +24,7 @@ use solana_program::{
     program_error::ProgramError,
     program_pack::{IsInitialized, Pack},
     pubkey::Pubkey,
+    system_instruction::create_account,
     sysvar::instructions::{load_current_index_checked, load_instruction_at_checked},
     sysvar::{
         clock::{self, Clock},
@@ -30,7 +32,7 @@ use solana_program::{
         Sysvar,
     },
 };
-use solend_sdk::state::{RateLimiter, RateLimiterConfig, ReserveType};
+use solend_sdk::state::{LendingMarketMetadata, RateLimiter, RateLimiterConfig, ReserveType};
 use solend_sdk::{switchboard_v2_devnet, switchboard_v2_mainnet};
 use spl_token::state::Mint;
 use std::{cmp::min, result::Result};
@@ -177,6 +179,11 @@ pub fn process_instruction(
         LendingInstruction::ForgiveDebt { liquidity_amount } => {
             msg!("Instruction: Forgive Debt");
             process_forgive_debt(program_id, liquidity_amount, accounts)
+        }
+        LendingInstruction::UpdateMarketMetadata => {
+            msg!("Instruction: Update Metadata");
+            let metadata = LendingMarketMetadata::new_from_bytes(input)?;
+            process_update_market_metadata(program_id, metadata, accounts)
         }
     }
 }
@@ -2734,6 +2741,72 @@ fn assert_rent_exempt(rent: &Rent, account_info: &AccountInfo) -> ProgramResult 
     } else {
         Ok(())
     }
+}
+
+fn process_update_market_metadata(
+    program_id: &Pubkey,
+    metadata: &LendingMarketMetadata,
+    accounts: &[AccountInfo],
+) -> Result<(), ProgramError> {
+    let account_info_iter = &mut accounts.iter();
+    let lending_market_info = next_account_info(account_info_iter)?;
+    let lending_market_owner_info = next_account_info(account_info_iter)?;
+    let metadata_info = next_account_info(account_info_iter)?;
+
+    let lending_market = LendingMarket::unpack(&lending_market_info.data.borrow())?;
+    if lending_market_info.owner != program_id {
+        msg!("Lending market provided is not owned by the lending program",);
+        return Err(LendingError::InvalidAccountOwner.into());
+    }
+
+    if &lending_market.owner != lending_market_owner_info.key {
+        msg!("Lending market owner does not match the lending market owner provided");
+        return Err(LendingError::InvalidMarketOwner.into());
+    }
+
+    if !lending_market_owner_info.is_signer {
+        msg!("Lending market owner provided must be a signer");
+        return Err(LendingError::InvalidSigner.into());
+    }
+
+    let metadata_seeds = &[lending_market_info.key.as_ref(), b"MetaData"];
+    let (metadata_key, bump_seed) = Pubkey::find_program_address(metadata_seeds, program_id);
+    if metadata_key != *metadata_info.key {
+        msg!("Provided metadata account does not match the expected derived address");
+        return Err(LendingError::InvalidAccountInput.into());
+    }
+
+    if bump_seed != metadata.bump_seed {
+        msg!("Provided bump seed does not match the expected derived bump seed");
+        return Err(LendingError::InvalidAmount.into());
+    }
+
+    // initialize
+    if metadata_info.data_is_empty() {
+        msg!("Creating metadata account");
+
+        invoke_signed(
+            &create_account(
+                lending_market_owner_info.key,
+                metadata_info.key,
+                Rent::get()?.minimum_balance(std::mem::size_of::<LendingMarketMetadata>()),
+                std::mem::size_of::<LendingMarketMetadata>() as u64,
+                program_id,
+            ),
+            &[lending_market_owner_info.clone(), metadata_info.clone()],
+            &[&[lending_market_info.key.as_ref(), br"MetaData", &[bump_seed]]],
+        )?;
+    }
+
+    if metadata_info.owner != program_id {
+        msg!("Metadata provided is not owned by the lending program");
+        return Err(LendingError::InvalidAccountOwner.into());
+    }
+
+    let mut metadata_account_data = metadata_info.try_borrow_mut_data()?;
+    metadata_account_data.copy_from_slice(bytes_of(metadata));
+
+    Ok(())
 }
 
 fn assert_uninitialized<T: Pack + IsInitialized>(

@@ -14,14 +14,7 @@ use solana_sdk::{
     account::Account,
     signature::{Keypair, Signer},
 };
-use solend_program::{
-    instruction::{
-        borrow_obligation_liquidity, deposit_reserve_liquidity_and_obligation_collateral,
-        init_obligation, liquidate_obligation, refresh_obligation, refresh_reserve,
-        withdraw_obligation_collateral_and_redeem_reserve_collateral,
-    },
-    state::{Obligation, ReserveConfig, ReserveFees, ReserveType},
-};
+use solend_program::state::{ReserveConfig, ReserveFees, ReserveType};
 
 use spl_token::state::Mint;
 

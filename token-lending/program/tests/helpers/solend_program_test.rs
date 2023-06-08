@@ -1,3 +1,7 @@
+use bytemuck::checked::from_bytes;
+use solend_sdk::instruction::*;
+use solend_sdk::state::*;
+
 use super::{
     flash_loan_proxy::proxy_program,
     mock_pyth::{init_switchboard, set_switchboard_price},
@@ -127,6 +131,9 @@ impl SolendProgramTest {
 
         transaction.sign(&all_signers, self.context.last_blockhash);
 
+        let serialized = bincode::serialize(&transaction).unwrap();
+        assert!(serialized.len() <= 1232);
+
         self.context
             .banks_client
             .process_transaction(transaction)
@@ -161,6 +168,21 @@ impl SolendProgramTest {
         Info {
             pubkey: acc_pk,
             account: T::unpack(&acc.data).unwrap(),
+        }
+    }
+
+    pub async fn load_zeroable_account<T: Pod + Copy>(&mut self, acc_pk: Pubkey) -> Info<T> {
+        let acc = self
+            .context
+            .banks_client
+            .get_account(acc_pk)
+            .await
+            .unwrap()
+            .unwrap();
+
+        Info {
+            pubkey: acc_pk,
+            account: *from_bytes::<T>(&acc.data),
         }
     }
 
@@ -1189,6 +1211,23 @@ impl Info<LendingMarket> {
             self.pubkey,
             lending_market_owner.keypair.pubkey(),
         ));
+
+        test.process_transaction(&instructions, Some(&[&lending_market_owner.keypair]))
+            .await
+    }
+
+    pub async fn update_metadata(
+        &self,
+        test: &mut SolendProgramTest,
+        lending_market_owner: &User,
+        metadata: LendingMarketMetadata,
+    ) -> Result<(), BanksClientError> {
+        let instructions = [update_market_metadata(
+            solend_program::id(),
+            metadata,
+            self.pubkey,
+            lending_market_owner.keypair.pubkey(),
+        )];
 
         test.process_transaction(&instructions, Some(&[&lending_market_owner.keypair]))
             .await
