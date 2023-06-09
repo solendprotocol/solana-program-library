@@ -31,8 +31,8 @@ pub const MAX_LIQUIDATABLE_VALUE_AT_ONCE: u64 = 500_000;
 /// Maximum bonus received during liquidation. includes protocol fee.
 pub const MAX_BONUS_PCT: u8 = 25;
 
-/// Maximum protocol liquidation fee
-pub const MAX_PROTOCOL_LIQUIDATION_FEE: u8 = 5;
+/// Maximum protocol liquidation fee in deca bps (1 deca bp = 10 bps)
+pub const MAX_PROTOCOL_LIQUIDATION_FEE_DECA_BPS: u8 = 50;
 
 /// Lending market reserve state
 #[derive(Clone, Debug, Default, PartialEq)]
@@ -323,7 +323,7 @@ impl Reserve {
 
         let liquidation_bonus = Decimal::from_percent(self.config.liquidation_bonus);
         let max_liquidation_bonus = Decimal::from_percent(self.config.max_liquidation_bonus);
-        let protocol_liquidation_fee = Decimal::from_percent(self.config.protocol_liquidation_fee);
+        let protocol_liquidation_fee = Decimal::from_deca_bps(self.config.protocol_liquidation_fee);
 
         // could also return the average of liquidation bonus and max liquidation bonus here, but
         // i don't think it matters
@@ -477,7 +477,7 @@ impl Reserve {
         // After deploying must update all reserves to set liquidation fee then redeploy with this line instead of hardcode
         let protocol_fee = std::cmp::max(
             nonbonus_amount
-                .try_mul(Rate::from_percent(self.config.protocol_liquidation_fee))?
+                .try_mul(Decimal::from_deca_bps(self.config.protocol_liquidation_fee))?
                 .try_ceil_u64()?,
             1,
         );
@@ -868,7 +868,7 @@ pub struct ReserveConfig {
     pub borrow_limit: u64,
     /// Reserve liquidity fee receiver address
     pub fee_receiver: Pubkey,
-    /// Cut of the liquidation bonus that the protocol receives, as a percentage
+    /// Cut of the liquidation bonus that the protocol receives, in deca bps
     pub protocol_liquidation_fee: u8,
     /// Protocol take rate is the amount borrowed interest protocol recieves, as a percentage  
     pub protocol_take_rate: u8,
@@ -937,10 +937,10 @@ pub fn validate_reserve_config(config: ReserveConfig) -> ProgramResult {
         msg!("Host fee percentage must be in range [0, 100]");
         return Err(LendingError::InvalidConfig.into());
     }
-    if config.protocol_liquidation_fee > MAX_PROTOCOL_LIQUIDATION_FEE {
+    if config.protocol_liquidation_fee > MAX_PROTOCOL_LIQUIDATION_FEE_DECA_BPS {
         msg!(
-            "Protocol liquidation fee must be in range [0, {}]",
-            MAX_PROTOCOL_LIQUIDATION_FEE
+            "Protocol liquidation fee must be in range [0, {}] deca bps",
+            MAX_PROTOCOL_LIQUIDATION_FEE_DECA_BPS
         );
         return Err(LendingError::InvalidConfig.into());
     }
@@ -1417,11 +1417,11 @@ impl Pack for Reserve {
                 protocol_liquidation_fee: min(
                     u8::from_le_bytes(*config_protocol_liquidation_fee),
                     // the behaviour of this variable changed in v2.0.2 and now represents a
-                    // percentage of the total liquidation value that the protocol receives as
+                    // fraction of the total liquidation value that the protocol receives as
                     // a bonus. Prior to v2.0.2, this variable used to represent a percentage of of
                     // the liquidator's bonus that would be sent to the protocol. For safety, we
-                    // cap the value here to MAX_PROTOCOL_LIQUIDATION_FEE.
-                    MAX_PROTOCOL_LIQUIDATION_FEE,
+                    // cap the value here to MAX_PROTOCOL_LIQUIDATION_FEE_DECA_BPS.
+                    MAX_PROTOCOL_LIQUIDATION_FEE_DECA_BPS,
                 ),
                 protocol_take_rate: u8::from_le_bytes(*config_protocol_take_rate),
                 added_borrow_weight_bps: u64::from_le_bytes(*config_added_borrow_weight_bps),
@@ -1499,7 +1499,7 @@ mod test {
                     deposit_limit: rng.gen(),
                     borrow_limit: rng.gen(),
                     fee_receiver: Pubkey::new_unique(),
-                    protocol_liquidation_fee: min(rng.gen(), MAX_PROTOCOL_LIQUIDATION_FEE),
+                    protocol_liquidation_fee: min(rng.gen(), MAX_PROTOCOL_LIQUIDATION_FEE_DECA_BPS),
                     protocol_take_rate: rng.gen(),
                     added_borrow_weight_bps: rng.gen(),
                     reserve_type: ReserveType::from_u8(rng.gen::<u8>() % 2).unwrap(),
@@ -1906,7 +1906,7 @@ mod test {
     fn calculate_protocol_liquidation_fee() {
         let mut reserve = Reserve {
             config: ReserveConfig {
-                protocol_liquidation_fee: 1,
+                protocol_liquidation_fee: 10,
                 ..Default::default()
             },
             ..Reserve::default()
@@ -1919,7 +1919,7 @@ mod test {
             1
         );
 
-        reserve.config.protocol_liquidation_fee = 2;
+        reserve.config.protocol_liquidation_fee = 20;
         assert_eq!(
             reserve
                 .calculate_protocol_liquidation_fee(105, Decimal::from_percent(105))
@@ -2025,7 +2025,7 @@ mod test {
             }),
             Just(ReserveConfigTestCase {
                 config: ReserveConfig {
-                    protocol_liquidation_fee: 6,
+                    protocol_liquidation_fee: 51,
                     ..ReserveConfig::default()
                 },
                 result: Err(LendingError::InvalidConfig.into()),
@@ -2062,7 +2062,7 @@ mod test {
                 super_unhealthy_borrow_value: Decimal::from(150u64),
                 liquidation_bonus: 10,
                 max_liquidation_bonus: 20,
-                protocol_liquidation_fee: 1,
+                protocol_liquidation_fee: 10,
                 result: Err(LendingError::ObligationHealthy.into()),
             }),
             Just(LiquidationBonusTestCase {
@@ -2071,7 +2071,7 @@ mod test {
                 super_unhealthy_borrow_value: Decimal::from(150u64),
                 liquidation_bonus: 10,
                 max_liquidation_bonus: 20,
-                protocol_liquidation_fee: 1,
+                protocol_liquidation_fee: 10,
                 result: Ok(Decimal::from_percent(11))
             }),
             Just(LiquidationBonusTestCase {
@@ -2080,7 +2080,7 @@ mod test {
                 super_unhealthy_borrow_value: Decimal::from(150u64),
                 liquidation_bonus: 10,
                 max_liquidation_bonus: 20,
-                protocol_liquidation_fee: 1,
+                protocol_liquidation_fee: 10,
                 result: Ok(Decimal::from_percent(16))
             }),
             Just(LiquidationBonusTestCase {
@@ -2089,7 +2089,7 @@ mod test {
                 super_unhealthy_borrow_value: Decimal::from(100u64),
                 liquidation_bonus: 10,
                 max_liquidation_bonus: 20,
-                protocol_liquidation_fee: 1,
+                protocol_liquidation_fee: 10,
                 result: Ok(Decimal::from_percent(21))
             }),
             Just(LiquidationBonusTestCase {
@@ -2098,7 +2098,7 @@ mod test {
                 super_unhealthy_borrow_value: Decimal::from(100u64),
                 liquidation_bonus: 10,
                 max_liquidation_bonus: 20,
-                protocol_liquidation_fee: 1,
+                protocol_liquidation_fee: 10,
                 result: Ok(Decimal::from_percent(21))
             }),
             Just(LiquidationBonusTestCase {
@@ -2107,7 +2107,7 @@ mod test {
                 super_unhealthy_borrow_value: Decimal::from(50u64),
                 liquidation_bonus: 10,
                 max_liquidation_bonus: 20,
-                protocol_liquidation_fee: 1,
+                protocol_liquidation_fee: 10,
                 result: Ok(Decimal::from_percent(11))
             }),
             Just(LiquidationBonusTestCase {
@@ -2116,7 +2116,7 @@ mod test {
                 super_unhealthy_borrow_value: Decimal::from(60u64),
                 liquidation_bonus: 10,
                 max_liquidation_bonus: 30,
-                protocol_liquidation_fee: 1,
+                protocol_liquidation_fee: 10,
                 result: Ok(Decimal::from_percent(25))
             }),
         ]

@@ -104,8 +104,7 @@ async fn test_success_new() {
     // - 1% protocol liquidation fee: 110
     // - 4% liquidator bonus: 440
     let bonus = (usdc_reserve.account.config.liquidation_bonus
-        + usdc_reserve.account.config.protocol_liquidation_fee) as u64;
-    let _protocol_liquidation_fee_pct = usdc_reserve.account.config.protocol_liquidation_fee as u64;
+        + usdc_reserve.account.config.protocol_liquidation_fee / 10) as u64;
 
     let expected_borrow_repaid = 10 * (LIQUIDATION_CLOSE_FACTOR as u64) / 100;
     let expected_usdc_withdrawn = expected_borrow_repaid * 5500 * (100 + bonus) / 100;
@@ -345,7 +344,7 @@ async fn test_success_insufficient_liquidity() {
         balance_checker.find_balance_changes(&mut test).await;
 
     let bonus = (usdc_reserve.account.config.liquidation_bonus
-        + usdc_reserve.account.config.protocol_liquidation_fee) as u64;
+        + usdc_reserve.account.config.protocol_liquidation_fee / 10) as u64;
 
     let expected_borrow_repaid = 10 * (LIQUIDATION_CLOSE_FACTOR as u64) / 100;
     let expected_cusdc_withdrawn =
