@@ -345,7 +345,11 @@ impl Reserve {
                     obligation
                         .super_unhealthy_borrow_value
                         .try_sub(obligation.unhealthy_borrow_value)?,
-                )?,
+                )
+                // the division above can potentially overflow if super_unhealthy_borrow_value and
+                // unhealthy_borrow_value are really close to each other. in that case, we want the
+                // weight to be one.
+                .unwrap_or_else(|_| Decimal::one()),
             Decimal::one(),
         );
 
@@ -468,13 +472,6 @@ impl Reserve {
         amount_liquidated: u64,
         bonus_rate: Decimal,
     ) -> Result<u64, ProgramError> {
-        if bonus_rate
-            < Decimal::one().try_add(Decimal::from_percent(self.config.protocol_liquidation_fee))?
-        {
-            msg!("bonus rate is less than one + protocol liquidation fee");
-            return Err(LendingError::MathOverflow.into());
-        }
-
         let amount_liquidated_wads = Decimal::from(amount_liquidated);
         let nonbonus_amount = amount_liquidated_wads.try_div(bonus_rate)?;
         // After deploying must update all reserves to set liquidation fee then redeploy with this line instead of hardcode
