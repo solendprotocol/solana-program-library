@@ -87,7 +87,7 @@ impl RateLimiter {
     }
 
     /// Calculate current outflow. Must only be called after ._update()!
-    pub fn current_outflow(&self, cur_slot: u64) -> Result<Decimal, ProgramError> {
+    fn current_outflow(&self, cur_slot: u64) -> Result<Decimal, ProgramError> {
         if self.config.window_duration == 0 {
             msg!("Window duration cannot be 0");
             return Err(LendingError::InvalidAccountInput.into());

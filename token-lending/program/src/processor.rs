@@ -1391,24 +1391,20 @@ fn _withdraw_obligation_collateral<'a>(
                 obligation.deposited_value.try_mul(2)?,
             ))?;
 
-        let max_lending_market_outflow_collateral_amount = withdraw_reserve
-            .collateral_exchange_rate()?
-            .decimal_liquidity_to_collateral(max_lending_market_outflow_liquidity_amount)?;
-
         let max_reserve_outflow_liquidity_amount = withdraw_reserve
             .rate_limiter
             .clone()
             .remaining_outflow(clock.slot)?;
 
-        let max_reserve_outflow_collateral_amount = withdraw_reserve
-            .collateral_exchange_rate()?
-            .decimal_liquidity_to_collateral(max_reserve_outflow_liquidity_amount)?;
+        let max_outflow_liquidity_amount = min(
+            max_lending_market_outflow_liquidity_amount,
+            max_reserve_outflow_liquidity_amount,
+        );
 
-        min(
-            max_lending_market_outflow_collateral_amount,
-            max_reserve_outflow_collateral_amount,
-        )
-        .try_floor_u64()?
+        withdraw_reserve
+            .collateral_exchange_rate()?
+            .decimal_liquidity_to_collateral(max_outflow_liquidity_amount)?
+            .try_floor_u64()?
     } else {
         u64::MAX
     };
@@ -1618,8 +1614,7 @@ fn process_borrow_obligation_liquidity(
     } = borrow_reserve.calculate_borrow(
         liquidity_amount,
         remaining_borrow_value,
-        remaining_reserve_capacity,
-        max_outflow_liquidity_amount,
+        min(remaining_reserve_capacity, max_outflow_liquidity_amount),
     )?;
 
     if receive_amount == 0 {

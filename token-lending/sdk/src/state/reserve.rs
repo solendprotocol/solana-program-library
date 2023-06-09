@@ -251,7 +251,6 @@ impl Reserve {
         amount_to_borrow: u64,
         max_borrow_value: Decimal,
         remaining_reserve_borrow: Decimal,
-        remaining_liquidity_outflow: Decimal,
     ) -> Result<CalculateBorrowResult, ProgramError> {
         // @TODO: add lookup table https://git.io/JOCYq
         let decimals = 10u64
@@ -266,8 +265,7 @@ impl Reserve {
                 ))?
                 .try_div(self.borrow_weight())?
                 .min(remaining_reserve_borrow)
-                .min(self.liquidity.available_amount.into())
-                .min(remaining_liquidity_outflow);
+                .min(self.liquidity.available_amount.into());
             let (borrow_fee, host_fee) = self
                 .config
                 .fees
@@ -2264,7 +2262,6 @@ mod test {
                 test_case.borrow_amount,
                 test_case.remaining_borrow_value,
                 test_case.remaining_reserve_capacity,
-                Decimal::from(u64::MAX),
             ), test_case.result);
         }
     }

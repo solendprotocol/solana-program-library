@@ -566,7 +566,7 @@ async fn test_borrow_max_rate_limiter() {
             &lending_market_owner.keypair.pubkey(),
             RateLimiterConfig {
                 window_duration: 20,
-                max_outflow: 5, // $50
+                max_outflow: 5, // $5
             },
             Pubkey::new_unique(),
         )
