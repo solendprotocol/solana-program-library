@@ -914,6 +914,7 @@ fn process_refresh_obligation(program_id: &Pubkey, accounts: &[AccountInfo]) -> 
     let mut borrowed_value_upper_bound = Decimal::zero();
     let mut allowed_borrow_value = Decimal::zero();
     let mut unhealthy_borrow_value = Decimal::zero();
+    let mut super_unhealthy_borrow_value = Decimal::zero();
 
     for (index, collateral) in obligation.deposits.iter_mut().enumerate() {
         let deposit_reserve_info = next_account_info(account_info_iter)?;
@@ -952,6 +953,8 @@ fn process_refresh_obligation(program_id: &Pubkey, accounts: &[AccountInfo]) -> 
         let loan_to_value_rate = Rate::from_percent(deposit_reserve.config.loan_to_value_ratio);
         let liquidation_threshold_rate =
             Rate::from_percent(deposit_reserve.config.liquidation_threshold);
+        let max_liquidation_threshold_rate =
+            Rate::from_percent(deposit_reserve.config.max_liquidation_threshold);
 
         collateral.market_value = market_value;
         deposited_value = deposited_value.try_add(market_value)?;
@@ -959,6 +962,8 @@ fn process_refresh_obligation(program_id: &Pubkey, accounts: &[AccountInfo]) -> 
             allowed_borrow_value.try_add(market_value_lower_bound.try_mul(loan_to_value_rate)?)?;
         unhealthy_borrow_value =
             unhealthy_borrow_value.try_add(market_value.try_mul(liquidation_threshold_rate)?)?;
+        super_unhealthy_borrow_value = super_unhealthy_borrow_value
+            .try_add(market_value.try_mul(max_liquidation_threshold_rate)?)?;
     }
 
     let mut borrowing_isolated_asset = false;
@@ -1038,6 +1043,8 @@ fn process_refresh_obligation(program_id: &Pubkey, accounts: &[AccountInfo]) -> 
 
     obligation.allowed_borrow_value = min(allowed_borrow_value, global_allowed_borrow_value);
     obligation.unhealthy_borrow_value = min(unhealthy_borrow_value, global_unhealthy_borrow_value);
+    obligation.super_unhealthy_borrow_value =
+        min(super_unhealthy_borrow_value, global_unhealthy_borrow_value);
 
     obligation.last_update.update_slot(clock.slot);
 
@@ -1767,7 +1774,7 @@ fn _liquidate_obligation<'a>(
     user_transfer_authority_info: &AccountInfo<'a>,
     clock: &Clock,
     token_program_id: &AccountInfo<'a>,
-) -> Result<u64, ProgramError> {
+) -> Result<(u64, Decimal), ProgramError> {
     let lending_market = LendingMarket::unpack(&lending_market_info.data.borrow())?;
     if lending_market_info.owner != program_id {
         msg!("Lending market provided is not owned by the lending program");
@@ -1893,6 +1900,7 @@ fn _liquidate_obligation<'a>(
         settle_amount,
         repay_amount,
         withdraw_amount,
+        bonus_rate,
     } = withdraw_reserve.calculate_liquidation(
         liquidity_amount,
         &obligation,
@@ -1936,7 +1944,7 @@ fn _liquidate_obligation<'a>(
         token_program: token_program_id.clone(),
     })?;
 
-    Ok(withdraw_amount)
+    Ok((withdraw_amount, bonus_rate))
 }
 
 #[inline(never)] // avoid stack frame limit
@@ -1968,7 +1976,7 @@ fn process_liquidate_obligation_and_redeem_reserve_collateral(
     let token_program_id = next_account_info(account_info_iter)?;
     let clock = &Clock::get()?;
 
-    let withdrawn_collateral_amount = _liquidate_obligation(
+    let (withdrawn_collateral_amount, bonus_rate) = _liquidate_obligation(
         program_id,
         liquidity_amount,
         source_liquidity_info,
@@ -2014,8 +2022,8 @@ fn process_liquidate_obligation_and_redeem_reserve_collateral(
             msg!("Withdraw reserve liquidity fee receiver does not match the reserve liquidity fee receiver provided");
             return Err(LendingError::InvalidAccountInput.into());
         }
-        let protocol_fee =
-            withdraw_reserve.calculate_protocol_liquidation_fee(withdraw_liquidity_amount)?;
+        let protocol_fee = withdraw_reserve
+            .calculate_protocol_liquidation_fee(withdraw_liquidity_amount, bonus_rate)?;
 
         spl_token_transfer(TokenTransferParams {
             source: destination_liquidity_info.clone(),

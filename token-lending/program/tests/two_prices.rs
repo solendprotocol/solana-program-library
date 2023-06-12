@@ -302,7 +302,12 @@ async fn test_liquidation_doesnt_use_smoothed_price() {
         &[
             ReserveArgs {
                 mint: usdc_mint::id(),
-                config: test_reserve_config(),
+                config: ReserveConfig {
+                    protocol_liquidation_fee: 0,
+                    liquidation_bonus: 5,
+                    max_liquidation_bonus: 5,
+                    ..test_reserve_config()
+                },
                 liquidity_amount: 100_000 * FRACTIONAL_TO_USDC,
                 price: PriceArgs {
                     price: 1,
@@ -320,7 +325,6 @@ async fn test_liquidation_doesnt_use_smoothed_price() {
                     fees: ReserveFees::default(),
                     optimal_borrow_rate: 0,
                     max_borrow_rate: 0,
-                    protocol_liquidation_fee: 0,
                     ..test_reserve_config()
                 },
                 liquidity_amount: 100 * LAMPORTS_PER_SOL,

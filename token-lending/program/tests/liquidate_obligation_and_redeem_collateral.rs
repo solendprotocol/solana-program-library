@@ -13,7 +13,7 @@ use solend_program::state::LastUpdate;
 use solend_program::state::ObligationCollateral;
 use solend_program::state::ObligationLiquidity;
 use solend_program::state::ReserveConfig;
-use solend_sdk::state::ReserveFees;
+use solend_program::state::ReserveFees;
 mod helpers;
 
 use crate::solend_program_test::scenario_1;
@@ -38,7 +38,9 @@ use std::collections::HashSet;
 async fn test_success_new() {
     let (mut test, lending_market, usdc_reserve, wsol_reserve, user, obligation) = scenario_1(
         &ReserveConfig {
-            protocol_liquidation_fee: 30,
+            optimal_borrow_rate: 0,
+            max_borrow_rate: 0,
+            fees: ReserveFees::default(),
             ..test_reserve_config()
         },
         &test_reserve_config(),
@@ -96,15 +98,18 @@ async fn test_success_new() {
     let (balance_changes, mint_supply_changes) =
         balance_checker.find_balance_changes(&mut test).await;
 
-    let bonus = usdc_reserve.account.config.liquidation_bonus as u64;
-    let protocol_liquidation_fee_pct = usdc_reserve.account.config.protocol_liquidation_fee as u64;
+    // 55k * 0.2 => 11k worth of SOL gets repaid
+    // => 11k worth of USDC gets withdrawn + bonus.
+    // bonus is 5%:
+    // - 1% protocol liquidation fee: 110
+    // - 4% liquidator bonus: 440
+    let bonus = (usdc_reserve.account.config.liquidation_bonus
+        + usdc_reserve.account.config.protocol_liquidation_fee / 10) as u64;
 
     let expected_borrow_repaid = 10 * (LIQUIDATION_CLOSE_FACTOR as u64) / 100;
     let expected_usdc_withdrawn = expected_borrow_repaid * 5500 * (100 + bonus) / 100;
 
-    let expected_total_bonus = expected_usdc_withdrawn - expected_borrow_repaid * 5500;
-    let expected_protocol_liquidation_fee =
-        expected_total_bonus * protocol_liquidation_fee_pct / 100;
+    let expected_protocol_liquidation_fee = 110;
 
     let expected_balance_changes = HashSet::from([
         // liquidator
@@ -231,8 +236,16 @@ async fn test_success_new() {
 
 #[tokio::test]
 async fn test_success_insufficient_liquidity() {
-    let (mut test, lending_market, usdc_reserve, wsol_reserve, user, obligation) =
-        scenario_1(&test_reserve_config(), &test_reserve_config()).await;
+    let (mut test, lending_market, usdc_reserve, wsol_reserve, user, obligation) = scenario_1(
+        &ReserveConfig {
+            optimal_borrow_rate: 0,
+            max_borrow_rate: 0,
+            fees: ReserveFees::default(),
+            ..test_reserve_config()
+        },
+        &test_reserve_config(),
+    )
+    .await;
 
     // basically the same test as above, but now someone borrows a lot of USDC so the liquidatior
     // partially receives USDC and cUSDC
@@ -330,14 +343,18 @@ async fn test_success_insufficient_liquidity() {
     let (balance_changes, mint_supply_changes) =
         balance_checker.find_balance_changes(&mut test).await;
 
-    let bonus = usdc_reserve.account.config.liquidation_bonus as u64;
+    let bonus = (usdc_reserve.account.config.liquidation_bonus
+        + usdc_reserve.account.config.protocol_liquidation_fee / 10) as u64;
 
     let expected_borrow_repaid = 10 * (LIQUIDATION_CLOSE_FACTOR as u64) / 100;
     let expected_cusdc_withdrawn =
         expected_borrow_repaid * 5500 * (100 + bonus) / 100 - available_amount;
     let expected_protocol_liquidation_fee = usdc_reserve
         .account
-        .calculate_protocol_liquidation_fee(available_amount * FRACTIONAL_TO_USDC)
+        .calculate_protocol_liquidation_fee(
+            available_amount * FRACTIONAL_TO_USDC,
+            Decimal::from_percent(105),
+        )
         .unwrap();
 
     let expected_balance_changes = HashSet::from([

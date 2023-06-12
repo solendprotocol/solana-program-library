@@ -55,6 +55,11 @@ impl Decimal {
         Self(U192::from(percent as u64 * PERCENT_SCALER))
     }
 
+    /// Create scaled decimal from deca bps value
+    pub fn from_deca_bps(deca_bps: u8) -> Self {
+        Self::from(deca_bps as u64).try_div(1000).unwrap()
+    }
+
     /// Create scaled decimal from bps value
     pub fn from_bps(bps: u64) -> Self {
         Self::from(bps).try_div(10_000).unwrap()
@@ -244,6 +249,12 @@ mod test {
         let right = Decimal::from(20u64).try_div(Decimal::from(100u64)).unwrap();
 
         assert_eq!(left, right);
+    }
+
+    #[test]
+    fn test_from_deca_bps() {
+        let left = Decimal::from_deca_bps(250);
+        assert_eq!(left, Decimal::from_percent(25));
     }
 
     #[test]
