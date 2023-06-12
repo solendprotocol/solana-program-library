@@ -1717,7 +1717,11 @@ mod test {
                         window_duration: rng.gen::<u64>(),
                         max_outflow: rng.gen::<u64>(),
                     },
-                    whitelisted_liquidator: if rng.gen_bool(0.5) { None } else { Some(Pubkey::new_unique()) },
+                    whitelisted_liquidator: if rng.gen_bool(0.5) {
+                        None
+                    } else {
+                        Some(Pubkey::new_unique())
+                    },
                     risk_authority: Pubkey::new_unique(),
                 };
 

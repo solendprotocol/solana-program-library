@@ -111,7 +111,7 @@ impl Pack for LendingMarket {
             RATE_LIMITER_LEN,
             PUBKEY_BYTES,
             PUBKEY_BYTES,
-            8 
+            8
         ];
 
         *version = self.version.to_le_bytes();
@@ -214,7 +214,11 @@ mod test {
             oracle_program_id: Pubkey::new_unique(),
             switchboard_oracle_program_id: Pubkey::new_unique(),
             rate_limiter: rand_rate_limiter(),
-            whitelisted_liquidator: if rng.gen_bool(0.5) { None } else { Some(Pubkey::new_unique()) },
+            whitelisted_liquidator: if rng.gen_bool(0.5) {
+                None
+            } else {
+                Some(Pubkey::new_unique())
+            },
             risk_authority: Pubkey::new_unique(),
         };
 

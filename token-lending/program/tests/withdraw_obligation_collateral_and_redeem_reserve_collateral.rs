@@ -247,6 +247,7 @@ async fn test_withdraw_max_rate_limiter() {
                 window_duration: 20,
                 max_outflow: 50, // $50
             },
+            None,
             Pubkey::new_unique(),
         )
         .await

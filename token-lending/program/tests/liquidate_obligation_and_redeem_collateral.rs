@@ -2,13 +2,12 @@
 
 use crate::solend_program_test::custom_scenario;
 use crate::solend_program_test::MintSupplyChange;
-use solana_sdk::instruction::InstructionError;
-use solana_sdk::signer::Signer;
-use solana_sdk::transaction::TransactionError;
-use solend_sdk::NULL_PUBKEY;
 use crate::solend_program_test::ObligationArgs;
 use crate::solend_program_test::ReserveArgs;
+use solana_sdk::instruction::InstructionError;
 use solana_sdk::native_token::LAMPORTS_PER_SOL;
+use solana_sdk::signer::Signer;
+use solana_sdk::transaction::TransactionError;
 use solend_program::error::LendingError;
 use solend_program::math::TrySub;
 use solend_program::state::LastUpdate;
@@ -16,6 +15,7 @@ use solend_program::state::ObligationCollateral;
 use solend_program::state::ObligationLiquidity;
 use solend_program::state::ReserveConfig;
 use solend_program::state::ReserveFees;
+use solend_sdk::NULL_PUBKEY;
 mod helpers;
 
 use crate::solend_program_test::scenario_1;
@@ -282,7 +282,7 @@ async fn test_whitelisting_liquidator() {
             &lending_market_owner.keypair.pubkey(),
             lending_market.account.rate_limiter.config,
             Some(whitelisted_liquidator.keypair.pubkey()),
-            NULL_PUBKEY
+            NULL_PUBKEY,
         )
         .await
         .unwrap();
