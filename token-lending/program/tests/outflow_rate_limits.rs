@@ -143,7 +143,7 @@ async fn test_outflow_reserve() {
             &wsol_reserve,
             &obligation,
             &user,
-            &host_fee_receiver.get_account(&wsol_mint::id()).unwrap(),
+            host_fee_receiver.get_account(&wsol_mint::id()),
             LAMPORTS_PER_SOL,
         )
         .await
@@ -158,7 +158,7 @@ async fn test_outflow_reserve() {
                 &wsol_reserve,
                 &obligation,
                 &user,
-                &host_fee_receiver.get_account(&wsol_mint::id()).unwrap(),
+                host_fee_receiver.get_account(&wsol_mint::id()),
                 1,
             )
             .await
@@ -191,7 +191,7 @@ async fn test_outflow_reserve() {
             res,
             TransactionError::InstructionError(
                 1,
-                InstructionError::Custom(LendingError::OutflowRateLimitExceeded as u32)
+                InstructionError::Custom(LendingError::WithdrawTooLarge as u32)
             )
         );
 

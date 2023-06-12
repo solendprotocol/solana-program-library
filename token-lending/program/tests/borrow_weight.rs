@@ -128,7 +128,7 @@ async fn test_borrow() {
                 &wsol_reserve,
                 &obligation,
                 &user,
-                &host_fee_receiver,
+                Some(host_fee_receiver),
                 u64::MAX,
             )
             .await
@@ -294,7 +294,7 @@ async fn test_liquidation() {
                 &wsol_reserve,
                 &obligation,
                 &user,
-                &host_fee_receiver,
+                Some(host_fee_receiver),
                 u64::MAX,
             )
             .await

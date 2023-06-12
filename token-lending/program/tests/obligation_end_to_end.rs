@@ -78,7 +78,7 @@ async fn test_success() {
             &wsol_reserve,
             &obligation,
             &user,
-            &host_fee_receiver.get_account(&wsol_mint::id()).unwrap(),
+            host_fee_receiver.get_account(&wsol_mint::id()),
             LAMPORTS_TO_SOL / 2,
         )
         .await
