@@ -121,7 +121,7 @@ async fn test_update_reserve_config_risk_authority() {
         // value)
         deposit_limit: 10001, // this should NOT get updated on the reserve (prev limit was
         // safer)
-        liquidation_threshold: 100, // this should NOT get updated (risk authority can't change
+        liquidation_threshold: 60, // this should NOT get updated (risk authority can't change
         // this)
         ..wsol_reserve.account.config
     };
@@ -245,7 +245,7 @@ async fn test_update_reserve_config_invalid_signers() {
 
     let new_reserve_config = ReserveConfig {
         borrow_limit: 20,
-        liquidation_threshold: 100,
+        liquidation_threshold: 60,
         ..wsol_reserve.account.config
     };
 
