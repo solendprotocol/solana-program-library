@@ -84,6 +84,25 @@ impl Reserve {
         Rate::from_percent(self.config.loan_to_value_ratio)
     }
 
+    /// Convert USD to liquidity tokens.
+    /// eg how much SOL can you get for 100USD?
+    pub fn usd_to_liquidity_amount_lower_bound(
+        &self,
+        quote_amount: Decimal,
+    ) -> Result<Decimal, ProgramError> {
+        // quote amount / max(market price, smoothed price) * 10**decimals
+        quote_amount
+            .try_mul(Decimal::from(
+                (10u128)
+                    .checked_pow(self.liquidity.mint_decimals as u32)
+                    .ok_or(LendingError::MathOverflow)?,
+            ))?
+            .try_div(max(
+                self.liquidity.smoothed_market_price,
+                self.liquidity.market_price,
+            ))
+    }
+
     /// find current market value of tokens
     pub fn market_value(&self, liquidity_amount: Decimal) -> Result<Decimal, ProgramError> {
         self.liquidity
@@ -1963,6 +1982,26 @@ mod test {
                 .market_value_upper_bound(Decimal::from(10 * LAMPORTS_PER_SOL))
                 .unwrap(),
             Decimal::from(500u64)
+        );
+    }
+
+    #[test]
+    fn usd_to_liquidity_amount_lower_bound() {
+        let reserve = Reserve {
+            liquidity: ReserveLiquidity {
+                mint_decimals: 9,
+                market_price: Decimal::from(25u64),
+                smoothed_market_price: Decimal::from(50u64),
+                ..ReserveLiquidity::default()
+            },
+            ..Reserve::default()
+        };
+
+        assert_eq!(
+            reserve
+                .usd_to_liquidity_amount_lower_bound(Decimal::from(100u64))
+                .unwrap(),
+            Decimal::from(2 * LAMPORTS_PER_SOL)
         );
     }
 

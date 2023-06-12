@@ -283,7 +283,7 @@ async fn test_success_insufficient_liquidity() {
                 &usdc_reserve,
                 &obligation,
                 &usdc_borrower,
-                &usdc_borrower.get_account(&usdc_mint::id()).unwrap(),
+                usdc_borrower.get_account(&usdc_mint::id()),
                 u64::MAX,
             )
             .await

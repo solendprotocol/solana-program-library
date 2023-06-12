@@ -15,7 +15,7 @@ use solend_sdk::math::Decimal;
 use solend_program::state::LastUpdate;
 use solend_program::state::ReserveType;
 use solend_program::state::{Obligation, ObligationLiquidity, ReserveConfig};
-use solend_program::NULL_PUBKEY;
+
 use solend_sdk::state::ReserveFees;
 mod helpers;
 
@@ -92,7 +92,7 @@ async fn test_refresh_obligation() {
             wsol_reserve,
             &obligations[0],
             &users[0],
-            &NULL_PUBKEY,
+            None,
             LAMPORTS_PER_SOL,
         )
         .await
@@ -182,7 +182,7 @@ async fn borrow_isolated_asset() {
             bonk_reserve,
             &obligations[0],
             &users[0],
-            &NULL_PUBKEY,
+            None,
             10,
         )
         .await
@@ -195,7 +195,7 @@ async fn borrow_isolated_asset() {
             bonk_reserve,
             &obligations[0],
             &users[0],
-            &NULL_PUBKEY,
+            None,
             u64::MAX,
         )
         .await
@@ -274,14 +274,7 @@ async fn borrow_isolated_asset_invalid() {
         .unwrap();
 
     let err = lending_market
-        .borrow_obligation_liquidity(
-            &mut test,
-            bonk_reserve,
-            &obligations[0],
-            &users[0],
-            &NULL_PUBKEY,
-            1,
-        )
+        .borrow_obligation_liquidity(&mut test, bonk_reserve, &obligations[0], &users[0], None, 1)
         .await
         .unwrap_err()
         .unwrap();
@@ -372,7 +365,7 @@ async fn borrow_regular_asset_invalid() {
             wsol_reserve,
             &obligations[0],
             &users[0],
-            &NULL_PUBKEY,
+            None,
             LAMPORTS_PER_SOL,
         )
         .await
@@ -478,14 +471,7 @@ async fn invalid_borrow_due_to_reserve_config_change() {
     // borrow 1 more unit of BONK. this should fail because the reserve is now isolated but the
     // obligation has two borrows
     let err = lending_market
-        .borrow_obligation_liquidity(
-            &mut test,
-            bonk_reserve,
-            &obligations[0],
-            &users[0],
-            &NULL_PUBKEY,
-            1,
-        )
+        .borrow_obligation_liquidity(&mut test, bonk_reserve, &obligations[0], &users[0], None, 1)
         .await
         .unwrap_err()
         .unwrap();

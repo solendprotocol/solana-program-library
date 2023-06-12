@@ -15,7 +15,7 @@ use solana_sdk::transaction::TransactionError;
 use solend_program::error::LendingError;
 
 use solend_program::state::ReserveConfig;
-use solend_program::NULL_PUBKEY;
+
 use solend_sdk::state::ReserveFees;
 mod helpers;
 
@@ -110,7 +110,7 @@ async fn test_borrow() {
             &find_reserve(&reserves, &wsol_mint::id()).unwrap(),
             &obligations[0],
             &users[0],
-            &NULL_PUBKEY,
+            None,
             u64::MAX,
         )
         .await
@@ -134,7 +134,7 @@ async fn test_borrow() {
             &find_reserve(&reserves, &wsol_mint::id()).unwrap(),
             &obligations[0],
             &users[0],
-            &NULL_PUBKEY,
+            None,
             u64::MAX,
         )
         .await

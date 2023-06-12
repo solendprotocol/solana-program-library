@@ -938,7 +938,7 @@ impl Info<LendingMarket> {
         borrow_reserve: &Info<Reserve>,
         obligation: &Info<Obligation>,
         user: &User,
-        host_fee_receiver_pubkey: &Pubkey,
+        host_fee_receiver_pubkey: Option<Pubkey>,
         liquidity_amount: u64,
     ) -> Result<(), BanksClientError> {
         let obligation = test.load_account::<Obligation>(obligation.pubkey).await;
@@ -960,7 +960,7 @@ impl Info<LendingMarket> {
             obligation.pubkey,
             self.pubkey,
             user.keypair.pubkey(),
-            Some(*host_fee_receiver_pubkey),
+            host_fee_receiver_pubkey,
         ));
 
         test.process_transaction(&instructions, Some(&[&user.keypair]))
@@ -1567,7 +1567,7 @@ pub async fn scenario_1(
             &wsol_reserve,
             &obligation,
             &user,
-            &lending_market_owner.get_account(&wsol_mint::id()).unwrap(),
+            lending_market_owner.get_account(&wsol_mint::id()),
             u64::MAX,
         )
         .await
@@ -1740,7 +1740,7 @@ pub async fn custom_scenario(
                     reserve,
                     &obligations[i],
                     &obligation_owners[i],
-                    &fee_receiver.get_account(mint).unwrap(),
+                    fee_receiver.get_account(mint),
                     *amount,
                 )
                 .await
