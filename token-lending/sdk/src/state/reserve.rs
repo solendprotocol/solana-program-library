@@ -963,9 +963,11 @@ pub fn validate_reserve_config(config: ReserveConfig) -> ProgramResult {
         );
         return Err(LendingError::InvalidConfig.into());
     }
-    if config.max_liquidation_bonus + config.protocol_liquidation_fee > MAX_BONUS_PCT {
+    if config.max_liquidation_bonus as u64 * 100 + config.protocol_liquidation_fee as u64 * 10
+        > MAX_BONUS_PCT as u64 * 100
+    {
         msg!(
-            "Max liquidation bonus + protocol liquidation fee must be in range [0, {}]",
+            "Max liquidation bonus + protocol liquidation fee must be in pct range [0, {}]",
             MAX_BONUS_PCT
         );
         return Err(LendingError::InvalidConfig.into());
@@ -2057,7 +2059,15 @@ mod test {
             Just(ReserveConfigTestCase {
                 config: ReserveConfig {
                     max_liquidation_bonus: 20,
-                    protocol_liquidation_fee: 20,
+                    protocol_liquidation_fee: 50,
+                    ..ReserveConfig::default()
+                },
+                result: Ok(())
+            }),
+            Just(ReserveConfigTestCase {
+                config: ReserveConfig {
+                    max_liquidation_bonus: 20,
+                    protocol_liquidation_fee: 60,
                     ..ReserveConfig::default()
                 },
                 result: Err(LendingError::InvalidConfig.into()),

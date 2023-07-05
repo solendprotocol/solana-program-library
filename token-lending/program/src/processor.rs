@@ -1015,7 +1015,13 @@ fn process_refresh_obligation(program_id: &Pubkey, accounts: &[AccountInfo]) -> 
             borrow_reserve.liquidity.mint_pubkey,
         );
         max_borrow_weight = match max_borrow_weight {
-            None => Some((borrow_weight_and_pubkey, index)),
+            None => {
+                if liquidity.borrowed_amount_wads > Decimal::zero() {
+                    Some((borrow_weight_and_pubkey, index))
+                } else {
+                    None
+                }
+            }
             Some((max_borrow_weight_and_pubkey, _)) => {
                 if liquidity.borrowed_amount_wads > Decimal::zero()
                     && borrow_weight_and_pubkey > max_borrow_weight_and_pubkey
@@ -1062,6 +1068,14 @@ fn process_refresh_obligation(program_id: &Pubkey, accounts: &[AccountInfo]) -> 
     if let Some((_, max_borrow_weight_index)) = max_borrow_weight {
         obligation.borrows.swap(0, max_borrow_weight_index);
     }
+
+    // filter out ObligationCollaterals and ObligationLiquiditys with an amount of zero
+    obligation
+        .deposits
+        .retain(|collateral| collateral.deposited_amount > 0);
+    obligation
+        .borrows
+        .retain(|liquidity| liquidity.borrowed_amount_wads > Decimal::zero());
 
     Obligation::pack(obligation, &mut obligation_info.data.borrow_mut())?;
 
