@@ -72,7 +72,7 @@ pub mod bonk_mint {
     solana_program::declare_id!("bonk99WdRCGrh56xQaeQuRMpMHgiNZEfVoZ53DJAoHS");
 }
 
-trait AddPacked {
+pub trait AddPacked {
     fn add_packable_account<T: Pack>(
         &mut self,
         pubkey: Pubkey,

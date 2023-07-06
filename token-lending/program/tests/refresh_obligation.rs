@@ -6,6 +6,13 @@ use crate::solend_program_test::custom_scenario;
 use crate::solend_program_test::ObligationArgs;
 use crate::solend_program_test::PriceArgs;
 use crate::solend_program_test::ReserveArgs;
+use helpers::AddPacked;
+use solana_sdk::pubkey::Pubkey;
+use solend_program::instruction::refresh_obligation;
+use solend_program::processor::process_instruction;
+
+use solend_program::state::ObligationCollateral;
+use solend_sdk::state::PROGRAM_VERSION;
 use std::collections::HashSet;
 
 use helpers::solend_program_test::{setup_world, BalanceChecker, Info, SolendProgramTest, User};
@@ -426,5 +433,118 @@ async fn test_obligation_liquidity_ordering() {
                 market_value: Decimal::from(1u64),
             },
         ]
+    );
+}
+
+#[tokio::test]
+async fn test_normalize_obligation() {
+    let mut test = ProgramTest::new(
+        "solend_program",
+        solend_program::id(),
+        processor!(process_instruction),
+    );
+
+    let reserve_1 = Reserve {
+        version: PROGRAM_VERSION,
+        last_update: LastUpdate {
+            slot: 1,
+            stale: false,
+        },
+        ..Reserve::default()
+    };
+    let reserve_1_pubkey = Pubkey::new_unique();
+
+    test.add_packable_account(
+        reserve_1_pubkey,
+        u32::MAX as u64,
+        &reserve_1,
+        &solend_program::id(),
+    );
+
+    let reserve_2 = Reserve {
+        version: PROGRAM_VERSION,
+        last_update: LastUpdate {
+            slot: 1,
+            stale: false,
+        },
+        ..Reserve::default()
+    };
+    let reserve_2_pubkey = Pubkey::new_unique();
+
+    test.add_packable_account(
+        reserve_2_pubkey,
+        u32::MAX as u64,
+        &reserve_2,
+        &solend_program::id(),
+    );
+
+    let obligation_pubkey = Pubkey::new_unique();
+    let obligation = Obligation {
+        version: PROGRAM_VERSION,
+        deposits: vec![
+            ObligationCollateral {
+                deposit_reserve: reserve_1_pubkey,
+                deposited_amount: 1u64,
+                ..ObligationCollateral::default()
+            },
+            ObligationCollateral {
+                deposit_reserve: reserve_2_pubkey,
+                deposited_amount: 0u64,
+                ..ObligationCollateral::default()
+            },
+        ],
+        borrows: vec![
+            ObligationLiquidity {
+                borrow_reserve: reserve_1_pubkey,
+                borrowed_amount_wads: Decimal::from(0u64),
+                ..ObligationLiquidity::default()
+            },
+            ObligationLiquidity {
+                borrow_reserve: reserve_2_pubkey,
+                borrowed_amount_wads: Decimal::from(1u64),
+                ..ObligationLiquidity::default()
+            },
+        ],
+        ..Obligation::default()
+    };
+
+    test.add_packable_account(
+        obligation_pubkey,
+        u32::MAX as u64,
+        &obligation,
+        &solend_program::id(),
+    );
+
+    let mut test = SolendProgramTest::start_with_test(test).await;
+
+    let ix = [refresh_obligation(
+        solend_program::id(),
+        obligation_pubkey,
+        vec![
+            reserve_1_pubkey,
+            reserve_2_pubkey,
+            reserve_1_pubkey,
+            reserve_2_pubkey,
+        ],
+    )];
+    test.process_transaction(&ix, None).await.unwrap();
+
+    let o = test.load_account::<Obligation>(obligation_pubkey).await;
+    assert_eq!(
+        o.account.deposits,
+        vec![ObligationCollateral {
+            deposit_reserve: reserve_1_pubkey,
+            deposited_amount: 1u64,
+            ..ObligationCollateral::default()
+        }]
+    );
+
+    assert_eq!(
+        o.account.borrows,
+        vec![ObligationLiquidity {
+            borrow_reserve: reserve_2_pubkey,
+            borrowed_amount_wads: Decimal::from(1u64),
+            ..ObligationLiquidity::default()
+        }]
     );
 }

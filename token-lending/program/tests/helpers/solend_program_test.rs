@@ -69,6 +69,43 @@ pub struct Info<T> {
 }
 
 impl SolendProgramTest {
+    pub async fn start_with_test(mut test: ProgramTest) -> Self {
+        test.prefer_bpf(false);
+        test.add_program(
+            "mock_pyth",
+            mock_pyth_program::id(),
+            processor!(mock_pyth::process_instruction),
+        );
+
+        test.add_program(
+            "flash_loan_proxy",
+            proxy_program::id(),
+            processor!(flash_loan_proxy::process_instruction),
+        );
+
+        let authority = Keypair::new();
+
+        add_mint(&mut test, usdc_mint::id(), 6, authority.pubkey());
+        add_mint(&mut test, usdt_mint::id(), 6, authority.pubkey());
+        add_mint(&mut test, wsol_mint::id(), 9, authority.pubkey());
+        add_mint(&mut test, bonk_mint::id(), 5, authority.pubkey());
+
+        let mut context = test.start_with_context().await;
+        let rent = context.banks_client.get_rent().await.unwrap();
+
+        SolendProgramTest {
+            context,
+            rent,
+            authority,
+            mints: HashMap::from([
+                (usdc_mint::id(), None),
+                (wsol_mint::id(), None),
+                (usdt_mint::id(), None),
+                (bonk_mint::id(), None),
+            ]),
+        }
+    }
+
     pub async fn start_new() -> Self {
         let mut test = ProgramTest::new(
             "solend_program",
