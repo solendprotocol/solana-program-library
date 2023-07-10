@@ -2308,6 +2308,7 @@ fn process_update_reserve_config(
         return Err(LendingError::InvalidSigner.into());
     }
 
+    reserve.last_update.mark_stale();
     Reserve::pack(reserve, &mut reserve_info.data.borrow_mut())?;
     Ok(())
 }

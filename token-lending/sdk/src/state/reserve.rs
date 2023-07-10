@@ -347,7 +347,10 @@ impl Reserve {
         // could also return the average of liquidation bonus and max liquidation bonus here, but
         // i don't think it matters
         if obligation.unhealthy_borrow_value == obligation.super_unhealthy_borrow_value {
-            return liquidation_bonus.try_add(protocol_liquidation_fee);
+            return Ok(min(
+                liquidation_bonus.try_add(protocol_liquidation_fee)?,
+                Decimal::from_percent(MAX_BONUS_PCT),
+            ));
         }
 
         // safety:
@@ -2166,6 +2169,15 @@ mod test {
                 liquidation_bonus: 10,
                 max_liquidation_bonus: 30,
                 protocol_liquidation_fee: 10,
+                result: Ok(Decimal::from_percent(25))
+            }),
+            Just(LiquidationBonusTestCase {
+                borrowed_value: Decimal::from(60u64),
+                unhealthy_borrow_value: Decimal::from(40u64),
+                super_unhealthy_borrow_value: Decimal::from(60u64),
+                liquidation_bonus: 30,
+                max_liquidation_bonus: 30,
+                protocol_liquidation_fee: 30,
                 result: Ok(Decimal::from_percent(25))
             }),
         ]
