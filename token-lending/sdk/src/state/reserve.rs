@@ -347,7 +347,10 @@ impl Reserve {
         // could also return the average of liquidation bonus and max liquidation bonus here, but
         // i don't think it matters
         if obligation.unhealthy_borrow_value == obligation.super_unhealthy_borrow_value {
-            return liquidation_bonus.try_add(protocol_liquidation_fee);
+            return Ok(min(
+                liquidation_bonus.try_add(protocol_liquidation_fee)?,
+                Decimal::from_percent(MAX_BONUS_PCT),
+            ));
         }
 
         // safety:
@@ -963,9 +966,11 @@ pub fn validate_reserve_config(config: ReserveConfig) -> ProgramResult {
         );
         return Err(LendingError::InvalidConfig.into());
     }
-    if config.max_liquidation_bonus + config.protocol_liquidation_fee > MAX_BONUS_PCT {
+    if config.max_liquidation_bonus as u64 * 100 + config.protocol_liquidation_fee as u64 * 10
+        > MAX_BONUS_PCT as u64 * 100
+    {
         msg!(
-            "Max liquidation bonus + protocol liquidation fee must be in range [0, {}]",
+            "Max liquidation bonus + protocol liquidation fee must be in pct range [0, {}]",
             MAX_BONUS_PCT
         );
         return Err(LendingError::InvalidConfig.into());
@@ -2057,7 +2062,15 @@ mod test {
             Just(ReserveConfigTestCase {
                 config: ReserveConfig {
                     max_liquidation_bonus: 20,
-                    protocol_liquidation_fee: 20,
+                    protocol_liquidation_fee: 50,
+                    ..ReserveConfig::default()
+                },
+                result: Ok(())
+            }),
+            Just(ReserveConfigTestCase {
+                config: ReserveConfig {
+                    max_liquidation_bonus: 20,
+                    protocol_liquidation_fee: 60,
                     ..ReserveConfig::default()
                 },
                 result: Err(LendingError::InvalidConfig.into()),
@@ -2156,6 +2169,15 @@ mod test {
                 liquidation_bonus: 10,
                 max_liquidation_bonus: 30,
                 protocol_liquidation_fee: 10,
+                result: Ok(Decimal::from_percent(25))
+            }),
+            Just(LiquidationBonusTestCase {
+                borrowed_value: Decimal::from(60u64),
+                unhealthy_borrow_value: Decimal::from(40u64),
+                super_unhealthy_borrow_value: Decimal::from(60u64),
+                liquidation_bonus: 30,
+                max_liquidation_bonus: 30,
+                protocol_liquidation_fee: 30,
                 result: Ok(Decimal::from_percent(25))
             }),
         ]
