@@ -14,6 +14,7 @@ use solana_program::{
     program_pack::{IsInitialized, Pack, Sealed},
     pubkey::{Pubkey, PUBKEY_BYTES},
 };
+use std::str::FromStr;
 use std::{
     cmp::{max, min, Ordering},
     convert::{TryFrom, TryInto},
@@ -997,6 +998,17 @@ pub enum ReserveType {
     Regular = 0,
     /// this asset cannot be used as collateral and can only be borrowed in isolation
     Isolated = 1,
+}
+
+impl FromStr for ReserveType {
+    type Err = ProgramError;
+    fn from_str(input: &str) -> Result<Self, Self::Err> {
+        match input {
+            "Regular" => Ok(ReserveType::Regular),
+            "Isolated" => Ok(ReserveType::Isolated),
+            _ => Err(LendingError::InvalidConfig.into()),
+        }
+    }
 }
 
 /// Additional fee information on a reserve
