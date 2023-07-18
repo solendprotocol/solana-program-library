@@ -1,5 +1,7 @@
 use lending_state::SolendState;
-use solana_client::rpc_config::RpcSendTransactionConfig;
+use solana_account_decoder::UiAccountEncoding;
+use solana_client::rpc_config::{RpcProgramAccountsConfig, RpcSendTransactionConfig};
+use solana_client::{rpc_config::RpcAccountInfoConfig, rpc_filter::RpcFilterType};
 use solana_sdk::{commitment_config::CommitmentLevel, compute_budget::ComputeBudgetInstruction};
 use solend_program::{
     instruction::set_lending_market_owner_and_config,
@@ -188,6 +190,49 @@ fn main() {
                 .takes_value(false)
                 .global(true)
                 .help("Simulate transaction instead of executing"),
+        )
+        .subcommand(
+            SubCommand::with_name("view-reserve")
+                .about("View reserve")
+                .arg(
+                    Arg::with_name("reserve")
+                        .long("reserve")
+                        .validator(is_pubkey)
+                        .value_name("PUBKEY")
+                        .takes_value(true)
+                        .required(true)
+                        .help("reserve pubkey"),
+                )
+        )
+        .subcommand(
+            SubCommand::with_name("view-market")
+                .about("View market")
+                .arg(
+                    Arg::with_name("market")
+                        .long("market")
+                        .validator(is_pubkey)
+                        .value_name("PUBKEY")
+                        .takes_value(true)
+                        .required(true)
+                        .help("market pubkey"),
+                )
+        )
+        .subcommand(
+            SubCommand::with_name("view-all-markets")
+                .about("View all markets")
+        )
+        .subcommand(
+            SubCommand::with_name("view-obligation")
+                .about("View obligation")
+                .arg(
+                    Arg::with_name("obligation")
+                        .long("obligation")
+                        .validator(is_pubkey)
+                        .value_name("PUBKEY")
+                        .takes_value(true)
+                        .required(true)
+                        .help("obligation pubkey"),
+                )
         )
         .subcommand(
             SubCommand::with_name("create-market")
@@ -504,8 +549,8 @@ fn main() {
                 .arg(
                     Arg::with_name("super_max_borrow_rate")
                         .long("super-max-borrow-rate")
-                        .validator(is_parsable::<u8>)
-                        .value_name("INTEGER_PERCENT")
+                        .validator(is_parsable::<u64>)
+                        .value_name("INTEGER")
                         .takes_value(true)
                         .required(false)
                         .help("super max borrow APY: min <= optimal <= max <= super_max"),
@@ -603,7 +648,7 @@ fn main() {
                 .about("Set lending market owner and config")
                 .arg(
                     Arg::with_name("lending_market_owner")
-                        .long("market-owner")
+                        .long("lending-market-owner")
                         .validator(is_keypair)
                         .value_name("KEYPAIR")
                         .takes_value(true)
@@ -660,7 +705,7 @@ fn main() {
                         .validator(is_pubkey)
                         .value_name("PUBKEY")
                         .takes_value(true)
-                        .required(true)
+                        .required(false)
                         .help("Risk authority address"),
                 )
         )
@@ -788,7 +833,7 @@ fn main() {
                 .arg(
                     Arg::with_name("super_max_borrow_rate")
                         .long("super-max-borrow-rate")
-                        .validator(is_parsable::<u8>)
+                        .validator(is_parsable::<u64>)
                         .value_name("INTEGER_PERCENT")
                         .takes_value(true)
                         .required(false)
@@ -969,6 +1014,49 @@ fn main() {
     };
 
     let _ = match matches.subcommand() {
+        ("view-reserve", Some(arg_matches)) => {
+            let reserve = pubkey_of(arg_matches, "reserve").unwrap();
+            let data = config.rpc_client.get_account_data(&reserve).unwrap();
+            print!("{:#?}", Reserve::unpack(&data));
+
+            Ok(())
+        }
+        ("view-market", Some(arg_matches)) => {
+            let market = pubkey_of(arg_matches, "market").unwrap();
+            let data = config.rpc_client.get_account_data(&market).unwrap();
+            print!("{:#?}", LendingMarket::unpack(&data));
+
+            Ok(())
+        }
+        ("view-obligation", Some(arg_matches)) => {
+            let obligation = pubkey_of(arg_matches, "obligation").unwrap();
+            let data = config.rpc_client.get_account_data(&obligation).unwrap();
+            print!("{:#?}", Obligation::unpack(&data));
+
+            Ok(())
+        }
+        ("view-all-markets", Some(_arg_matches)) => {
+            let accounts = config
+                .rpc_client
+                .get_program_accounts_with_config(
+                    &config.lending_program_id,
+                    RpcProgramAccountsConfig {
+                        filters: Some(vec![RpcFilterType::DataSize(LendingMarket::LEN as u64)]),
+                        account_config: RpcAccountInfoConfig {
+                            encoding: Some(UiAccountEncoding::Base64Zstd),
+                            ..RpcAccountInfoConfig::default()
+                        },
+                        with_context: Some(false),
+                    },
+                )
+                .unwrap();
+
+            for (address, _) in accounts {
+                println!("{}", address);
+            }
+
+            Ok(())
+        }
         ("create-market", Some(arg_matches)) => {
             let lending_market_owner = pubkey_of(arg_matches, "lending_market_owner").unwrap();
             let quote_currency = quote_currency_of(arg_matches, "quote_currency").unwrap();
