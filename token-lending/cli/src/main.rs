@@ -1791,6 +1791,7 @@ fn command_add_reserve(
     Ok(())
 }
 
+#[allow(clippy::too_many_arguments)]
 fn command_set_lending_market_owner_and_config(
     config: &mut Config,
     lending_market_pubkey: Pubkey,
