@@ -2310,15 +2310,6 @@ fn _flash_borrow_reserve_liquidity<'a>(
         return Err(LendingError::FlashLoansDisabled.into());
     }
 
-    if Decimal::from(liquidity_amount)
-        .try_add(reserve.liquidity.borrowed_amount_wads)?
-        .try_floor_u64()?
-        > reserve.config.borrow_limit
-    {
-        msg!("Cannot borrow above the borrow limit");
-        return Err(LendingError::InvalidAmount.into());
-    }
-
     // Make sure this isnt a cpi call
     let current_index = load_current_index_checked(sysvar_info)? as usize;
     if is_cpi_call(program_id, current_index, sysvar_info)? {

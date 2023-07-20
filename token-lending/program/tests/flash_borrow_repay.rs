@@ -207,61 +207,6 @@ async fn test_fail_disable_flash_loans() {
 }
 
 #[tokio::test]
-async fn test_fail_borrow_over_borrow_limit() {
-    let (mut test, lending_market, usdc_reserve, user, host_fee_receiver, _) =
-        setup(&ReserveConfig {
-            deposit_limit: u64::MAX,
-            borrow_limit: 2_000_000,
-            fees: ReserveFees {
-                borrow_fee_wad: 1,
-                host_fee_percentage: 20,
-                flash_loan_fee_wad: 1,
-            },
-            ..test_reserve_config()
-        })
-        .await;
-
-    const FLASH_LOAN_AMOUNT: u64 = 3_000_000;
-    let res = test
-        .process_transaction(
-            &[
-                flash_borrow_reserve_liquidity(
-                    solend_program::id(),
-                    FLASH_LOAN_AMOUNT,
-                    usdc_reserve.account.liquidity.supply_pubkey,
-                    user.get_account(&usdc_mint::id()).unwrap(),
-                    usdc_reserve.pubkey,
-                    lending_market.pubkey,
-                ),
-                flash_repay_reserve_liquidity(
-                    solend_program::id(),
-                    FLASH_LOAN_AMOUNT,
-                    0,
-                    user.get_account(&usdc_mint::id()).unwrap(),
-                    usdc_reserve.account.liquidity.supply_pubkey,
-                    usdc_reserve.account.config.fee_receiver,
-                    host_fee_receiver.get_account(&usdc_mint::id()).unwrap(),
-                    usdc_reserve.pubkey,
-                    lending_market.pubkey,
-                    user.keypair.pubkey(),
-                ),
-            ],
-            Some(&[&user.keypair]),
-        )
-        .await
-        .unwrap_err()
-        .unwrap();
-
-    assert_eq!(
-        res,
-        TransactionError::InstructionError(
-            0,
-            InstructionError::Custom(LendingError::InvalidAmount as u32)
-        )
-    );
-}
-
-#[tokio::test]
 async fn test_fail_double_borrow() {
     let (mut test, lending_market, usdc_reserve, user, host_fee_receiver, _) =
         setup(&ReserveConfig {
