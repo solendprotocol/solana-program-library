@@ -1012,7 +1012,7 @@ fn process_refresh_obligation(program_id: &Pubkey, accounts: &[AccountInfo]) -> 
 
         let borrow_weight_and_pubkey = (
             borrow_reserve.config.added_borrow_weight_bps,
-            borrow_reserve.liquidity.mint_pubkey,
+            borrow_reserve_info.key,
         );
         max_borrow_weight = match max_borrow_weight {
             None => {
