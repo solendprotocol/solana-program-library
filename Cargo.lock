@@ -4229,7 +4229,7 @@ dependencies = [
 
 [[package]]
 name = "solend-program"
-version = "0.1.0"
+version = "2.0.2"
 dependencies = [
  "assert_matches",
  "base64 0.13.1",
@@ -4254,7 +4254,7 @@ dependencies = [
 
 [[package]]
 name = "solend-program-cli"
-version = "0.1.0"
+version = "2.0.2"
 dependencies = [
  "clap 2.34.0",
  "solana-clap-utils",
@@ -4271,7 +4271,7 @@ dependencies = [
 
 [[package]]
 name = "solend-sdk"
-version = "0.1.0"
+version = "2.0.2"
 dependencies = [
  "arrayref",
  "assert_matches",

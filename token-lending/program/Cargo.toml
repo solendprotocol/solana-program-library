@@ -1,6 +1,6 @@
 [package]
 name = "solend-program"
-version = "0.1.0"
+version = "2.0.2"
 description = "Solend Program"
 authors = ["Solend Maintainers <maintainers@solend.fi>"]
 repository = "https://github.com/solendprotocol/solana-program-library"
@@ -37,6 +37,7 @@ borsh = "0.9.3"
 
 [lib]
 crate-type = ["cdylib", "lib"]
+name = "solend_program"
 
 [profile.release]
 lto = "fat"
