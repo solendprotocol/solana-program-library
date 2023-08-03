@@ -1,7 +1,12 @@
 use lending_state::SolendState;
-use solana_client::rpc_config::RpcSendTransactionConfig;
+use solana_account_decoder::UiAccountEncoding;
+use solana_client::rpc_config::{RpcProgramAccountsConfig, RpcSendTransactionConfig};
+use solana_client::{rpc_config::RpcAccountInfoConfig, rpc_filter::RpcFilterType};
 use solana_sdk::{commitment_config::CommitmentLevel, compute_budget::ComputeBudgetInstruction};
-use solend_program::{instruction::set_lending_market_owner_and_config, state::RateLimiterConfig};
+use solend_program::{
+    instruction::set_lending_market_owner_and_config,
+    state::{validate_reserve_config, RateLimiterConfig},
+};
 use solend_sdk::{
     instruction::{
         liquidate_obligation_and_redeem_reserve_collateral, redeem_reserve_collateral,
@@ -65,19 +70,27 @@ struct Config {
 struct PartialReserveConfig {
     /// Optimal utilization rate, as a percentage
     pub optimal_utilization_rate: Option<u8>,
+    /// max utilization rate, as a percentage
+    pub max_utilization_rate: Option<u8>,
     /// Target ratio of the value of borrows to deposits, as a percentage
     /// 0 if use as collateral is disabled
     pub loan_to_value_ratio: Option<u8>,
     /// Bonus a liquidator gets when repaying part of an unhealthy obligation, as a percentage
     pub liquidation_bonus: Option<u8>,
+    /// Maximum bonus a liquidator gets when repaying part of an unhealthy obligation, as a percentage
+    pub max_liquidation_bonus: Option<u8>,
     /// Loan to value ratio at which an obligation can be liquidated, as a percentage
     pub liquidation_threshold: Option<u8>,
+    /// Loan to value ratio at which an obligation can be liquidated for the maximum bonus, as a percentage
+    pub max_liquidation_threshold: Option<u8>,
     /// Min borrow APY
     pub min_borrow_rate: Option<u8>,
     /// Optimal (utilization) borrow APY
     pub optimal_borrow_rate: Option<u8>,
     /// Max borrow APY
     pub max_borrow_rate: Option<u8>,
+    /// Supermax borrow apr
+    pub super_max_borrow_rate: Option<u64>,
     /// Program owner fees assessed, separate from gains due to interest accrual
     pub fees: PartialReserveFees,
     /// Deposit limit
@@ -86,7 +99,7 @@ struct PartialReserveConfig {
     pub borrow_limit: Option<u64>,
     /// Liquidity fee receiver
     pub fee_receiver: Option<Pubkey>,
-    /// Cut of the liquidation bonus that the protocol receives, as a percentage
+    /// Cut of the liquidation bonus that the protocol receives, in deca bps
     pub protocol_liquidation_fee: Option<u8>,
     /// Protocol take rate is the amount borrowed interest protocol recieves, as a percentage  
     pub protocol_take_rate: Option<u8>,
@@ -96,6 +109,8 @@ struct PartialReserveConfig {
     pub rate_limiter_max_outflow: Option<u64>,
     /// Added borrow weight in basis points
     pub added_borrow_weight_bps: Option<u64>,
+    /// Type of the reseerve (Regular, Isolated)
+    pub reserve_type: Option<ReserveType>,
 }
 
 /// Reserve Fees with optional fields
@@ -175,6 +190,49 @@ fn main() {
                 .takes_value(false)
                 .global(true)
                 .help("Simulate transaction instead of executing"),
+        )
+        .subcommand(
+            SubCommand::with_name("view-reserve")
+                .about("View reserve")
+                .arg(
+                    Arg::with_name("reserve")
+                        .long("reserve")
+                        .validator(is_pubkey)
+                        .value_name("PUBKEY")
+                        .takes_value(true)
+                        .required(true)
+                        .help("reserve pubkey"),
+                )
+        )
+        .subcommand(
+            SubCommand::with_name("view-market")
+                .about("View market")
+                .arg(
+                    Arg::with_name("market")
+                        .long("market")
+                        .validator(is_pubkey)
+                        .value_name("PUBKEY")
+                        .takes_value(true)
+                        .required(true)
+                        .help("market pubkey"),
+                )
+        )
+        .subcommand(
+            SubCommand::with_name("view-all-markets")
+                .about("View all markets")
+        )
+        .subcommand(
+            SubCommand::with_name("view-obligation")
+                .about("View obligation")
+                .arg(
+                    Arg::with_name("obligation")
+                        .long("obligation")
+                        .validator(is_pubkey)
+                        .value_name("PUBKEY")
+                        .takes_value(true)
+                        .required(true)
+                        .help("obligation pubkey"),
+                )
         )
         .subcommand(
             SubCommand::with_name("create-market")
@@ -402,6 +460,15 @@ fn main() {
                         .help("Optimal utilization rate: [0, 100]"),
                 )
                 .arg(
+                    Arg::with_name("max_utilization_rate")
+                        .long("max-utilization-rate")
+                        .validator(is_parsable::<u8>)
+                        .value_name("INTEGER_PERCENT")
+                        .takes_value(true)
+                        .required(false)
+                        .help("Max utilization rate: [0, 100]"),
+                )
+                .arg(
                     Arg::with_name("loan_to_value_ratio")
                         .long("loan-to-value-ratio")
                         .validator(is_parsable::<u8>)
@@ -422,6 +489,15 @@ fn main() {
                         .help("Bonus a liquidator gets when repaying part of an unhealthy obligation: [0, 100]"),
                 )
                 .arg(
+                    Arg::with_name("max_liquidation_bonus")
+                        .long("max-liquidation-bonus")
+                        .validator(is_parsable::<u8>)
+                        .value_name("INTEGER_PERCENT")
+                        .takes_value(true)
+                        .required(false)
+                        .help("Maximum bonus a liquidator gets when repaying part of an unhealthy obligation: [0, 100]"),
+                )
+                .arg(
                     Arg::with_name("liquidation_threshold")
                         .long("liquidation-threshold")
                         .validator(is_parsable::<u8>)
@@ -430,6 +506,15 @@ fn main() {
                         .required(true)
                         .default_value("55")
                         .help("Loan to value ratio at which an obligation can be liquidated: (LTV, 100]"),
+                )
+                .arg(
+                    Arg::with_name("max_liquidation_threshold")
+                        .long("max-liquidation-threshold")
+                        .validator(is_parsable::<u8>)
+                        .value_name("INTEGER_PERCENT")
+                        .takes_value(true)
+                        .required(false)
+                        .help("Loan to value ratio at which an obligation can be liquidated for the max bonus: (liquidation_threshold, 100]"),
                 )
                 .arg(
                     Arg::with_name("min_borrow_rate")
@@ -460,6 +545,15 @@ fn main() {
                         .required(true)
                         .default_value("30")
                         .help("Max borrow APY: min <= optimal <= max"),
+                )
+                .arg(
+                    Arg::with_name("super_max_borrow_rate")
+                        .long("super-max-borrow-rate")
+                        .validator(is_parsable::<u64>)
+                        .value_name("INTEGER")
+                        .takes_value(true)
+                        .required(false)
+                        .help("super max borrow APY: min <= optimal <= max <= super_max"),
                 )
                 .arg(
                     Arg::with_name("borrow_fee")
@@ -530,13 +624,31 @@ fn main() {
                         .default_value("18446744073709551615")
                         .help("Borrow limit"),
                 )
+                .arg(
+                    Arg::with_name("added_borrow_weight_bps")
+                        .long("added-borrow-weight-bps")
+                        .validator(is_parsable::<u64>)
+                        .value_name("INTEGER")
+                        .takes_value(true)
+                        .required(true)
+                        .help("Added borrow weight bps"),
+                )
+                .arg(
+                    Arg::with_name("reserve_type")
+                        .long("reserve-type")
+                        .validator(is_parsable::<ReserveType>)
+                        .value_name("RESERVE_TYPE")
+                        .takes_value(true)
+                        .required(false)
+                        .help("Reserve type"),
+                )
         )
         .subcommand(
             SubCommand::with_name("set-lending-market-owner-and-config")
                 .about("Set lending market owner and config")
                 .arg(
                     Arg::with_name("lending_market_owner")
-                        .long("market-owner")
+                        .long("lending-market-owner")
                         .validator(is_keypair)
                         .value_name("KEYPAIR")
                         .takes_value(true)
@@ -578,6 +690,23 @@ fn main() {
                         .takes_value(true)
                         .required(false)
                         .help("Rate Limiter max outflow denominated in dollars within 1 window"),
+                )
+                .arg(
+                    Arg::with_name("whitelisted_liquidator")
+                        .long("whitelisted-liquidator")
+                        .validator(is_pubkey)
+                        .value_name("PUBKEY")
+                        .takes_value(true)
+                        .help("Whitelisted liquidator address"),
+                )
+                .arg(
+                    Arg::with_name("risk_authority")
+                        .long("risk-authority")
+                        .validator(is_pubkey)
+                        .value_name("PUBKEY")
+                        .takes_value(true)
+                        .required(false)
+                        .help("Risk authority address"),
                 )
         )
         .subcommand(
@@ -621,6 +750,15 @@ fn main() {
                         .help("Optimal utilization rate: [0, 100]"),
                 )
                 .arg(
+                    Arg::with_name("max_utilization_rate")
+                        .long("max-utilization-rate")
+                        .validator(is_parsable::<u8>)
+                        .value_name("INTEGER_PERCENT")
+                        .takes_value(true)
+                        .required(false)
+                        .help("Max utilization rate: [0, 100]"),
+                )
+                .arg(
                     Arg::with_name("loan_to_value_ratio")
                         .long("loan-to-value-ratio")
                         .validator(is_parsable::<u8>)
@@ -639,6 +777,15 @@ fn main() {
                         .help("Bonus a liquidator gets when repaying part of an unhealthy obligation: [0, 100]"),
                 )
                 .arg(
+                    Arg::with_name("max_liquidation_bonus")
+                        .long("max-liquidation-bonus")
+                        .validator(is_parsable::<u8>)
+                        .value_name("INTEGER_PERCENT")
+                        .takes_value(true)
+                        .required(false)
+                        .help("Maximum bonus a liquidator gets when repaying part of an unhealthy obligation: [0, 100]"),
+                )
+                .arg(
                     Arg::with_name("liquidation_threshold")
                         .long("liquidation-threshold")
                         .validator(is_parsable::<u8>)
@@ -646,6 +793,15 @@ fn main() {
                         .takes_value(true)
                         .required(false)
                         .help("Loan to value ratio at which an obligation can be liquidated: (LTV, 100]"),
+                )
+                .arg(
+                    Arg::with_name("max_liquidation_threshold")
+                        .long("max-liquidation-threshold")
+                        .validator(is_parsable::<u8>)
+                        .value_name("INTEGER_PERCENT")
+                        .takes_value(true)
+                        .required(false)
+                        .help("Loan to value ratio at which an obligation can be liquidated for the max bonus: (liquidation_threshold, 100]"),
                 )
                 .arg(
                     Arg::with_name("min_borrow_rate")
@@ -673,6 +829,15 @@ fn main() {
                         .takes_value(true)
                         .required(false)
                         .help("Max borrow APY: min <= optimal <= max"),
+                )
+                .arg(
+                    Arg::with_name("super_max_borrow_rate")
+                        .long("super-max-borrow-rate")
+                        .validator(is_parsable::<u64>)
+                        .value_name("INTEGER_PERCENT")
+                        .takes_value(true)
+                        .required(false)
+                        .help("super max borrow APY: min <= optimal <= max <= super_max"),
                 )
                 .arg(
                     Arg::with_name("borrow_fee")
@@ -800,6 +965,15 @@ fn main() {
                         .required(false)
                         .help("Added borrow weight in basis points"),
                 )
+                .arg(
+                    Arg::with_name("reserve_type")
+                        .long("reserve-type")
+                        .validator(is_parsable::<ReserveType>)
+                        .value_name("RESERVE_TYPE")
+                        .takes_value(true)
+                        .required(false)
+                        .help("Reserve type"),
+                )
         )
         .get_matches();
 
@@ -840,6 +1014,49 @@ fn main() {
     };
 
     let _ = match matches.subcommand() {
+        ("view-reserve", Some(arg_matches)) => {
+            let reserve = pubkey_of(arg_matches, "reserve").unwrap();
+            let data = config.rpc_client.get_account_data(&reserve).unwrap();
+            print!("{:#?}", Reserve::unpack(&data));
+
+            Ok(())
+        }
+        ("view-market", Some(arg_matches)) => {
+            let market = pubkey_of(arg_matches, "market").unwrap();
+            let data = config.rpc_client.get_account_data(&market).unwrap();
+            print!("{:#?}", LendingMarket::unpack(&data));
+
+            Ok(())
+        }
+        ("view-obligation", Some(arg_matches)) => {
+            let obligation = pubkey_of(arg_matches, "obligation").unwrap();
+            let data = config.rpc_client.get_account_data(&obligation).unwrap();
+            print!("{:#?}", Obligation::unpack(&data));
+
+            Ok(())
+        }
+        ("view-all-markets", Some(_arg_matches)) => {
+            let accounts = config
+                .rpc_client
+                .get_program_accounts_with_config(
+                    &config.lending_program_id,
+                    RpcProgramAccountsConfig {
+                        filters: Some(vec![RpcFilterType::DataSize(LendingMarket::LEN as u64)]),
+                        account_config: RpcAccountInfoConfig {
+                            encoding: Some(UiAccountEncoding::Base64Zstd),
+                            ..RpcAccountInfoConfig::default()
+                        },
+                        with_context: Some(false),
+                    },
+                )
+                .unwrap();
+
+            for (address, _) in accounts {
+                println!("{}", address);
+            }
+
+            Ok(())
+        }
         ("create-market", Some(arg_matches)) => {
             let lending_market_owner = pubkey_of(arg_matches, "lending_market_owner").unwrap();
             let quote_currency = quote_currency_of(arg_matches, "quote_currency").unwrap();
@@ -897,17 +1114,25 @@ fn main() {
             let switchboard_feed_pubkey = pubkey_of(arg_matches, "switchboard_feed").unwrap();
             let optimal_utilization_rate =
                 value_of(arg_matches, "optimal_utilization_rate").unwrap();
+            let max_utilization_rate = value_of(arg_matches, "max_utilization_rate").unwrap();
             let loan_to_value_ratio = value_of(arg_matches, "loan_to_value_ratio").unwrap();
             let liquidation_bonus = value_of(arg_matches, "liquidation_bonus").unwrap();
+            let max_liquidation_bonus = value_of(arg_matches, "max_liquidation_bonus").unwrap();
             let liquidation_threshold = value_of(arg_matches, "liquidation_threshold").unwrap();
+            let max_liquidation_threshold =
+                value_of(arg_matches, "max_liquidation_threshold").unwrap();
             let min_borrow_rate = value_of(arg_matches, "min_borrow_rate").unwrap();
             let optimal_borrow_rate = value_of(arg_matches, "optimal_borrow_rate").unwrap();
             let max_borrow_rate = value_of(arg_matches, "max_borrow_rate").unwrap();
+            let super_max_borrow_rate = value_of(arg_matches, "super_max_borrow_rate").unwrap();
             let borrow_fee = value_of::<f64>(arg_matches, "borrow_fee").unwrap();
             let flash_loan_fee = value_of::<f64>(arg_matches, "flash_loan_fee").unwrap();
             let host_fee_percentage = value_of(arg_matches, "host_fee_percentage").unwrap();
             let deposit_limit = value_of(arg_matches, "deposit_limit").unwrap();
             let borrow_limit = value_of(arg_matches, "borrow_limit").unwrap();
+
+            let added_borrow_weight_bps = value_of(arg_matches, "added_borrow_weight_bps").unwrap();
+            let reserve_type = value_of(arg_matches, "reserve_type").unwrap();
 
             let borrow_fee_wad = (borrow_fee * WAD as f64) as u64;
             let flash_loan_fee_wad = (flash_loan_fee * WAD as f64) as u64;
@@ -939,16 +1164,16 @@ fn main() {
                 liquidity_amount,
                 ReserveConfig {
                     optimal_utilization_rate,
-                    max_utilization_rate: optimal_utilization_rate,
+                    max_utilization_rate,
                     loan_to_value_ratio,
                     liquidation_bonus,
-                    max_liquidation_bonus: 0,
+                    max_liquidation_bonus,
                     liquidation_threshold,
-                    max_liquidation_threshold: 0,
+                    max_liquidation_threshold,
                     min_borrow_rate,
                     optimal_borrow_rate,
                     max_borrow_rate,
-                    super_max_borrow_rate: max_borrow_rate as u64,
+                    super_max_borrow_rate,
                     fees: ReserveFees {
                         borrow_fee_wad,
                         flash_loan_fee_wad,
@@ -959,8 +1184,8 @@ fn main() {
                     fee_receiver: liquidity_fee_receiver_keypair.pubkey(),
                     protocol_liquidation_fee,
                     protocol_take_rate,
-                    added_borrow_weight_bps: 10000,
-                    reserve_type: ReserveType::Regular,
+                    added_borrow_weight_bps,
+                    reserve_type,
                 },
                 source_liquidity_pubkey,
                 source_liquidity_owner_keypair,
@@ -982,6 +1207,8 @@ fn main() {
             let rate_limiter_window_duration =
                 value_of(arg_matches, "rate_limiter_window_duration");
             let rate_limiter_max_outflow = value_of(arg_matches, "rate_limiter_max_outflow");
+            let whitelisted_liquidator_pubkey = pubkey_of(arg_matches, "whitelisted_liquidator");
+            let risk_authority_pubkey = pubkey_of(arg_matches, "risk_authority").unwrap();
             command_set_lending_market_owner_and_config(
                 &mut config,
                 lending_market_pubkey,
@@ -989,6 +1216,8 @@ fn main() {
                 new_lending_market_owner_keypair,
                 rate_limiter_window_duration,
                 rate_limiter_max_outflow,
+                whitelisted_liquidator_pubkey,
+                risk_authority_pubkey,
             )
         }
         ("update-reserve", Some(arg_matches)) => {
@@ -997,12 +1226,16 @@ fn main() {
                 keypair_of(arg_matches, "lending_market_owner").unwrap();
             let lending_market_pubkey = pubkey_of(arg_matches, "lending_market").unwrap();
             let optimal_utilization_rate = value_of(arg_matches, "optimal_utilization_rate");
+            let max_utilization_rate = value_of(arg_matches, "max_utilization_rate");
             let loan_to_value_ratio = value_of(arg_matches, "loan_to_value_ratio");
             let liquidation_bonus = value_of(arg_matches, "liquidation_bonus");
+            let max_liquidation_bonus = value_of(arg_matches, "max_liquidation_bonus");
             let liquidation_threshold = value_of(arg_matches, "liquidation_threshold");
+            let max_liquidation_threshold = value_of(arg_matches, "max_liquidation_threshold");
             let min_borrow_rate = value_of(arg_matches, "min_borrow_rate");
             let optimal_borrow_rate = value_of(arg_matches, "optimal_borrow_rate");
             let max_borrow_rate = value_of(arg_matches, "max_borrow_rate");
+            let super_max_borrow_rate = value_of(arg_matches, "super_max_borrow_rate");
             let borrow_fee = value_of::<f64>(arg_matches, "borrow_fee");
             let flash_loan_fee = value_of::<f64>(arg_matches, "flash_loan_fee");
             let host_fee_percentage = value_of(arg_matches, "host_fee_percentage");
@@ -1018,6 +1251,7 @@ fn main() {
                 value_of(arg_matches, "rate_limiter_window_duration");
             let rate_limiter_max_outflow = value_of(arg_matches, "rate_limiter_max_outflow");
             let added_borrow_weight_bps = value_of(arg_matches, "added_borrow_weight_bps");
+            let reserve_type = value_of(arg_matches, "reserve_type");
 
             let borrow_fee_wad = borrow_fee.map(|fee| (fee * WAD as f64) as u64);
             let flash_loan_fee_wad = flash_loan_fee.map(|fee| (fee * WAD as f64) as u64);
@@ -1026,12 +1260,16 @@ fn main() {
                 &mut config,
                 PartialReserveConfig {
                     optimal_utilization_rate,
+                    max_utilization_rate,
                     loan_to_value_ratio,
                     liquidation_bonus,
+                    max_liquidation_bonus,
                     liquidation_threshold,
+                    max_liquidation_threshold,
                     min_borrow_rate,
                     optimal_borrow_rate,
                     max_borrow_rate,
+                    super_max_borrow_rate,
                     fees: PartialReserveFees {
                         borrow_fee_wad,
                         flash_loan_fee_wad,
@@ -1045,6 +1283,7 @@ fn main() {
                     rate_limiter_window_duration,
                     rate_limiter_max_outflow,
                     added_borrow_weight_bps,
+                    reserve_type,
                 },
                 pyth_product_pubkey,
                 pyth_price_pubkey,
@@ -1552,6 +1791,7 @@ fn command_add_reserve(
     Ok(())
 }
 
+#[allow(clippy::too_many_arguments)]
 fn command_set_lending_market_owner_and_config(
     config: &mut Config,
     lending_market_pubkey: Pubkey,
@@ -1559,6 +1799,8 @@ fn command_set_lending_market_owner_and_config(
     new_lending_market_owner_keypair: Option<Keypair>,
     rate_limiter_window_duration: Option<u64>,
     rate_limiter_max_outflow: Option<u64>,
+    whitelisted_liquidator_pubkey: Option<Pubkey>,
+    risk_authority_pubkey: Pubkey,
 ) -> CommandResult {
     let lending_market_info = config.rpc_client.get_account(&lending_market_pubkey)?;
     let lending_market = LendingMarket::unpack_from_slice(lending_market_info.data.borrow())?;
@@ -1581,8 +1823,8 @@ fn command_set_lending_market_owner_and_config(
                 max_outflow: rate_limiter_max_outflow
                     .unwrap_or(lending_market.rate_limiter.config.max_outflow),
             },
-            None,                                  // TODO support whitelisting liquidators
-            lending_market_owner_keypair.pubkey(), // FIXME: support risk authority
+            whitelisted_liquidator_pubkey,
+            risk_authority_pubkey,
         )],
         Some(&config.fee_payer.pubkey()),
         &recent_blockhash,
@@ -1626,6 +1868,18 @@ fn command_update_reserve(
         reserve.config.optimal_utilization_rate = reserve_config.optimal_utilization_rate.unwrap();
     }
 
+    if reserve_config.max_utilization_rate.is_some()
+        && reserve.config.max_utilization_rate != reserve_config.max_utilization_rate.unwrap()
+    {
+        no_change = false;
+        println!(
+            "Updating max_utilization_rate from {} to {}",
+            reserve.config.max_utilization_rate,
+            reserve_config.max_utilization_rate.unwrap(),
+        );
+        reserve.config.max_utilization_rate = reserve_config.max_utilization_rate.unwrap();
+    }
+
     if reserve_config.loan_to_value_ratio.is_some()
         && reserve.config.loan_to_value_ratio != reserve_config.loan_to_value_ratio.unwrap()
     {
@@ -1650,6 +1904,18 @@ fn command_update_reserve(
         reserve.config.liquidation_bonus = reserve_config.liquidation_bonus.unwrap();
     }
 
+    if reserve_config.max_liquidation_bonus.is_some()
+        && reserve.config.max_liquidation_bonus != reserve_config.max_liquidation_bonus.unwrap()
+    {
+        no_change = false;
+        println!(
+            "Updating max_liquidation_bonus from {} to {}",
+            reserve.config.max_liquidation_bonus,
+            reserve_config.max_liquidation_bonus.unwrap(),
+        );
+        reserve.config.max_liquidation_bonus = reserve_config.max_liquidation_bonus.unwrap();
+    }
+
     if reserve_config.liquidation_threshold.is_some()
         && reserve.config.liquidation_threshold != reserve_config.liquidation_threshold.unwrap()
     {
@@ -1660,6 +1926,20 @@ fn command_update_reserve(
             reserve_config.liquidation_threshold.unwrap(),
         );
         reserve.config.liquidation_threshold = reserve_config.liquidation_threshold.unwrap();
+    }
+
+    if reserve_config.max_liquidation_threshold.is_some()
+        && reserve.config.max_liquidation_threshold
+            != reserve_config.max_liquidation_threshold.unwrap()
+    {
+        no_change = false;
+        println!(
+            "Updating max_liquidation_threshold from {} to {}",
+            reserve.config.max_liquidation_threshold,
+            reserve_config.max_liquidation_threshold.unwrap(),
+        );
+        reserve.config.max_liquidation_threshold =
+            reserve_config.max_liquidation_threshold.unwrap();
     }
 
     if reserve_config.min_borrow_rate.is_some()
@@ -1696,6 +1976,18 @@ fn command_update_reserve(
             reserve_config.max_borrow_rate.unwrap(),
         );
         reserve.config.max_borrow_rate = reserve_config.max_borrow_rate.unwrap();
+    }
+
+    if reserve_config.super_max_borrow_rate.is_some()
+        && reserve.config.super_max_borrow_rate != reserve_config.super_max_borrow_rate.unwrap()
+    {
+        no_change = false;
+        println!(
+            "Updating super_max_borrow_rate from {} to {}",
+            reserve.config.super_max_borrow_rate,
+            reserve_config.super_max_borrow_rate.unwrap(),
+        );
+        reserve.config.super_max_borrow_rate = reserve_config.super_max_borrow_rate.unwrap();
     }
 
     if reserve_config.fees.borrow_fee_wad.is_some()
@@ -1864,6 +2156,23 @@ fn command_update_reserve(
             reserve_config.added_borrow_weight_bps.unwrap(),
         );
         reserve.config.added_borrow_weight_bps = reserve_config.added_borrow_weight_bps.unwrap();
+    }
+
+    if reserve_config.reserve_type.is_some()
+        && reserve.config.reserve_type != reserve_config.reserve_type.unwrap()
+    {
+        no_change = false;
+        println!(
+            "Updating reserve_type from {:?} to {:?}",
+            reserve.config.reserve_type,
+            reserve_config.reserve_type.unwrap(),
+        );
+        reserve.config.reserve_type = reserve_config.reserve_type.unwrap();
+    }
+
+    if validate_reserve_config(reserve.config).is_err() {
+        println!("Error: invalid reserve config");
+        return Err("Error: invalid reserve config".into());
     }
 
     if no_change {

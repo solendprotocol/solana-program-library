@@ -4257,6 +4257,7 @@ name = "solend-program-cli"
 version = "2.0.2"
 dependencies = [
  "clap 2.34.0",
+ "solana-account-decoder",
  "solana-clap-utils",
  "solana-cli-config",
  "solana-client",
