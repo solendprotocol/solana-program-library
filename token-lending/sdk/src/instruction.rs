@@ -1530,7 +1530,7 @@ pub fn liquidate_obligation_and_redeem_reserve_collateral(
             AccountMeta::new(withdraw_reserve_liquidity_supply_pubkey, false),
             AccountMeta::new(withdraw_reserve_liquidity_fee_receiver_pubkey, false),
             AccountMeta::new(obligation_pubkey, false),
-            AccountMeta::new_readonly(lending_market_pubkey, false),
+            AccountMeta::new(lending_market_pubkey, false),
             AccountMeta::new_readonly(lending_market_authority_pubkey, false),
             AccountMeta::new_readonly(user_transfer_authority_pubkey, true),
             AccountMeta::new_readonly(spl_token::id(), false),
