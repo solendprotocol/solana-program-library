@@ -2280,8 +2280,7 @@ fn process_update_reserve_config(
             reserve.liquidity.switchboard_oracle_pubkey = *switchboard_feed_info.key;
         }
         if reserve.liquidity.switchboard_oracle_pubkey == solend_program::NULL_PUBKEY
-            && (*pyth_price_info.key == solend_program::NULL_PUBKEY
-                || *pyth_product_info.key == solend_program::NULL_PUBKEY)
+            && reserve.liquidity.pyth_oracle_pubkey == solend_program::NULL_PUBKEY
         {
             msg!("At least one price oracle must have a non-null pubkey");
             return Err(LendingError::InvalidOracleConfig.into());
@@ -2303,6 +2302,12 @@ fn process_update_reserve_config(
         if config.deposit_limit < reserve.config.deposit_limit {
             reserve.config.deposit_limit = config.deposit_limit;
         }
+    } else if *signer_info.key == solend_market_owner::id()
+        && lending_market.owner != solend_market_owner::id()
+    // the second check is technically unnecessary but it's here in case future changes reorder the
+    // branches in this function
+    {
+        reserve.config.fees = config.fees;
     } else {
         msg!("Signer must be the Lending market owner or risk authority");
         return Err(LendingError::InvalidSigner.into());
