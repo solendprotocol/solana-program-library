@@ -2235,12 +2235,8 @@ fn process_update_reserve_config(
             msg!("permissionless markets can't edit fee receiver");
             return Err(LendingError::InvalidConfig.into());
         }
-        if reserve.config.fees.flash_loan_fee_wad != config.fees.flash_loan_fee_wad {
-            msg!("permissionless markets can't edit flash loan fees");
-            return Err(LendingError::InvalidConfig.into());
-        }
-        if reserve.config.fees.host_fee_percentage != config.fees.host_fee_percentage {
-            msg!("permissionless markets can't edit host fee percentage");
+        if reserve.config.fees != config.fees {
+            msg!("permissionless markets can't edit fee configs!");
             return Err(LendingError::InvalidConfig.into());
         }
     }
@@ -2303,11 +2299,13 @@ fn process_update_reserve_config(
             reserve.config.deposit_limit = config.deposit_limit;
         }
     } else if *signer_info.key == solend_market_owner::id()
-        && lending_market.owner != solend_market_owner::id()
-    // the second check is technically unnecessary but it's here in case future changes reorder the
-    // branches in this function
+    // 5ph has the ability to change the
+    // fees on permissionless markets
     {
         reserve.config.fees = config.fees;
+        reserve.config.protocol_liquidation_fee = config.protocol_liquidation_fee;
+        reserve.config.protocol_take_rate = config.protocol_take_rate;
+        reserve.config.fee_receiver = config.fee_receiver;
     } else {
         msg!("Signer must be the Lending market owner or risk authority");
         return Err(LendingError::InvalidSigner.into());
