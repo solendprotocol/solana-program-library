@@ -1631,7 +1631,7 @@ mod test {
                     min_borrow_rate,
                     optimal_borrow_rate,
                     max_borrow_rate,
-                    super_max_borrow_rate: super_max_borrow_rate,
+                    super_max_borrow_rate,
                     ..ReserveConfig::default()
                 },
                 ..Reserve::default()
