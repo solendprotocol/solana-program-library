@@ -23,5 +23,5 @@ spl-associated-token-account = "1.0"
 solana-account-decoder = "1.14.10"
 
 [[bin]]
-name = "solend-program"
+name = "solend-cli"
 path = "src/main.rs"

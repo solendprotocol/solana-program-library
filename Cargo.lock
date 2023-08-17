@@ -548,6 +548,25 @@ dependencies = [
 ]
 
 [[package]]
+name = "brick"
+version = "1.0.1"
+dependencies = [
+ "assert_matches",
+ "base64 0.13.1",
+ "bincode",
+ "borsh",
+ "bytemuck",
+ "log",
+ "proptest",
+ "serde",
+ "serde_yaml",
+ "solana-program",
+ "solana-program-test",
+ "solana-sdk",
+ "thiserror",
+]
+
+[[package]]
 name = "brotli"
 version = "3.3.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
