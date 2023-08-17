@@ -267,7 +267,7 @@ impl SolendProgramTest {
         let instructions = [system_instruction::create_account(
             &self.context.payer.pubkey(),
             &keypair.pubkey(),
-            rent as u64,
+            rent,
             size as u64,
             owner,
         )];

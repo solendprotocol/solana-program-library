@@ -1567,7 +1567,7 @@ mod test {
             // Generate a u64 element in the range [0, u64::MAX].
             .prop_flat_map(|vec| {
                 let max_u8 = *vec.iter().max().unwrap() as u64;
-                (Just(vec), max_u8..=u64::MAX as u64)
+                (Just(vec), max_u8..=u64::MAX)
             })
             .prop_map(|(mut vec, d)| {
                 // Sort the vector to ensure the first three elements are in non-decreasing order.
@@ -1631,7 +1631,7 @@ mod test {
                     min_borrow_rate,
                     optimal_borrow_rate,
                     max_borrow_rate,
-                    super_max_borrow_rate: super_max_borrow_rate as u64,
+                    super_max_borrow_rate: super_max_borrow_rate,
                     ..ReserveConfig::default()
                 },
                 ..Reserve::default()

@@ -4,9 +4,8 @@
 
 use crate::{error::LendingError, processor};
 use solana_program::{
-    account_info::AccountInfo, entrypoint, entrypoint::ProgramResult,
+    account_info::AccountInfo, entrypoint, entrypoint::ProgramResult, msg,
     program_error::PrintProgramError, pubkey::Pubkey,
-    msg
 };
 
 entrypoint!(process_instruction);
@@ -16,6 +15,6 @@ fn process_instruction(
     instruction_data: &[u8],
 ) -> ProgramResult {
     msg!("brick");
-    
+
     Ok(())
 }
