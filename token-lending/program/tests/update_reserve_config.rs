@@ -184,6 +184,71 @@ async fn test_update_invalid_oracle_config() {
         max_outflow: 100,
     };
 
+    let switchboard_pubkey = test.init_switchboard_feed(&wsol_mint::id()).await;
+
+    // Try setting both of the oracles to null: Should fail
+    let res = lending_market
+        .update_reserve_config(
+            &mut test,
+            &lending_market_owner,
+            &wsol_reserve,
+            new_reserve_config,
+            new_rate_limiter_config,
+            Some(&Oracle {
+                pyth_product_pubkey: oracle.pyth_product_pubkey,
+                pyth_price_pubkey: NULL_PUBKEY,
+                switchboard_feed_pubkey: Some(NULL_PUBKEY),
+            }),
+        )
+        .await
+        .unwrap_err()
+        .unwrap();
+
+    assert_eq!(
+        res,
+        TransactionError::InstructionError(
+            1,
+            InstructionError::Custom(LendingError::InvalidOracleConfig as u32)
+        )
+    );
+
+    // this should be fine
+    lending_market
+        .update_reserve_config(
+            &mut test,
+            &lending_market_owner,
+            &wsol_reserve,
+            new_reserve_config,
+            new_rate_limiter_config,
+            Some(&Oracle {
+                pyth_product_pubkey: oracle.pyth_product_pubkey,
+                pyth_price_pubkey: oracle.pyth_price_pubkey,
+                switchboard_feed_pubkey: Some(NULL_PUBKEY),
+            }),
+        )
+        .await
+        .unwrap();
+
+    test.advance_clock_by_slots(1).await;
+
+    lending_market
+        .update_reserve_config(
+            &mut test,
+            &lending_market_owner,
+            &wsol_reserve,
+            new_reserve_config,
+            new_rate_limiter_config,
+            Some(&Oracle {
+                pyth_product_pubkey: NULL_PUBKEY,
+                pyth_price_pubkey: NULL_PUBKEY,
+                switchboard_feed_pubkey: Some(switchboard_pubkey),
+            }),
+        )
+        .await
+        .unwrap();
+
+    test.advance_clock_by_slots(1).await;
+
     // Try setting both of the oracles to null: Should fail
     let res = lending_market
         .update_reserve_config(
