@@ -2244,6 +2244,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "num-derive"
+version = "0.4.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "ed3955f1a9c7c0c15e092f9c887db08b1fc683305fdf6eb6684f22555355e202"
+dependencies = [
+ "proc-macro2 1.0.82",
+ "quote 1.0.36",
+ "syn 2.0.63",
+]
+
+[[package]]
 name = "num-integer"
 version = "0.1.46"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2675,7 +2686,7 @@ dependencies = [
  "borsh 0.9.3",
  "borsh-derive 0.9.3",
  "bytemuck",
- "num-derive",
+ "num-derive 0.3.3",
  "num-traits",
  "pyth-sdk",
  "serde",
@@ -3527,7 +3538,7 @@ dependencies = [
  "bincode",
  "bytemuck",
  "log",
- "num-derive",
+ "num-derive 0.3.3",
  "num-traits",
  "rustc_version",
  "serde",
@@ -3914,7 +3925,7 @@ dependencies = [
  "libsecp256k1",
  "log",
  "memoffset",
- "num-derive",
+ "num-derive 0.3.3",
  "num-traits",
  "parking_lot 0.12.2",
  "rand 0.7.3",
@@ -3950,7 +3961,7 @@ dependencies = [
  "libc",
  "libloading",
  "log",
- "num-derive",
+ "num-derive 0.3.3",
  "num-traits",
  "rand 0.7.3",
  "rustc_version",
@@ -4007,7 +4018,7 @@ dependencies = [
  "console",
  "dialoguer",
  "log",
- "num-derive",
+ "num-derive 0.3.3",
  "num-traits",
  "parking_lot 0.12.2",
  "qstring",
@@ -4042,7 +4053,7 @@ dependencies = [
  "log",
  "lz4",
  "memmap2",
- "num-derive",
+ "num-derive 0.3.3",
  "num-traits",
  "num_cpus",
  "once_cell",
@@ -4104,7 +4115,7 @@ dependencies = [
  "libsecp256k1",
  "log",
  "memmap2",
- "num-derive",
+ "num-derive 0.3.3",
  "num-traits",
  "pbkdf2 0.11.0",
  "qstring",
@@ -4164,7 +4175,7 @@ checksum = "2c794a81a68d12192fc08064431b32a0bc9976c7df67c6921fda99604d7bea6e"
 dependencies = [
  "bincode",
  "log",
- "num-derive",
+ "num-derive 0.3.3",
  "num-traits",
  "rustc_version",
  "serde",
@@ -4261,7 +4272,7 @@ checksum = "ffc47706ca644433d7681f3fe3e0b30094260065ae86a53ae4f92078a7cd4bf4"
 dependencies = [
  "bincode",
  "log",
- "num-derive",
+ "num-derive 0.3.3",
  "num-traits",
  "rustc_version",
  "serde",
@@ -4282,7 +4293,7 @@ checksum = "d7704396dcd9338e6ac72137908ad5781edd023767d6e6d6b0a68938b8d86fb5"
 dependencies = [
  "bytemuck",
  "getrandom 0.1.16",
- "num-derive",
+ "num-derive 0.3.3",
  "num-traits",
  "solana-program-runtime",
  "solana-sdk",
@@ -4307,7 +4318,7 @@ dependencies = [
  "itertools",
  "lazy_static",
  "merlin",
- "num-derive",
+ "num-derive 0.3.3",
  "num-traits",
  "rand 0.7.3",
  "serde",
@@ -4362,6 +4373,7 @@ dependencies = [
  "switchboard-program",
  "switchboard-v2",
  "thiserror",
+ "wrapper",
 ]
 
 [[package]]
@@ -4391,7 +4403,7 @@ dependencies = [
  "base64 0.13.1",
  "bytemuck",
  "log",
- "num-derive",
+ "num-derive 0.3.3",
  "num-traits",
  "proptest",
  "pyth-sdk-solana",
@@ -4436,7 +4448,7 @@ checksum = "fbc000f0fdf1f12f99d77d398137c1751345b18c88258ce0f99b7872cf6c9bd6"
 dependencies = [
  "assert_matches",
  "borsh 0.9.3",
- "num-derive",
+ "num-derive 0.3.3",
  "num-traits",
  "solana-program",
  "spl-token",
@@ -4461,7 +4473,7 @@ checksum = "8e85e168a785e82564160dcb87b2a8e04cee9bfd1f4d488c729d53d6a4bd300d"
 dependencies = [
  "arrayref",
  "bytemuck",
- "num-derive",
+ "num-derive 0.3.3",
  "num-traits",
  "num_enum",
  "solana-program",
@@ -4476,7 +4488,7 @@ checksum = "0edb869dbe159b018f17fb9bfa67118c30f232d7f54a73742bc96794dff77ed8"
 dependencies = [
  "arrayref",
  "bytemuck",
- "num-derive",
+ "num-derive 0.3.3",
  "num-traits",
  "num_enum",
  "solana-program",
@@ -5469,6 +5481,29 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "80d0f4e272c85def139476380b12f9ac60926689dd2e01d4923222f40580869d"
 dependencies = [
  "winapi",
+]
+
+[[package]]
+name = "wrapper"
+version = "1.0.1"
+dependencies = [
+ "assert_matches",
+ "base64 0.13.1",
+ "bincode",
+ "borsh 0.9.3",
+ "bytemuck",
+ "log",
+ "num-derive 0.4.2",
+ "num-traits",
+ "proptest",
+ "serde",
+ "serde_yaml",
+ "solana-program",
+ "solana-program-test",
+ "solana-sdk",
+ "solend-sdk",
+ "spl-token",
+ "thiserror",
 ]
 
 [[package]]
