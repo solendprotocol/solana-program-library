@@ -83,6 +83,12 @@ impl SolendProgramTest {
             processor!(flash_loan_proxy::process_instruction),
         );
 
+        test.add_program(
+            "wrapper",
+            wrapper::id(),
+            processor!(wrapper::processor::process_instruction),
+        );
+
         let authority = Keypair::new();
 
         add_mint(&mut test, usdc_mint::id(), 6, authority.pubkey());
@@ -124,6 +130,12 @@ impl SolendProgramTest {
             "flash_loan_proxy",
             proxy_program::id(),
             processor!(flash_loan_proxy::process_instruction),
+        );
+
+        test.add_program(
+            "wrapper",
+            wrapper::id(),
+            processor!(wrapper::processor::process_instruction),
         );
 
         let authority = Keypair::new();

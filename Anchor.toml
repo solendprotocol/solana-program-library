@@ -4,6 +4,7 @@ anchor_version = "0.13.2"
 members = [
     "token-lending/program",
     "token-lending/brick",
+    "token-lending/wrapper",
 ]
 
 [provider]

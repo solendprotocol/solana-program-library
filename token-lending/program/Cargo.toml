@@ -16,6 +16,7 @@ pyth-sdk-solana = "0.7.0"
 solana-program = "=1.14.10"
 spl-token = { version = "3.3.0", features=["no-entrypoint"] }
 solend-sdk = { path = "../sdk" }
+wrapper = { path = "../wrapper" }
 static_assertions = "1.1.0"
 switchboard-program = "0.2.0"
 switchboard-v2 = "0.1.3"
