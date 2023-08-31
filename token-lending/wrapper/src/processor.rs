@@ -1,28 +1,21 @@
 //! Program state processor
 
 use borsh::{BorshDeserialize, BorshSerialize};
+use num_derive::FromPrimitive;
+use num_traits::FromPrimitive;
 use solana_program::pubkey::PUBKEY_BYTES;
 use solana_program::{
     account_info::{next_account_info, AccountInfo},
     entrypoint::ProgramResult,
     instruction::{AccountMeta, Instruction},
     msg,
-    program::{invoke, invoke_signed},
+    program::invoke,
     program_error::ProgramError,
-    program_pack::{IsInitialized, Pack},
+    program_pack::Pack,
     pubkey::Pubkey,
-    system_instruction::create_account,
-    sysvar::instructions::{load_current_index_checked, load_instruction_at_checked},
-    sysvar::{
-        clock::{self, Clock},
-        rent::Rent,
-        Sysvar,
-    },
 };
-use thiserror::Error;
-use num_derive::FromPrimitive;
-use num_traits::FromPrimitive;
 use solend_sdk::instruction::liquidate_obligation_and_redeem_reserve_collateral;
+use thiserror::Error;
 
 /// Instruction types
 #[derive(BorshSerialize, BorshDeserialize)]
@@ -38,7 +31,7 @@ pub enum WrapperInstruction {
 
 /// Processes an instruction
 pub fn process_instruction(
-    program_id: &Pubkey,
+    _program_id: &Pubkey,
     accounts: &[AccountInfo],
     input: &[u8],
 ) -> ProgramResult {
@@ -64,51 +57,6 @@ pub fn process_instruction(
             let lending_market_authority_info = next_account_info(account_info_iter)?;
             let user_transfer_authority_info = next_account_info(account_info_iter)?;
             let token_program_id = next_account_info(account_info_iter)?;
-
-            // print all info variables
-            msg!("solend_program_info: {}", solend_program_info.key);
-            msg!("source_liquidity_info: {}", source_liquidity_info.key);
-            msg!(
-                "destination_collateral_info: {}",
-                destination_collateral_info.key
-            );
-            msg!(
-                "destination_liquidity_info: {}",
-                destination_liquidity_info.key
-            );
-            msg!("repay_reserve_info: {}", repay_reserve_info.key);
-            msg!(
-                "repay_reserve_liquidity_supply_info: {}",
-                repay_reserve_liquidity_supply_info.key
-            );
-            msg!("withdraw_reserve_info: {}", withdraw_reserve_info.key);
-            msg!(
-                "withdraw_reserve_collateral_mint_info: {}",
-                withdraw_reserve_collateral_mint_info.key
-            );
-            msg!(
-                "withdraw_reserve_collateral_supply_info: {}",
-                withdraw_reserve_collateral_supply_info.key
-            );
-            msg!(
-                "withdraw_reserve_liquidity_supply_info: {}",
-                withdraw_reserve_liquidity_supply_info.key
-            );
-            msg!(
-                "withdraw_reserve_liquidity_fee_receiver_info: {}",
-                withdraw_reserve_liquidity_fee_receiver_info.key
-            );
-            msg!("obligation_info: {}", obligation_info.key);
-            msg!("lending_market_info: {}", lending_market_info.key);
-            msg!(
-                "lending_market_authority_info: {}",
-                lending_market_authority_info.key
-            );
-            msg!(
-                "user_transfer_authority_info: {}",
-                user_transfer_authority_info.key
-            );
-            msg!("token_program_id: {}", token_program_id.key);
 
             let instruction = liquidate_obligation_and_redeem_reserve_collateral(
                 *solend_program_info.key,
@@ -168,13 +116,12 @@ pub fn process_instruction(
     Ok(())
 }
 
-
 /// Errors that may be returned by the TokenLending program.
 #[derive(Clone, Debug, Eq, Error, FromPrimitive, PartialEq)]
 pub enum WrapperError {
     /// Received ctokens
     #[error("Received ctokens")]
-    ReceivedCTokens
+    ReceivedCTokens,
 }
 
 impl From<WrapperError> for ProgramError {
