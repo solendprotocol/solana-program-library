@@ -1124,7 +1124,7 @@ impl IsInitialized for Reserve {
     }
 }
 
-const RESERVE_LEN: usize = 619; // 1 + 8 + 1 + 32 + 32 + 1 + 32 + 32 + 32 + 8 + 16 + 16 + 16 + 32 + 8 + 32 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 8 + 8 + 1 + 8 + 8 + 32 + 1 + 1 + 16 + 230
+const RESERVE_LEN: usize = 1219; // 1 + 8 + 1 + 32 + 32 + 1 + 32 + 32 + 32 + 8 + 16 + 16 + 16 + 32 + 8 + 32 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 8 + 8 + 1 + 8 + 8 + 32 + 1 + 1 + 16 + 230 + 600;
 impl Pack for Reserve {
     const LEN: usize = RESERVE_LEN;
 
@@ -1216,7 +1216,7 @@ impl Pack for Reserve {
             8,
             1,
             1,
-            138
+            738
         ];
 
         // reserve
@@ -1371,7 +1371,7 @@ impl Pack for Reserve {
             8,
             1,
             1,
-            138
+            738
         ];
 
         let version = u8::from_le_bytes(*version);

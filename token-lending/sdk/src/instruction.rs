@@ -498,6 +498,15 @@ pub enum LendingInstruction {
     /// Must be a pda with seeds [lending_market, "MetaData"]
     /// 3. `[]` System program
     UpdateMarketMetadata,
+
+    // 23
+    /// ResizeReserve
+    ///
+    /// Accounts expected by this instruction:
+    /// 0. `[]` Reserve account.
+    /// 1. `[signer]` Risk authority.
+    /// 3. '[]' System Program
+    ResizeReserve
 }
 
 impl LendingInstruction {
@@ -713,6 +722,7 @@ impl LendingInstruction {
                 Self::ForgiveDebt { liquidity_amount }
             }
             22 => Self::UpdateMarketMetadata,
+            23 => Self::ResizeReserve,
             _ => {
                 msg!("Instruction cannot be unpacked");
                 return Err(LendingError::InstructionUnpackError.into());
@@ -961,7 +971,10 @@ impl LendingInstruction {
                 buf.extend_from_slice(&liquidity_amount.to_le_bytes());
             }
             // special handling for this instruction, bc the instruction is too big to deserialize
-            Self::UpdateMarketMetadata => {}
+            Self::UpdateMarketMetadata => {},
+            Self::ResizeReserve => {
+                buf.push(23);
+            }
         }
         buf
     }
@@ -1685,6 +1698,22 @@ pub fn update_market_metadata(
             AccountMeta::new_readonly(system_program::id(), false),
         ],
         data: data.to_vec(),
+    }
+}
+
+/// Creates a `ResizeReserve` instruction
+pub fn resize_reserve(
+    program_id: Pubkey,
+    reserve_pubkey: Pubkey,
+    signer: Pubkey,
+) -> Instruction {
+    Instruction {
+        program_id,
+        accounts: vec![
+            AccountMeta::new(reserve_pubkey, false),
+            AccountMeta::new_readonly(signer, false),
+        ],
+        data: LendingInstruction::ResizeReserve.pack(),
     }
 }
 

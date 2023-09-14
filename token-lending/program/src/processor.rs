@@ -24,7 +24,7 @@ use solana_program::{
     program_error::ProgramError,
     program_pack::{IsInitialized, Pack},
     pubkey::Pubkey,
-    system_instruction::create_account,
+    system_instruction::{create_account, transfer},
     sysvar::instructions::{load_current_index_checked, load_instruction_at_checked},
     sysvar::{
         clock::{self, Clock},
@@ -191,6 +191,10 @@ pub fn process_instruction(
             msg!("Instruction: Update Metadata");
             let metadata = LendingMarketMetadata::new_from_bytes(input)?;
             process_update_market_metadata(program_id, metadata, accounts)
+        }
+        LendingInstruction::ResizeReserve => {
+            msg!("Instruction: Resize Reserve");
+            process_resize_reserve(program_id, accounts)
         }
     }
 }
@@ -2918,6 +2922,54 @@ fn process_update_market_metadata(
 
     let mut metadata_account_data = metadata_info.try_borrow_mut_data()?;
     metadata_account_data.copy_from_slice(bytes_of(metadata));
+
+    Ok(())
+}
+
+/// resize a reserve
+pub fn process_resize_reserve(_program_id: &Pubkey, accounts: &[AccountInfo]) -> ProgramResult {
+    let account_info_iter = &mut accounts.iter();
+    let reserve_info = next_account_info(account_info_iter)?;
+    let signer_info = next_account_info(account_info_iter)?;
+    let system_program_info = next_account_info(account_info_iter)?;
+
+    let data: Vec<u8> = reserve_info.data.clone().borrow().to_vec();
+
+    assert!(
+        data.len() == 619,
+        "initial data doesn't match expected length!"
+    );
+
+    let new_size = Reserve::LEN;
+    let rent = Rent::get()?;
+    let new_minimum_balance = rent.minimum_balance(new_size);
+
+    let lamports_diff = new_minimum_balance.saturating_sub(reserve_info.lamports());
+    invoke(
+        &transfer(signer_info.key, reserve_info.key, lamports_diff),
+        &[
+            signer_info.clone(),
+            reserve_info.clone(),
+            system_program_info.clone(),
+        ],
+    )?;
+
+    // idk who signer should be lol
+    reserve_info.realloc(Reserve::LEN, true).map_err(|e| {
+        msg!("realloc failed: {:?}", e);
+        e
+    })?;
+
+    let new_data: Vec<u8> = reserve_info.data.clone().borrow().to_vec();
+    assert!(
+        data.len() == 1219,
+        "new data doesn't match expected length!"
+    );
+
+    assert!(
+        data[..] == new_data[0..619],
+        "new data's first 619 bytes don't match old data!"
+    );
 
     Ok(())
 }
