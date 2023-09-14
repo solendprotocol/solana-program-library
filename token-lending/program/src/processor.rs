@@ -2962,7 +2962,7 @@ pub fn process_resize_reserve(_program_id: &Pubkey, accounts: &[AccountInfo]) ->
 
     let new_data: Vec<u8> = reserve_info.data.clone().borrow().to_vec();
     assert!(
-        data.len() == 1219,
+        new_data.len() == 1219,
         "new data doesn't match expected length!"
     );
 
