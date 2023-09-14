@@ -724,7 +724,7 @@ impl LendingInstruction {
             22 => Self::UpdateMarketMetadata,
             23 => Self::ResizeReserve,
             _ => {
-                msg!("Instruction cannot be unpacked");
+                msg!("Instruction cannot be unpacked {:?} {:?}", tag, rest);
                 return Err(LendingError::InstructionUnpackError.into());
             }
         })
@@ -1711,7 +1711,8 @@ pub fn resize_reserve(
         program_id,
         accounts: vec![
             AccountMeta::new(reserve_pubkey, false),
-            AccountMeta::new_readonly(signer, false),
+            AccountMeta::new_readonly(signer, true),
+            AccountMeta::new_readonly(system_program::id(), false),
         ],
         data: LendingInstruction::ResizeReserve.pack(),
     }

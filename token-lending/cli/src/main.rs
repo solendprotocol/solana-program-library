@@ -7,6 +7,7 @@ use solend_program::{
     instruction::set_lending_market_owner_and_config,
     state::{validate_reserve_config, RateLimiterConfig},
 };
+use solend_sdk::instruction::resize_reserve;
 use solend_sdk::{
     instruction::{
         liquidate_obligation_and_redeem_reserve_collateral, redeem_reserve_collateral,
@@ -193,6 +194,19 @@ fn main() {
         )
         .subcommand(
             SubCommand::with_name("view-reserve")
+                .about("View reserve")
+                .arg(
+                    Arg::with_name("reserve")
+                        .long("reserve")
+                        .validator(is_pubkey)
+                        .value_name("PUBKEY")
+                        .takes_value(true)
+                        .required(true)
+                        .help("reserve pubkey"),
+                )
+        )
+        .subcommand(
+            SubCommand::with_name("resize-reserve")
                 .about("View reserve")
                 .arg(
                     Arg::with_name("reserve")
@@ -1021,6 +1035,12 @@ fn main() {
 
             Ok(())
         }
+        ("resize-reserve", Some(arg_matches)) => {
+            let reserve = pubkey_of(arg_matches, "reserve").unwrap();
+            command_resize_reserve(&config, &reserve).unwrap();
+
+            Ok(())
+        }
         ("view-market", Some(arg_matches)) => {
             let market = pubkey_of(arg_matches, "market").unwrap();
             let data = config.rpc_client.get_account_data(&market).unwrap();
@@ -1366,6 +1386,23 @@ fn command_create_lending_market(
         "Authority Address {}",
         Pubkey::create_program_address(authority_signer_seeds, &config.lending_program_id)?,
     );
+    Ok(())
+}
+
+fn command_resize_reserve(config: &Config, reserve: &Pubkey) -> CommandResult {
+    let ix = resize_reserve(
+        config.lending_program_id,
+        *reserve,
+        config.fee_payer.pubkey(),
+    );
+    let tx = Transaction::new_signed_with_payer(
+        &[ix],
+        Some(&config.fee_payer.pubkey()),
+        &vec![config.fee_payer.as_ref()],
+        config.rpc_client.get_latest_blockhash().unwrap(),
+    );
+
+    send_transaction(config, tx)?;
     Ok(())
 }
 
