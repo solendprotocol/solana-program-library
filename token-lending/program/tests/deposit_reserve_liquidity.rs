@@ -192,19 +192,19 @@ async fn test_success_deposit_max() {
                 .get_account(&usdc_reserve.account.liquidity.mint_pubkey)
                 .unwrap(),
             mint: usdc_reserve.account.liquidity.mint_pubkey,
-            diff: -(50_000 * FRACTIONAL_TO_USDC as i128)
+            diff: -(50_000 * FRACTIONAL_TO_USDC as i128),
         },
         TokenBalanceChange {
             token_account: user
                 .get_account(&usdc_reserve.account.collateral.mint_pubkey)
                 .unwrap(),
             mint: usdc_reserve.account.collateral.mint_pubkey,
-            diff: 50_000 * FRACTIONAL_TO_USDC as i128
+            diff: 50_000 * FRACTIONAL_TO_USDC as i128,
         },
         TokenBalanceChange {
             token_account: usdc_reserve.account.liquidity.supply_pubkey,
             mint: usdc_reserve.account.liquidity.mint_pubkey,
-            diff: 50_000 * FRACTIONAL_TO_USDC as i128
+            diff: 50_000 * FRACTIONAL_TO_USDC as i128,
         },
     ]);
 

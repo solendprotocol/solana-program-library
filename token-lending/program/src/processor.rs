@@ -1832,6 +1832,19 @@ fn process_repay_obligation_liquidity(
     // refreshing specific borrow instead of checking obligation stale
     liquidity.accrue_interest(repay_reserve.liquidity.cumulative_borrow_rate_wads)?;
 
+    let liquidity_amount = if liquidity_amount == u64::MAX {
+        let user_token_balance = Account::unpack(&source_liquidity_info.data.borrow())
+            .map_err(|_| {
+                msg!("Failed to deserialize user token account");
+                LendingError::InvalidAccountInput
+            })?
+            .amount;
+
+        min(liquidity_amount, user_token_balance)
+    } else {
+        liquidity_amount
+    };
+
     let CalculateRepayResult {
         settle_amount,
         repay_amount,
