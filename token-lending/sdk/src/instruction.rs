@@ -506,7 +506,7 @@ pub enum LendingInstruction {
     /// 0. `[]` Reserve account.
     /// 1. `[signer]` fee payer.
     /// 3. '[]' System Program
-    ResizeReserve
+    ResizeReserve,
 }
 
 impl LendingInstruction {
@@ -971,7 +971,7 @@ impl LendingInstruction {
                 buf.extend_from_slice(&liquidity_amount.to_le_bytes());
             }
             // special handling for this instruction, bc the instruction is too big to deserialize
-            Self::UpdateMarketMetadata => {},
+            Self::UpdateMarketMetadata => {}
             Self::ResizeReserve => {
                 buf.push(23);
             }
@@ -1702,11 +1702,7 @@ pub fn update_market_metadata(
 }
 
 /// Creates a `ResizeReserve` instruction
-pub fn resize_reserve(
-    program_id: Pubkey,
-    reserve_pubkey: Pubkey,
-    signer: Pubkey,
-) -> Instruction {
+pub fn resize_reserve(program_id: Pubkey, reserve_pubkey: Pubkey, signer: Pubkey) -> Instruction {
     Instruction {
         program_id,
         accounts: vec![

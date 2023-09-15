@@ -127,7 +127,7 @@ impl Processor {
                 msg!("Mock Pyth: Set price");
                 let price_account_info = next_account_info(account_info_iter)?;
                 let data = &mut price_account_info.try_borrow_mut_data()?;
-                let mut price_account: &mut PriceAccount = load_mut(data).unwrap();
+                let price_account: &mut PriceAccount = load_mut(data).unwrap();
 
                 price_account.agg.price = price;
                 price_account.agg.conf = conf;
