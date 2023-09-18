@@ -998,11 +998,14 @@ fn process_refresh_obligation(program_id: &Pubkey, accounts: &[AccountInfo]) -> 
     }
 
     let mut deposited_value = Decimal::zero();
-    let mut borrowed_value = Decimal::zero();
+    let mut borrowed_value = Decimal::zero(); // weighted borrow value wrt borrow weights
     let mut borrowed_value_upper_bound = Decimal::zero();
     let mut allowed_borrow_value = Decimal::zero();
     let mut unhealthy_borrow_value = Decimal::zero();
     let mut super_unhealthy_borrow_value = Decimal::zero();
+
+    let mut deposit_reserve_infos = vec![];
+    let mut true_borrow_value = Decimal::zero();
 
     for (index, collateral) in obligation.deposits.iter_mut().enumerate() {
         let deposit_reserve_info = next_account_info(account_info_iter)?;
@@ -1052,6 +1055,8 @@ fn process_refresh_obligation(program_id: &Pubkey, accounts: &[AccountInfo]) -> 
             unhealthy_borrow_value.try_add(market_value.try_mul(liquidation_threshold_rate)?)?;
         super_unhealthy_borrow_value = super_unhealthy_borrow_value
             .try_add(market_value.try_mul(max_liquidation_threshold_rate)?)?;
+
+        deposit_reserve_infos.push(deposit_reserve_info);
     }
 
     let mut borrowing_isolated_asset = false;
@@ -1120,6 +1125,7 @@ fn process_refresh_obligation(program_id: &Pubkey, accounts: &[AccountInfo]) -> 
             borrowed_value.try_add(market_value.try_mul(borrow_reserve.borrow_weight())?)?;
         borrowed_value_upper_bound = borrowed_value_upper_bound
             .try_add(market_value_upper_bound.try_mul(borrow_reserve.borrow_weight())?)?;
+        true_borrow_value = true_borrow_value.try_add(market_value)?;
     }
 
     if account_info_iter.peek().is_some() {
@@ -1141,6 +1147,31 @@ fn process_refresh_obligation(program_id: &Pubkey, accounts: &[AccountInfo]) -> 
         min(super_unhealthy_borrow_value, global_unhealthy_borrow_value);
 
     obligation.last_update.update_slot(clock.slot);
+
+    // attributed borrow calculation
+    for (index, collateral) in obligation.deposits.iter_mut().enumerate() {
+        let deposit_reserve_info = &deposit_reserve_infos[index];
+        let mut deposit_reserve = Reserve::unpack(&deposit_reserve_info.data.borrow())?;
+
+        // sanity check
+        if collateral.deposit_reserve != *deposit_reserve_info.key {
+            msg!("Something went wrong, deposit reserve account mismatch");
+            return Err(LendingError::InvalidAccountInput.into());
+        }
+
+        // maybe need to do a saturating sub here in case there are precision issues
+        deposit_reserve.attributed_borrow_value = deposit_reserve
+            .attributed_borrow_value
+            .try_sub(collateral.attributed_borrow_value)?;
+
+        collateral.attributed_borrow_value = collateral.market_value.try_div(obligation.deposited_value)?;
+
+        deposit_reserve.attributed_borrow_value = deposit_reserve
+            .attributed_borrow_value
+            .try_add(collateral.attributed_borrow_value)?;
+
+        Reserve::pack(deposit_reserve, &mut deposit_reserve_info.data.borrow_mut())?;
+    }
 
     // move the ObligationLiquidity with the max borrow weight to the front
     if let Some((_, max_borrow_weight_index)) = max_borrow_weight {
