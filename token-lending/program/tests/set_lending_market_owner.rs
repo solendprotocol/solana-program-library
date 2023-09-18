@@ -67,6 +67,69 @@ async fn test_success() {
 }
 
 #[tokio::test]
+async fn test_risk_authority_can_set_only_rate_limiter() {
+    let (mut test, lending_market, lending_market_owner) = setup().await;
+    let new_owner = Keypair::new();
+
+    // set risk authority
+    let risk_authority = Keypair::new();
+    lending_market
+        .set_lending_market_owner_and_config(
+            &mut test,
+            &lending_market_owner,
+            &lending_market_owner.keypair.pubkey(),
+            lending_market.account.rate_limiter.config,
+            None,
+            risk_authority.pubkey(),
+        )
+        .await
+        .unwrap();
+
+    test.advance_clock_by_slots(1).await;
+
+    let new_rate_limiter_config = RateLimiterConfig {
+        max_outflow: 45,
+        window_duration: 5,
+    };
+
+    let lending_market = test
+        .load_account::<LendingMarket>(lending_market.pubkey)
+        .await;
+
+    test.process_transaction(
+        &[Instruction {
+            program_id: solend_program::id(),
+            accounts: vec![
+                AccountMeta::new(lending_market.pubkey, false),
+                AccountMeta::new_readonly(risk_authority.pubkey(), true),
+            ],
+            data: LendingInstruction::SetLendingMarketOwnerAndConfig {
+                new_owner: new_owner.pubkey(),
+                rate_limiter_config: new_rate_limiter_config,
+                whitelisted_liquidator: None,
+                risk_authority: new_owner.pubkey(),
+            }
+            .pack(),
+        }],
+        Some(&[&risk_authority]),
+    )
+    .await
+    .unwrap();
+
+    let lending_market_post = test
+        .load_account::<LendingMarket>(lending_market.pubkey)
+        .await;
+
+    assert_eq!(
+        lending_market_post.account,
+        LendingMarket {
+            rate_limiter: RateLimiter::new(new_rate_limiter_config, 1000), // only thing that changed
+            ..lending_market.account
+        }
+    );
+}
+
+#[tokio::test]
 async fn test_invalid_owner() {
     let (mut test, lending_market, _lending_market_owner) = setup().await;
     let invalid_owner = User::new_with_keypair(Keypair::new());
