@@ -214,7 +214,9 @@ async fn test_success_new() {
             deposits: [ObligationCollateral {
                 deposit_reserve: usdc_reserve.pubkey,
                 deposited_amount: (100_000 - expected_usdc_withdrawn) * FRACTIONAL_TO_USDC,
-                market_value: Decimal::from(100_000u64) // old value
+                market_value: Decimal::from(100_000u64), // old value
+                attributed_borrow_value: obligation_post.account.deposits[0]
+                    .attributed_borrow_value, // don't care about verifying this here
             }]
             .to_vec(),
             borrows: [ObligationLiquidity {

@@ -177,7 +177,8 @@ async fn test_success() {
                 supply_pubkey: reserve_collateral_supply_pubkey,
             },
             config: reserve_config,
-            rate_limiter: RateLimiter::new(RateLimiterConfig::default(), 1001)
+            rate_limiter: RateLimiter::new(RateLimiterConfig::default(), 1001),
+            attributed_borrow_value: Decimal::zero(),
         }
     );
 }

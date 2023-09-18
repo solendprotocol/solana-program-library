@@ -52,6 +52,8 @@ pub struct Reserve {
     pub config: ReserveConfig,
     /// Outflow Rate Limiter (denominated in tokens)
     pub rate_limiter: RateLimiter,
+    /// Attributed borrows in USD
+    pub attributed_borrow_value: Decimal,
 }
 
 impl Reserve {
@@ -71,6 +73,7 @@ impl Reserve {
         self.collateral = params.collateral;
         self.config = params.config;
         self.rate_limiter = RateLimiter::new(params.rate_limiter_config, params.current_slot);
+        self.attributed_borrow_value = Decimal::zero();
     }
 
     /// get borrow weight. Guaranteed to be greater than 1
@@ -1173,6 +1176,7 @@ impl Pack for Reserve {
             config_super_max_borrow_rate,
             config_max_liquidation_bonus,
             config_max_liquidation_threshold,
+            attributed_borrow_value,
             _padding,
         ) = mut_array_refs![
             output,
@@ -1216,7 +1220,8 @@ impl Pack for Reserve {
             8,
             1,
             1,
-            738
+            16,
+            722
         ];
 
         // reserve
@@ -1281,6 +1286,8 @@ impl Pack for Reserve {
         *config_added_borrow_weight_bps = self.config.added_borrow_weight_bps.to_le_bytes();
         *config_max_liquidation_bonus = self.config.max_liquidation_bonus.to_le_bytes();
         *config_max_liquidation_threshold = self.config.max_liquidation_threshold.to_le_bytes();
+
+        pack_decimal(self.attributed_borrow_value, attributed_borrow_value);
     }
 
     /// Unpacks a byte buffer into a [ReserveInfo](struct.ReserveInfo.html).
@@ -1328,6 +1335,7 @@ impl Pack for Reserve {
             config_super_max_borrow_rate,
             config_max_liquidation_bonus,
             config_max_liquidation_threshold,
+            attributed_borrow_value,
             _padding,
         ) = array_refs![
             input,
@@ -1371,7 +1379,8 @@ impl Pack for Reserve {
             8,
             1,
             1,
-            738
+            16,
+            722
         ];
 
         let version = u8::from_le_bytes(*version);
@@ -1464,6 +1473,7 @@ impl Pack for Reserve {
                 reserve_type: ReserveType::from_u8(config_asset_type[0]).unwrap(),
             },
             rate_limiter: RateLimiter::unpack_from_slice(rate_limiter)?,
+            attributed_borrow_value: unpack_decimal(attributed_borrow_value),
         })
     }
 }
@@ -1541,6 +1551,7 @@ mod test {
                     reserve_type: ReserveType::from_u8(rng.gen::<u8>() % 2).unwrap(),
                 },
                 rate_limiter: rand_rate_limiter(),
+                attributed_borrow_value: rand_decimal(),
             };
 
             let mut packed = [0u8; Reserve::LEN];
@@ -2378,7 +2389,8 @@ mod test {
                 deposits: vec![ObligationCollateral {
                     deposit_reserve: Pubkey::new_unique(),
                     deposited_amount: test_case.deposit_amount,
-                    market_value: test_case.deposit_market_value
+                    market_value: test_case.deposit_market_value,
+                    attributed_borrow_value: test_case.borrow_market_value,
                 }],
                 borrows: vec![ObligationLiquidity {
                     borrow_reserve: Pubkey::new_unique(),
