@@ -983,6 +983,7 @@ fn process_init_obligation(program_id: &Pubkey, accounts: &[AccountInfo]) -> Pro
     Ok(())
 }
 
+#[inline(never)] // avoid stack frame limit
 fn process_refresh_obligation(program_id: &Pubkey, accounts: &[AccountInfo]) -> ProgramResult {
     let account_info_iter = &mut accounts.iter().peekable();
     let obligation_info = next_account_info(account_info_iter)?;
@@ -1004,8 +1005,18 @@ fn process_refresh_obligation(program_id: &Pubkey, accounts: &[AccountInfo]) -> 
     let mut unhealthy_borrow_value = Decimal::zero();
     let mut super_unhealthy_borrow_value = Decimal::zero();
 
-    let mut deposit_reserve_infos = vec![];
     let mut true_borrow_value = Decimal::zero();
+
+    let mut arr = [0u8; 206];
+    for i in 0..arr.len() {
+        arr[i] = (i % 256) as u8;
+    }
+    let mut s = 0;
+    for i in 0..arr.len() {
+        s += arr[i];
+    }
+    msg!("s: {}", s);
+
 
     for (index, collateral) in obligation.deposits.iter_mut().enumerate() {
         let deposit_reserve_info = next_account_info(account_info_iter)?;
@@ -1055,8 +1066,6 @@ fn process_refresh_obligation(program_id: &Pubkey, accounts: &[AccountInfo]) -> 
             unhealthy_borrow_value.try_add(market_value.try_mul(liquidation_threshold_rate)?)?;
         super_unhealthy_borrow_value = super_unhealthy_borrow_value
             .try_add(market_value.try_mul(max_liquidation_threshold_rate)?)?;
-
-        deposit_reserve_infos.push(deposit_reserve_info);
     }
 
     let mut borrowing_isolated_asset = false;
@@ -1148,9 +1157,10 @@ fn process_refresh_obligation(program_id: &Pubkey, accounts: &[AccountInfo]) -> 
 
     obligation.last_update.update_slot(clock.slot);
 
+    let deposit_infos = &mut accounts.iter().skip(1);
     // attributed borrow calculation
     for (index, collateral) in obligation.deposits.iter_mut().enumerate() {
-        let deposit_reserve_info = &deposit_reserve_infos[index];
+        let deposit_reserve_info = next_account_info(deposit_infos)?;
         let mut deposit_reserve = Reserve::unpack(&deposit_reserve_info.data.borrow())?;
 
         // sanity check
@@ -1164,7 +1174,14 @@ fn process_refresh_obligation(program_id: &Pubkey, accounts: &[AccountInfo]) -> 
             .attributed_borrow_value
             .try_sub(collateral.attributed_borrow_value)?;
 
-        collateral.attributed_borrow_value = collateral.market_value.try_div(obligation.deposited_value)?;
+        if obligation.deposited_value > Decimal::zero() {
+            collateral.attributed_borrow_value = collateral
+                .market_value
+                .try_mul(obligation.borrowed_value)?
+                .try_div(obligation.deposited_value)?;
+        } else {
+            collateral.attributed_borrow_value = Decimal::zero();
+        }
 
         deposit_reserve.attributed_borrow_value = deposit_reserve
             .attributed_borrow_value
