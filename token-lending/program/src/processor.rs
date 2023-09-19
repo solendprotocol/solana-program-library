@@ -239,7 +239,7 @@ fn process_set_lending_market_owner_and_config(
 ) -> ProgramResult {
     let account_info_iter = &mut accounts.iter();
     let lending_market_info = next_account_info(account_info_iter)?;
-    let signer_info = next_account_info(account_info_iter)?;
+    let market_change_authority_info = next_account_info(account_info_iter)?;
 
     let mut lending_market = LendingMarket::unpack(&lending_market_info.data.borrow())?;
     if lending_market_info.owner != program_id {
@@ -247,7 +247,12 @@ fn process_set_lending_market_owner_and_config(
         return Err(LendingError::InvalidAccountOwner.into());
     }
 
-    if signer_info.key == &lending_market.owner {
+    if !market_change_authority_info.is_signer {
+        msg!("Lending market owner or risk authority provided must be a signer");
+        return Err(LendingError::InvalidSigner.into());
+    }
+
+    if market_change_authority_info.key == &lending_market.owner {
         lending_market.owner = new_owner;
         lending_market.risk_authority = risk_authority;
 
@@ -256,18 +261,13 @@ fn process_set_lending_market_owner_and_config(
         }
 
         lending_market.whitelisted_liquidator = whitelisted_liquidator;
-    } else if signer_info.key == &lending_market.risk_authority {
+    } else if market_change_authority_info.key == &lending_market.risk_authority {
         if rate_limiter_config != lending_market.rate_limiter.config {
             lending_market.rate_limiter = RateLimiter::new(rate_limiter_config, Clock::get()?.slot);
         }
     } else {
         msg!("Signer must be the lending market owner or risk authority");
         return Err(LendingError::InvalidMarketOwner.into());
-    }
-
-    if !signer_info.is_signer {
-        msg!("Lending market owner or risk authority provided must be a signer");
-        return Err(LendingError::InvalidSigner.into());
     }
 
     LendingMarket::pack(lending_market, &mut lending_market_info.data.borrow_mut())?;
