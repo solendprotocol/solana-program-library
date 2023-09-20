@@ -938,17 +938,6 @@ fn process_refresh_obligation(program_id: &Pubkey, accounts: &[AccountInfo]) -> 
 
     let mut true_borrow_value = Decimal::zero();
 
-    let mut arr = [0u8; 206];
-    for i in 0..arr.len() {
-        arr[i] = (i % 256) as u8;
-    }
-    let mut s = 0;
-    for i in 0..arr.len() {
-        s += arr[i];
-    }
-    msg!("s: {}", s);
-
-
     for (index, collateral) in obligation.deposits.iter_mut().enumerate() {
         let deposit_reserve_info = next_account_info(account_info_iter)?;
         if deposit_reserve_info.owner != program_id {
@@ -1103,13 +1092,21 @@ fn process_refresh_obligation(program_id: &Pubkey, accounts: &[AccountInfo]) -> 
         // maybe need to do a saturating sub here in case there are precision issues
         deposit_reserve.attributed_borrow_value = deposit_reserve
             .attributed_borrow_value
-            .try_sub(collateral.attributed_borrow_value)?;
+            .try_sub(collateral.attributed_borrow_value)
+            .map_err(|e| {
+                msg!("sub failed");
+                e
+            })?;
 
         if obligation.deposited_value > Decimal::zero() {
             collateral.attributed_borrow_value = collateral
                 .market_value
                 .try_mul(obligation.borrowed_value)?
-                .try_div(obligation.deposited_value)?;
+                .try_div(obligation.deposited_value)
+                .map_err(|e| {
+                    msg!("div failed");
+                    e
+                })?;
         } else {
             collateral.attributed_borrow_value = Decimal::zero();
         }
