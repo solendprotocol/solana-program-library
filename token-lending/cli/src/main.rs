@@ -466,6 +466,7 @@ fn main() {
                         .value_name("INTEGER_PERCENT")
                         .takes_value(true)
                         .required(false)
+                        .default_value("90")
                         .help("Max utilization rate: [0, 100]"),
                 )
                 .arg(
@@ -495,6 +496,7 @@ fn main() {
                         .value_name("INTEGER_PERCENT")
                         .takes_value(true)
                         .required(false)
+                        .default_value("5")
                         .help("Maximum bonus a liquidator gets when repaying part of an unhealthy obligation: [0, 100]"),
                 )
                 .arg(
@@ -514,6 +516,7 @@ fn main() {
                         .value_name("INTEGER_PERCENT")
                         .takes_value(true)
                         .required(false)
+                        .default_value("65")
                         .help("Loan to value ratio at which an obligation can be liquidated for the max bonus: (liquidation_threshold, 100]"),
                 )
                 .arg(
@@ -553,6 +556,7 @@ fn main() {
                         .value_name("INTEGER")
                         .takes_value(true)
                         .required(false)
+                        .default_value("100")
                         .help("super max borrow APY: min <= optimal <= max <= super_max"),
                 )
                 .arg(
@@ -602,6 +606,7 @@ fn main() {
                         .value_name("INTEGER_PERCENT")
                         .takes_value(true)
                         .required(false)
+                        .default_value("20")
                         .help("Amount of interest spread going to fee receiver: [0, 100]"),
                 )
                 .arg(
@@ -630,7 +635,8 @@ fn main() {
                         .validator(is_parsable::<u64>)
                         .value_name("INTEGER")
                         .takes_value(true)
-                        .required(true)
+                        .required(false)
+                        .default_value("0")
                         .help("Added borrow weight bps"),
                 )
                 .arg(
@@ -640,6 +646,7 @@ fn main() {
                         .value_name("RESERVE_TYPE")
                         .takes_value(true)
                         .required(false)
+                        .default_value("Regular")
                         .help("Reserve type"),
                 )
         )
@@ -972,6 +979,7 @@ fn main() {
                         .value_name("RESERVE_TYPE")
                         .takes_value(true)
                         .required(false)
+                        .default_value("Regular")
                         .help("Reserve type"),
                 )
         )
