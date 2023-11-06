@@ -5,6 +5,7 @@
 pub mod error;
 pub mod instruction;
 pub mod math;
+pub mod offchain_utils;
 pub mod oracles;
 pub mod state;
 
