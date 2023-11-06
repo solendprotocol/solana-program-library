@@ -34,9 +34,7 @@ pub fn get_solend_accounts_as_map(
             match account.data.len() {
                 Obligation::LEN => {
                     if let Ok(o) = Obligation::unpack(&account.data) {
-                        if !o.borrows.is_empty() {
-                            obligations.insert(pubkey, o);
-                        }
+                        obligations.insert(pubkey, o);
                     }
                 }
                 Reserve::LEN => {
