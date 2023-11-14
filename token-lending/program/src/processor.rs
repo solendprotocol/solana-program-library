@@ -46,6 +46,11 @@ pub mod solend_market_owner {
     solana_program::declare_id!("5pHk2TmnqQzRF9L6egy5FfiyBgS7G9cMZ5RFaJAvghzw");
 }
 
+/// account that can resize reserves
+pub mod resizer {
+    solana_program::declare_id!("7v44zJeSHZdXS2djiLuCXiZt23ziMhURaPxbQ2MJ7cUh");
+}
+
 /// Processes an instruction
 pub fn process_instruction(
     program_id: &Pubkey,
@@ -2933,12 +2938,17 @@ pub fn process_resize_reserve(_program_id: &Pubkey, accounts: &[AccountInfo]) ->
     let signer_info = next_account_info(account_info_iter)?;
     let system_program_info = next_account_info(account_info_iter)?;
 
+    if *signer_info.key != resizer::id() || !signer_info.is_signer {
+        msg!("Resizer pubkey must be a signer");
+        return Err(LendingError::InvalidSigner.into());
+    }
+
     let data: Vec<u8> = reserve_info.data.clone().borrow().to_vec();
 
-    assert!(
-        data.len() == 619,
-        "initial data doesn't match expected length!"
-    );
+    if data.len() != 619 {
+        msg!("initial data doesn't match expected length!");
+        return Err(LendingError::InvalidAccountInput.into());
+    }
 
     let new_size = Reserve::LEN;
     let rent = Rent::get()?;
@@ -2961,15 +2971,15 @@ pub fn process_resize_reserve(_program_id: &Pubkey, accounts: &[AccountInfo]) ->
     })?;
 
     let new_data: Vec<u8> = reserve_info.data.clone().borrow().to_vec();
-    assert!(
-        new_data.len() == 1219,
-        "new data doesn't match expected length!"
-    );
+    if new_data.len() != 1219 {
+        msg!("new data doesn't match expected length!");
+        return Err(LendingError::InvalidAccountInput.into());
+    }
 
-    assert!(
-        data[..] == new_data[0..619],
-        "new data's first 619 bytes don't match old data!"
-    );
+    if data[..] != new_data[0..619] {
+        msg!("new data's first 619 bytes don't match old data!");
+        return Err(LendingError::InvalidAccountInput.into());
+    }
 
     Ok(())
 }

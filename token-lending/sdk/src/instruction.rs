@@ -505,7 +505,7 @@ pub enum LendingInstruction {
     /// Accounts expected by this instruction:
     /// 0. `[]` Reserve account.
     /// 1. `[signer]` fee payer.
-    /// 3. '[]' System Program
+    /// 2. '[]' System Program
     ResizeReserve,
 }
 
