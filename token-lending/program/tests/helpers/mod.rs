@@ -55,6 +55,7 @@ pub fn test_reserve_config() -> ReserveConfig {
         reserve_type: ReserveType::Regular,
         scaled_price_offset_bps: 0,
         extra_oracle_pubkey: None,
+        attributed_borrow_limit: u64::MAX,
     }
 }
 

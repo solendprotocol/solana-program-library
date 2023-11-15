@@ -178,6 +178,7 @@ async fn test_success_new() {
                     - expected_usdc_withdrawn * FRACTIONAL_TO_USDC,
                 ..usdc_reserve.account.collateral
             },
+            attributed_borrow_value: Decimal::from(55000u64),
             ..usdc_reserve.account
         }
     );

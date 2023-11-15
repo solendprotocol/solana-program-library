@@ -1651,6 +1651,11 @@ pub async fn scenario_1(
         .await
         .unwrap();
 
+    lending_market
+        .refresh_reserve(&mut test, &usdc_reserve)
+        .await
+        .unwrap();
+
     // populate deposit value correctly.
     let obligation = test.load_account::<Obligation>(obligation.pubkey).await;
     lending_market

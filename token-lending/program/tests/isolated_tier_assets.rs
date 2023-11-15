@@ -1,6 +1,7 @@
 #![cfg(feature = "test-bpf")]
 
 use crate::solend_program_test::custom_scenario;
+use solend_program::state::ObligationCollateral;
 
 use crate::solend_program_test::ObligationArgs;
 use crate::solend_program_test::PriceArgs;
@@ -112,6 +113,10 @@ async fn test_refresh_obligation() {
                 slot: 1001,
                 stale: false
             },
+            deposits: vec![ObligationCollateral {
+                attributed_borrow_value: Decimal::from(10u64),
+                ..obligations[0].account.deposits[0]
+            }],
             borrows: vec![ObligationLiquidity {
                 borrow_reserve: wsol_reserve.pubkey,
                 cumulative_borrow_rate_wads: Decimal::one(),
