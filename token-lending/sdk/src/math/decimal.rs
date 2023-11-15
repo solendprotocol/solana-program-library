@@ -165,6 +165,12 @@ impl TrySub for Decimal {
     }
 }
 
+impl SaturatingSub for Decimal {
+    fn saturating_sub(self, rhs: Self) -> Self {
+        Self(self.0.saturating_sub(rhs.0))
+    }
+}
+
 impl TryDiv<u64> for Decimal {
     fn try_div(self, rhs: u64) -> Result<Self, ProgramError> {
         Ok(Self(

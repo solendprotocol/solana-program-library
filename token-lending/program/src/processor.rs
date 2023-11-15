@@ -32,7 +32,7 @@ use solana_program::{
         Sysvar,
     },
 };
-use solend_sdk::state::{LendingMarketMetadata, RateLimiter, RateLimiterConfig, ReserveType};
+use solend_sdk::{state::{LendingMarketMetadata, RateLimiter, RateLimiterConfig, ReserveType}, math::SaturatingSub};
 use solend_sdk::{switchboard_v2_devnet, switchboard_v2_mainnet};
 use spl_token::state::Mint;
 use std::{cmp::min, result::Result};
@@ -936,8 +936,6 @@ fn process_refresh_obligation(program_id: &Pubkey, accounts: &[AccountInfo]) -> 
     let mut unhealthy_borrow_value = Decimal::zero();
     let mut super_unhealthy_borrow_value = Decimal::zero();
 
-    let mut true_borrow_value = Decimal::zero();
-
     for (index, collateral) in obligation.deposits.iter_mut().enumerate() {
         let deposit_reserve_info = next_account_info(account_info_iter)?;
         if deposit_reserve_info.owner != program_id {
@@ -990,6 +988,7 @@ fn process_refresh_obligation(program_id: &Pubkey, accounts: &[AccountInfo]) -> 
 
     let mut borrowing_isolated_asset = false;
     let mut max_borrow_weight = None;
+    let mut true_borrow_value = Decimal::zero();
     for (index, liquidity) in obligation.borrows.iter_mut().enumerate() {
         let borrow_reserve_info = next_account_info(account_info_iter)?;
         if borrow_reserve_info.owner != program_id {
@@ -1078,6 +1077,7 @@ fn process_refresh_obligation(program_id: &Pubkey, accounts: &[AccountInfo]) -> 
     obligation.last_update.update_slot(clock.slot);
 
     let deposit_infos = &mut accounts.iter().skip(1);
+
     // attributed borrow calculation
     for (index, collateral) in obligation.deposits.iter_mut().enumerate() {
         let deposit_reserve_info = next_account_info(deposit_infos)?;
@@ -1089,14 +1089,9 @@ fn process_refresh_obligation(program_id: &Pubkey, accounts: &[AccountInfo]) -> 
             return Err(LendingError::InvalidAccountInput.into());
         }
 
-        // maybe need to do a saturating sub here in case there are precision issues
         deposit_reserve.attributed_borrow_value = deposit_reserve
             .attributed_borrow_value
-            .try_sub(collateral.attributed_borrow_value)
-            .map_err(|e| {
-                msg!("sub failed");
-                e
-            })?;
+            .saturating_sub(collateral.attributed_borrow_value);
 
         if obligation.deposited_value > Decimal::zero() {
             collateral.attributed_borrow_value = collateral

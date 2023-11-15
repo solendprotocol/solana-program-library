@@ -168,7 +168,7 @@ pub enum LendingInstruction {
     ///
     ///   0. `[writable]` Obligation account.
     ///   1. `[]` Clock sysvar (optional, will be removed soon).
-    ///   .. `[]` Collateral deposit reserve accounts - refreshed, all, in order.
+    ///   .. `[writable]` Collateral deposit reserve accounts - refreshed, all, in order.
     ///   .. `[]` Liquidity borrow reserve accounts - refreshed, all, in order.
     RefreshObligation,
 
@@ -570,7 +570,8 @@ impl LendingInstruction {
                 let (added_borrow_weight_bps, rest) = Self::unpack_u64(rest)?;
                 let (asset_type, rest) = Self::unpack_u8(rest)?;
                 let (max_liquidation_bonus, rest) = Self::unpack_u8(rest)?;
-                let (max_liquidation_threshold, _rest) = Self::unpack_u8(rest)?;
+                let (max_liquidation_threshold, rest) = Self::unpack_u8(rest)?;
+                let (attributed_borrow_limit, _rest) = Self::unpack_u64(rest)?;
                 Self::InitReserve {
                     liquidity_amount,
                     config: ReserveConfig {
@@ -597,6 +598,7 @@ impl LendingInstruction {
                         protocol_take_rate,
                         added_borrow_weight_bps,
                         reserve_type: ReserveType::from_u8(asset_type).unwrap(),
+                        attributed_borrow_limit,
                     },
                 }
             }
@@ -665,6 +667,7 @@ impl LendingInstruction {
                 let (asset_type, rest) = Self::unpack_u8(rest)?;
                 let (max_liquidation_bonus, rest) = Self::unpack_u8(rest)?;
                 let (max_liquidation_threshold, rest) = Self::unpack_u8(rest)?;
+                let (attributed_borrow_limit, rest) = Self::unpack_u64(rest)?;
                 let (window_duration, rest) = Self::unpack_u64(rest)?;
                 let (max_outflow, _rest) = Self::unpack_u64(rest)?;
 
@@ -693,6 +696,7 @@ impl LendingInstruction {
                         protocol_take_rate,
                         added_borrow_weight_bps,
                         reserve_type: ReserveType::from_u8(asset_type).unwrap(),
+                        attributed_borrow_limit,
                     },
                     rate_limiter_config: RateLimiterConfig {
                         window_duration,
@@ -843,6 +847,7 @@ impl LendingInstruction {
                         protocol_take_rate,
                         added_borrow_weight_bps: borrow_weight_bps,
                         reserve_type: asset_type,
+                        attributed_borrow_limit,
                     },
             } => {
                 buf.push(2);
@@ -868,6 +873,7 @@ impl LendingInstruction {
                 buf.extend_from_slice(&(asset_type as u8).to_le_bytes());
                 buf.extend_from_slice(&max_liquidation_bonus.to_le_bytes());
                 buf.extend_from_slice(&max_liquidation_threshold.to_le_bytes());
+                buf.extend_from_slice(&attributed_borrow_limit.to_le_bytes());
             }
             Self::RefreshReserve => {
                 buf.push(3);
@@ -944,6 +950,7 @@ impl LendingInstruction {
                 buf.extend_from_slice(&(config.reserve_type as u8).to_le_bytes());
                 buf.extend_from_slice(&config.max_liquidation_bonus.to_le_bytes());
                 buf.extend_from_slice(&config.max_liquidation_threshold.to_le_bytes());
+                buf.extend_from_slice(&config.attributed_borrow_limit.to_le_bytes());
                 buf.extend_from_slice(&rate_limiter_config.window_duration.to_le_bytes());
                 buf.extend_from_slice(&rate_limiter_config.max_outflow.to_le_bytes());
             }
@@ -1205,7 +1212,7 @@ pub fn refresh_obligation(
     accounts.extend(
         reserve_pubkeys
             .into_iter()
-            .map(|pubkey| AccountMeta::new_readonly(pubkey, false)),
+            .map(|pubkey| AccountMeta::new(pubkey, false)),
     );
     Instruction {
         program_id,
@@ -1783,6 +1790,7 @@ mod test {
                         protocol_take_rate: rng.gen::<u8>(),
                         added_borrow_weight_bps: rng.gen::<u64>(),
                         reserve_type: ReserveType::from_u8(rng.gen::<u8>() % 2).unwrap(),
+                        attributed_borrow_limit: rng.gen()
                     },
                 };
 
@@ -1943,6 +1951,7 @@ mod test {
                         protocol_take_rate: rng.gen::<u8>(),
                         added_borrow_weight_bps: rng.gen::<u64>(),
                         reserve_type: ReserveType::from_u8(rng.gen::<u8>() % 2).unwrap(),
+                        attributed_borrow_limit: rng.gen()
                     },
                     rate_limiter_config: RateLimiterConfig {
                         window_duration: rng.gen::<u64>(),
