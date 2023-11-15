@@ -1143,6 +1143,7 @@ fn main() {
             let reserve_type = value_of(arg_matches, "reserve_type").unwrap();
             let scaled_price_offset_bps = value_of(arg_matches, "scaled_price_offset_bps").unwrap();
             let extra_oracle_pubkey = pubkey_of(arg_matches, "extra_oracle_pubkey").unwrap();
+            let attributed_borrow_limit = value_of(arg_matches, "attributed_borrow_limit").unwrap();
 
             let borrow_fee_wad = (borrow_fee * WAD as f64) as u64;
             let flash_loan_fee_wad = (flash_loan_fee * WAD as f64) as u64;
@@ -1198,6 +1199,7 @@ fn main() {
                     reserve_type,
                     scaled_price_offset_bps,
                     extra_oracle_pubkey: Some(extra_oracle_pubkey),
+                    attributed_borrow_limit,
                 },
                 source_liquidity_pubkey,
                 source_liquidity_owner_keypair,

@@ -944,7 +944,7 @@ pub struct ReserveConfig {
     /// Extra oracle. Only used to limit borrows and withdrawals.
     pub extra_oracle_pubkey: Option<Pubkey>,
     /// Attributed Borrow limit in USD
-    pub attributed_borrow_limit: u64
+    pub attributed_borrow_limit: u64,
 }
 
 /// validates reserve configs

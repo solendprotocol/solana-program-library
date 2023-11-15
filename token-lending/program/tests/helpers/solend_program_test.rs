@@ -1016,7 +1016,7 @@ impl Info<LendingMarket> {
             .await;
         test.process_transaction(&refresh_ixs, None).await.unwrap();
 
-        let mut instructions = vec![ComputeBudgetInstruction::set_compute_unit_limit(55_000)];
+        let mut instructions = vec![ComputeBudgetInstruction::set_compute_unit_limit(60_000)];
         instructions.push(borrow_obligation_liquidity(
             solend_program::id(),
             liquidity_amount,
@@ -1837,7 +1837,10 @@ pub async fn custom_scenario(
 
     // load accounts into reserve
     for reserve in reserves.iter_mut() {
-        lending_market.refresh_reserve(&mut test, reserve).await.unwrap();
+        lending_market
+            .refresh_reserve(&mut test, reserve)
+            .await
+            .unwrap();
 
         *reserve = test.load_account(reserve.pubkey).await;
     }

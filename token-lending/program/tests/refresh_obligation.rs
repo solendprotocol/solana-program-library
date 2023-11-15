@@ -258,7 +258,8 @@ async fn test_success() {
             deposits: [ObligationCollateral {
                 attributed_borrow_value: new_borrow_value,
                 ..obligation.account.deposits[0]
-            }].to_vec(),
+            }]
+            .to_vec(),
             borrows: [ObligationLiquidity {
                 borrow_reserve: wsol_reserve.pubkey,
                 cumulative_borrow_rate_wads: new_cumulative_borrow_rate,
