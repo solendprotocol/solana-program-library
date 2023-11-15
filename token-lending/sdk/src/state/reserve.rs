@@ -943,6 +943,8 @@ pub struct ReserveConfig {
     pub scaled_price_offset_bps: i64,
     /// Extra oracle. Only used to limit borrows and withdrawals.
     pub extra_oracle_pubkey: Option<Pubkey>,
+    /// Attributed Borrow limit in USD
+    pub attributed_borrow_limit: u64
 }
 
 /// validates reserve configs
@@ -1233,6 +1235,7 @@ impl Pack for Reserve {
             liquidity_extra_market_price_flag,
             liquidity_extra_market_price,
             attributed_borrow_value,
+            config_attributed_borrow_limit,
             _padding,
         ) = mut_array_refs![
             output,
@@ -1281,7 +1284,8 @@ impl Pack for Reserve {
             1,
             16,
             16,
-            65
+            8,
+            57
         ];
 
         // reserve
@@ -1361,6 +1365,7 @@ impl Pack for Reserve {
         *config_added_borrow_weight_bps = self.config.added_borrow_weight_bps.to_le_bytes();
         *config_max_liquidation_bonus = self.config.max_liquidation_bonus.to_le_bytes();
         *config_max_liquidation_threshold = self.config.max_liquidation_threshold.to_le_bytes();
+        *config_attributed_borrow_limit = self.config.attributed_borrow_limit.to_le_bytes();
 
         pack_decimal(self.attributed_borrow_value, attributed_borrow_value);
     }
@@ -1415,6 +1420,7 @@ impl Pack for Reserve {
             liquidity_extra_market_price_flag,
             liquidity_extra_market_price,
             attributed_borrow_value,
+            config_attributed_borrow_limit,
             _padding,
         ) = array_refs![
             input,
@@ -1463,7 +1469,8 @@ impl Pack for Reserve {
             1,
             16,
             16,
-            65
+            8,
+            57
         ];
 
         let version = u8::from_le_bytes(*version);
@@ -1568,6 +1575,7 @@ impl Pack for Reserve {
                 } else {
                     Some(Pubkey::new_from_array(*config_extra_oracle_pubkey))
                 },
+                attributed_borrow_limit: u64::from_le_bytes(*config_attributed_borrow_limit),
             },
             rate_limiter: RateLimiter::unpack_from_slice(rate_limiter)?,
             attributed_borrow_value: unpack_decimal(attributed_borrow_value),
@@ -1659,6 +1667,7 @@ mod test {
                     reserve_type: ReserveType::from_u8(rng.gen::<u8>() % 2).unwrap(),
                     scaled_price_offset_bps: rng.gen(),
                     extra_oracle_pubkey,
+                    attributed_borrow_limit: rng.gen(),
                 },
                 rate_limiter: rand_rate_limiter(),
                 attributed_borrow_value: rand_decimal(),

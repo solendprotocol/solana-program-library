@@ -168,7 +168,7 @@ pub enum LendingInstruction {
     ///
     ///   0. `[writable]` Obligation account.
     ///   1. `[]` Clock sysvar (optional, will be removed soon).
-    ///   .. `[]` Collateral deposit reserve accounts - refreshed, all, in order.
+    ///   .. `[writable]` Collateral deposit reserve accounts - refreshed, all, in order.
     ///   .. `[]` Liquidity borrow reserve accounts - refreshed, all, in order.
     RefreshObligation,
 
@@ -563,7 +563,7 @@ impl LendingInstruction {
                 let (max_liquidation_bonus, rest) = Self::unpack_u8(rest)?;
                 let (max_liquidation_threshold, rest) = Self::unpack_u8(rest)?;
                 let (scaled_price_offset_bps, rest) = Self::unpack_i64(rest)?;
-                let (extra_oracle_pubkey, _rest) = match Self::unpack_u8(rest)? {
+                let (extra_oracle_pubkey, rest) = match Self::unpack_u8(rest)? {
                     (0, rest) => (None, rest),
                     (1, rest) => {
                         let (pubkey, rest) = Self::unpack_pubkey(rest)?;
@@ -571,6 +571,7 @@ impl LendingInstruction {
                     }
                     _ => return Err(LendingError::InstructionUnpackError.into()),
                 };
+                let (attributed_borrow_limit, _rest) = Self::unpack_u64(rest)?;
                 Self::InitReserve {
                     liquidity_amount,
                     config: ReserveConfig {
@@ -599,6 +600,7 @@ impl LendingInstruction {
                         reserve_type: ReserveType::from_u8(asset_type).unwrap(),
                         scaled_price_offset_bps,
                         extra_oracle_pubkey,
+                        attributed_borrow_limit,
                     },
                 }
             }
@@ -676,6 +678,7 @@ impl LendingInstruction {
                     }
                     _ => return Err(LendingError::InstructionUnpackError.into()),
                 };
+                let (attributed_borrow_limit, rest) = Self::unpack_u64(rest)?;
                 let (window_duration, rest) = Self::unpack_u64(rest)?;
                 let (max_outflow, _rest) = Self::unpack_u64(rest)?;
 
@@ -706,6 +709,7 @@ impl LendingInstruction {
                         reserve_type: ReserveType::from_u8(asset_type).unwrap(),
                         scaled_price_offset_bps,
                         extra_oracle_pubkey,
+                        attributed_borrow_limit,
                     },
                     rate_limiter_config: RateLimiterConfig {
                         window_duration,
@@ -871,6 +875,7 @@ impl LendingInstruction {
                         reserve_type: asset_type,
                         scaled_price_offset_bps,
                         extra_oracle_pubkey,
+                        attributed_borrow_limit,
                     },
             } => {
                 buf.push(2);
@@ -906,6 +911,7 @@ impl LendingInstruction {
                         buf.push(0);
                     }
                 };
+                buf.extend_from_slice(&attributed_borrow_limit.to_le_bytes());
             }
             Self::RefreshReserve => {
                 buf.push(3);
@@ -992,6 +998,7 @@ impl LendingInstruction {
                         buf.push(0);
                     }
                 };
+                buf.extend_from_slice(&config.attributed_borrow_limit.to_le_bytes());
                 buf.extend_from_slice(&rate_limiter_config.window_duration.to_le_bytes());
                 buf.extend_from_slice(&rate_limiter_config.max_outflow.to_le_bytes());
             }
@@ -1261,7 +1268,7 @@ pub fn refresh_obligation(
     accounts.extend(
         reserve_pubkeys
             .into_iter()
-            .map(|pubkey| AccountMeta::new_readonly(pubkey, false)),
+            .map(|pubkey| AccountMeta::new(pubkey, false)),
     );
     Instruction {
         program_id,
@@ -1837,6 +1844,7 @@ mod test {
                         } else {
                             Some(Pubkey::new_unique())
                         },
+                        attributed_borrow_limit: rng.gen()
                     },
                 };
 
@@ -2003,6 +2011,7 @@ mod test {
                         } else {
                             None
                         },
+                        attributed_borrow_limit: rng.gen()
                     },
                     rate_limiter_config: RateLimiterConfig {
                         window_duration: rng.gen::<u64>(),
