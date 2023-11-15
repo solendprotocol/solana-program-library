@@ -1,22 +1,17 @@
 #![cfg(feature = "test-bpf")]
 
-use solend_program::state::Reserve;
 use crate::solend_program_test::custom_scenario;
-use solend_program::state::ObligationCollateral;
+use solend_program::state::Reserve;
 
 use crate::solend_program_test::ObligationArgs;
 use crate::solend_program_test::PriceArgs;
 use crate::solend_program_test::ReserveArgs;
 
 use solana_program::native_token::LAMPORTS_PER_SOL;
-use solana_sdk::instruction::InstructionError;
-use solana_sdk::transaction::TransactionError;
-use solend_program::error::LendingError;
+
 use solend_sdk::math::Decimal;
 
-use solend_program::state::LastUpdate;
-use solend_program::state::ReserveType;
-use solend_program::state::{Obligation, ObligationLiquidity, ReserveConfig};
+use solend_program::state::{Obligation, ReserveConfig};
 
 use solend_sdk::state::ReserveFees;
 mod helpers;

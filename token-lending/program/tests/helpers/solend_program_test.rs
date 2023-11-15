@@ -1817,7 +1817,10 @@ pub async fn custom_scenario(
 
     // load accounts into reserve
     for reserve in reserves.iter_mut() {
-        lending_market.refresh_reserve(&mut test, reserve).await.unwrap();
+        lending_market
+            .refresh_reserve(&mut test, reserve)
+            .await
+            .unwrap();
 
         *reserve = test.load_account(reserve.pubkey).await;
     }

@@ -1790,7 +1790,7 @@ mod test {
                         protocol_take_rate: rng.gen::<u8>(),
                         added_borrow_weight_bps: rng.gen::<u64>(),
                         reserve_type: ReserveType::from_u8(rng.gen::<u8>() % 2).unwrap(),
-                        attributed_borrow_limit: rng.gen()
+                        attributed_borrow_limit: rng.gen(),
                     },
                 };
 
@@ -1951,7 +1951,7 @@ mod test {
                         protocol_take_rate: rng.gen::<u8>(),
                         added_borrow_weight_bps: rng.gen::<u64>(),
                         reserve_type: ReserveType::from_u8(rng.gen::<u8>() % 2).unwrap(),
-                        attributed_borrow_limit: rng.gen()
+                        attributed_borrow_limit: rng.gen(),
                     },
                     rate_limiter_config: RateLimiterConfig {
                         window_duration: rng.gen::<u64>(),

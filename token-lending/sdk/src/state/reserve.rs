@@ -904,7 +904,7 @@ pub struct ReserveConfig {
     /// Type of the reserve (Regular, Isolated)
     pub reserve_type: ReserveType,
     /// Attributed Borrow limit in USD
-    pub attributed_borrow_limit: u64
+    pub attributed_borrow_limit: u64,
 }
 
 /// validates reserve configs

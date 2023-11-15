@@ -32,7 +32,10 @@ use solana_program::{
         Sysvar,
     },
 };
-use solend_sdk::{state::{LendingMarketMetadata, RateLimiter, RateLimiterConfig, ReserveType}, math::SaturatingSub};
+use solend_sdk::{
+    math::SaturatingSub,
+    state::{LendingMarketMetadata, RateLimiter, RateLimiterConfig, ReserveType},
+};
 use solend_sdk::{switchboard_v2_devnet, switchboard_v2_mainnet};
 use spl_token::state::Mint;
 use std::{cmp::min, result::Result};
@@ -1079,7 +1082,7 @@ fn process_refresh_obligation(program_id: &Pubkey, accounts: &[AccountInfo]) -> 
     let deposit_infos = &mut accounts.iter().skip(1);
 
     // attributed borrow calculation
-    for (index, collateral) in obligation.deposits.iter_mut().enumerate() {
+    for (_index, collateral) in obligation.deposits.iter_mut().enumerate() {
         let deposit_reserve_info = next_account_info(deposit_infos)?;
         let mut deposit_reserve = Reserve::unpack(&deposit_reserve_info.data.borrow())?;
 

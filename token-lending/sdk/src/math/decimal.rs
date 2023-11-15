@@ -313,4 +313,16 @@ mod test {
             "0.000000000000000001"
         );
     }
+
+    #[test]
+    fn test_saturating_sub() {
+        assert_eq!(
+            Decimal::from(1u64).saturating_sub(Decimal::from(2u64)),
+            Decimal::zero()
+        );
+        assert_eq!(
+            Decimal::from(2u64).saturating_sub(Decimal::from(1u64)),
+            Decimal::one()
+        );
+    }
 }
