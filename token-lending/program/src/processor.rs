@@ -1742,7 +1742,7 @@ fn process_borrow_obligation_liquidity(
         let mut reserve = Reserve::unpack(&deposit_reserve_info.data.borrow())?;
 
         // edge case. if the deposit reserve == borrow reserve, we need to use the already loaded
-        // borrow reserve instead of unpacking it again, otherwise we'll lose data.
+        // borrow reserve instead of unpacking it again, otherwise we'll lose prior changes
         let deposit_reserve = if deposit_reserve_info.key != borrow_reserve_info.key {
             &mut reserve
         } else {
