@@ -1016,7 +1016,7 @@ impl Info<LendingMarket> {
             .await;
         test.process_transaction(&refresh_ixs, None).await.unwrap();
 
-        let mut instructions = vec![ComputeBudgetInstruction::set_compute_unit_limit(60_000)];
+        let mut instructions = vec![ComputeBudgetInstruction::set_compute_unit_limit(80_000)];
         instructions.push(borrow_obligation_liquidity(
             solend_program::id(),
             liquidity_amount,
@@ -1028,6 +1028,7 @@ impl Info<LendingMarket> {
             obligation.pubkey,
             self.pubkey,
             user.keypair.pubkey(),
+            obligation.account.deposits.iter().map(|d| d.deposit_reserve).collect(),
             host_fee_receiver_pubkey,
         ));
 

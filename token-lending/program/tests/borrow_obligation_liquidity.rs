@@ -177,6 +177,11 @@ async fn test_success() {
     let lending_market_post = test
         .load_account::<LendingMarket>(lending_market.pubkey)
         .await;
+
+    let borrow_value = Decimal::from(10 * (4 * LAMPORTS_PER_SOL + 400))
+        .try_div(Decimal::from(1_000_000_000_u64))
+        .unwrap();
+
     assert_eq!(
         lending_market_post.account,
         LendingMarket {
@@ -194,6 +199,21 @@ async fn test_success() {
             },
             ..lending_market.account
         }
+    );
+
+    let usdc_reserve_post = test.load_account::<Reserve>(usdc_reserve.pubkey).await;
+    assert_eq!(
+        usdc_reserve_post.account,
+        Reserve {
+            last_update: LastUpdate {
+                slot: 1000,
+                stale: false,
+            },
+            attributed_borrow_value: borrow_value,
+            ..usdc_reserve.account
+        },
+        "{:#?}",
+        usdc_reserve_post,
     );
 
     let wsol_reserve_post = test.load_account::<Reserve>(wsol_reserve.pubkey).await;
@@ -232,6 +252,10 @@ async fn test_success() {
                 slot: 1000,
                 stale: true
             },
+            deposits: vec![ObligationCollateral {
+                attributed_borrow_value: borrow_value,
+                ..obligation.account.deposits[0]
+            }],
             borrows: vec![ObligationLiquidity {
                 borrow_reserve: wsol_reserve.pubkey,
                 borrowed_amount_wads: Decimal::from(4 * LAMPORTS_PER_SOL + 400),

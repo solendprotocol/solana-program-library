@@ -1440,6 +1440,7 @@ pub fn borrow_obligation_liquidity(
     obligation_pubkey: Pubkey,
     lending_market_pubkey: Pubkey,
     obligation_owner_pubkey: Pubkey,
+    collateral_reserves: Vec<Pubkey>,
     host_fee_receiver_pubkey: Option<Pubkey>,
 ) -> Instruction {
     let (lending_market_authority_pubkey, _bump_seed) = Pubkey::find_program_address(
@@ -1457,6 +1458,10 @@ pub fn borrow_obligation_liquidity(
         AccountMeta::new_readonly(obligation_owner_pubkey, true),
         AccountMeta::new_readonly(spl_token::id(), false),
     ];
+    for collateral_reserve in collateral_reserves {
+        accounts.push(AccountMeta::new(collateral_reserve, false));
+    }
+
     if let Some(host_fee_receiver_pubkey) = host_fee_receiver_pubkey {
         accounts.push(AccountMeta::new(host_fee_receiver_pubkey, false));
     }
