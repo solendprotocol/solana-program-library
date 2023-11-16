@@ -207,7 +207,6 @@ async fn test_calculations() {
         .await
         .unwrap();
 
-
     // check both reserves before refresh, since the borrow attribution values should have been
     // updated
     {

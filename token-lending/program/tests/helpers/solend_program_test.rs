@@ -1009,7 +1009,12 @@ impl Info<LendingMarket> {
             obligation.pubkey,
             self.pubkey,
             user.keypair.pubkey(),
-            obligation.account.deposits.iter().map(|d| d.deposit_reserve).collect(),
+            obligation
+                .account
+                .deposits
+                .iter()
+                .map(|d| d.deposit_reserve)
+                .collect(),
             host_fee_receiver_pubkey,
         ));
 
