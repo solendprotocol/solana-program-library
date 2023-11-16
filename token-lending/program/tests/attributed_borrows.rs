@@ -1,7 +1,13 @@
 #![cfg(feature = "test-bpf")]
 
 use crate::solend_program_test::custom_scenario;
+use solana_sdk::instruction::InstructionError;
+use solana_sdk::transaction::TransactionError;
+use solend_program::math::TryAdd;
+use solend_program::state::LastUpdate;
 use solend_program::state::Reserve;
+use solend_sdk::error::LendingError;
+use solend_sdk::state::ReserveLiquidity;
 
 use crate::solend_program_test::ObligationArgs;
 use crate::solend_program_test::PriceArgs;
@@ -21,79 +27,80 @@ use solana_program_test::*;
 
 #[tokio::test]
 async fn test_calculations() {
-    let (mut test, lending_market, reserves, obligations, users, _) = custom_scenario(
-        &[
-            ReserveArgs {
-                mint: usdc_mint::id(),
-                config: ReserveConfig {
-                    loan_to_value_ratio: 80,
-                    liquidation_threshold: 81,
-                    max_liquidation_threshold: 82,
-                    fees: ReserveFees {
-                        host_fee_percentage: 0,
-                        ..ReserveFees::default()
+    let (mut test, lending_market, reserves, obligations, users, lending_market_owner) =
+        custom_scenario(
+            &[
+                ReserveArgs {
+                    mint: usdc_mint::id(),
+                    config: ReserveConfig {
+                        loan_to_value_ratio: 80,
+                        liquidation_threshold: 81,
+                        max_liquidation_threshold: 82,
+                        fees: ReserveFees {
+                            host_fee_percentage: 0,
+                            ..ReserveFees::default()
+                        },
+                        optimal_borrow_rate: 0,
+                        max_borrow_rate: 0,
+                        ..test_reserve_config()
                     },
-                    optimal_borrow_rate: 0,
-                    max_borrow_rate: 0,
-                    ..test_reserve_config()
-                },
-                liquidity_amount: 100_000 * FRACTIONAL_TO_USDC,
-                price: PriceArgs {
-                    price: 10,
-                    conf: 0,
-                    expo: -1,
-                    ema_price: 10,
-                    ema_conf: 1,
-                },
-            },
-            ReserveArgs {
-                mint: wsol_mint::id(),
-                config: ReserveConfig {
-                    loan_to_value_ratio: 80,
-                    liquidation_threshold: 81,
-                    max_liquidation_threshold: 82,
-                    fees: ReserveFees {
-                        host_fee_percentage: 0,
-                        ..ReserveFees::default()
+                    liquidity_amount: 100_000 * FRACTIONAL_TO_USDC,
+                    price: PriceArgs {
+                        price: 10,
+                        conf: 0,
+                        expo: -1,
+                        ema_price: 10,
+                        ema_conf: 1,
                     },
-                    optimal_borrow_rate: 0,
-                    max_borrow_rate: 0,
-                    ..test_reserve_config()
                 },
-                liquidity_amount: 100 * LAMPORTS_PER_SOL,
-                price: PriceArgs {
-                    price: 10,
-                    conf: 0,
-                    expo: 0,
-                    ema_price: 10,
-                    ema_conf: 0,
+                ReserveArgs {
+                    mint: wsol_mint::id(),
+                    config: ReserveConfig {
+                        loan_to_value_ratio: 80,
+                        liquidation_threshold: 81,
+                        max_liquidation_threshold: 82,
+                        fees: ReserveFees {
+                            host_fee_percentage: 0,
+                            ..ReserveFees::default()
+                        },
+                        optimal_borrow_rate: 0,
+                        max_borrow_rate: 0,
+                        ..test_reserve_config()
+                    },
+                    liquidity_amount: 100 * LAMPORTS_PER_SOL,
+                    price: PriceArgs {
+                        price: 10,
+                        conf: 0,
+                        expo: 0,
+                        ema_price: 10,
+                        ema_conf: 0,
+                    },
                 },
-            },
-        ],
-        &[
-            ObligationArgs {
-                deposits: vec![
-                    (usdc_mint::id(), 80 * FRACTIONAL_TO_USDC),
-                    (wsol_mint::id(), 2 * LAMPORTS_PER_SOL),
-                ],
-                borrows: vec![
-                    (usdc_mint::id(), 10 * FRACTIONAL_TO_USDC),
-                    (wsol_mint::id(), LAMPORTS_PER_SOL),
-                ],
-            },
-            ObligationArgs {
-                deposits: vec![
-                    (usdc_mint::id(), 400 * FRACTIONAL_TO_USDC),
-                    (wsol_mint::id(), 10 * LAMPORTS_PER_SOL),
-                ],
-                borrows: vec![
-                    (usdc_mint::id(), 100 * FRACTIONAL_TO_USDC),
-                    (wsol_mint::id(), 2 * LAMPORTS_PER_SOL),
-                ],
-            },
-        ],
-    )
-    .await;
+            ],
+            &[
+                ObligationArgs {
+                    deposits: vec![
+                        (usdc_mint::id(), 80 * FRACTIONAL_TO_USDC),
+                        (wsol_mint::id(), 2 * LAMPORTS_PER_SOL),
+                    ],
+                    borrows: vec![
+                        (usdc_mint::id(), 10 * FRACTIONAL_TO_USDC),
+                        (wsol_mint::id(), LAMPORTS_PER_SOL),
+                    ],
+                },
+                ObligationArgs {
+                    deposits: vec![
+                        (usdc_mint::id(), 400 * FRACTIONAL_TO_USDC),
+                        (wsol_mint::id(), 10 * LAMPORTS_PER_SOL),
+                    ],
+                    borrows: vec![
+                        (usdc_mint::id(), 100 * FRACTIONAL_TO_USDC),
+                        (wsol_mint::id(), 2 * LAMPORTS_PER_SOL),
+                    ],
+                },
+            ],
+        )
+        .await;
 
     // check initial borrow attribution values
     // obligation 0
@@ -131,7 +138,63 @@ async fn test_calculations() {
         Decimal::from(28u64)
     );
 
-    // borrow another 10 usd from obligation 0
+    // change borrow attribution limit, check that it's applied
+    lending_market
+        .update_reserve_config(
+            &mut test,
+            &lending_market_owner,
+            &reserves[0],
+            ReserveConfig {
+                attributed_borrow_limit: 113,
+                ..reserves[0].account.config
+            },
+            reserves[0].account.rate_limiter.config,
+            None,
+        )
+        .await
+        .unwrap();
+
+    // attempt to borrow another 10 usd from obligation 0, this should fail
+    let err = lending_market
+        .borrow_obligation_liquidity(
+            &mut test,
+            &reserves[0],
+            &obligations[0],
+            &users[0],
+            None,
+            10 * FRACTIONAL_TO_USDC,
+        )
+        .await
+        .unwrap_err()
+        .unwrap();
+
+    assert_eq!(
+        err,
+        TransactionError::InstructionError(
+            1,
+            InstructionError::Custom(LendingError::BorrowTooLarge as u32)
+        )
+    );
+
+    // change borrow attribution limit so that the borrow will succeed
+    lending_market
+        .update_reserve_config(
+            &mut test,
+            &lending_market_owner,
+            &reserves[0],
+            ReserveConfig {
+                attributed_borrow_limit: 120,
+                ..reserves[0].account.config
+            },
+            reserves[0].account.rate_limiter.config,
+            None,
+        )
+        .await
+        .unwrap();
+
+    test.advance_clock_by_slots(1).await;
+
+    // attempt to borrow another 10 usd from obligation 0, this should pass now
     lending_market
         .borrow_obligation_liquidity(
             &mut test,
@@ -144,7 +207,49 @@ async fn test_calculations() {
         .await
         .unwrap();
 
-    test.advance_clock_by_slots(1).await;
+
+    // check both reserves before refresh, since the borrow attribution values should have been
+    // updated
+    {
+        let usdc_reserve = reserves[0].account.clone();
+        let usdc_reserve_post = test.load_account::<Reserve>(reserves[0].pubkey).await;
+        let expected_usdc_reserve_post = Reserve {
+            last_update: LastUpdate {
+                slot: 1001,
+                stale: true,
+            },
+            liquidity: ReserveLiquidity {
+                available_amount: usdc_reserve.liquidity.available_amount - 10 * FRACTIONAL_TO_USDC,
+                borrowed_amount_wads: usdc_reserve
+                    .liquidity
+                    .borrowed_amount_wads
+                    .try_add(Decimal::from(10 * FRACTIONAL_TO_USDC))
+                    .unwrap(),
+                ..usdc_reserve.liquidity
+            },
+            rate_limiter: {
+                let mut rate_limiter = usdc_reserve.rate_limiter;
+                rate_limiter
+                    .update(1000, Decimal::from(10 * FRACTIONAL_TO_USDC))
+                    .unwrap();
+
+                rate_limiter
+            },
+            attributed_borrow_value: Decimal::from(120u64),
+            config: ReserveConfig {
+                attributed_borrow_limit: 120,
+                ..usdc_reserve.config
+            },
+            ..usdc_reserve
+        };
+        assert_eq!(usdc_reserve_post.account, expected_usdc_reserve_post);
+
+        let wsol_reserve_post = test.load_account::<Reserve>(reserves[1].pubkey).await;
+        assert_eq!(
+            wsol_reserve_post.account.attributed_borrow_value,
+            Decimal::from(30u64)
+        );
+    }
 
     lending_market
         .refresh_obligation(&mut test, &obligations[0])
