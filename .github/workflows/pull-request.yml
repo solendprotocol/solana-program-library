@@ -79,7 +79,7 @@ jobs:
           args: --workspace --all-targets -- --deny=warnings
 
   cargo-build-test:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-latest-16-cores
     steps:
       - uses: actions/checkout@v2
 
@@ -126,7 +126,7 @@ jobs:
         run: ./ci/cargo-build-test.sh
 
   cargo-coverage:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-latest-16-cores
     steps:
       - uses: actions/checkout@v2
 
