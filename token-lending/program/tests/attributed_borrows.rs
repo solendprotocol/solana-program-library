@@ -2,8 +2,7 @@
 
 use crate::solend_program_test::custom_scenario;
 use crate::solend_program_test::User;
-use crate::tokio::time::sleep;
-use crate::tokio::time::Duration;
+
 use log::info;
 use solana_sdk::instruction::InstructionError;
 use solana_sdk::transaction::TransactionError;
@@ -321,7 +320,7 @@ async fn benchmark() {
         borrows: vec![],
     };
 
-    let (mut test, lending_market, reserves, obligations, mut users, lending_market_owner) =
+    let (mut test, lending_market, reserves, obligations, mut users, _lending_market_owner) =
         custom_scenario(&reserve_args, &[obligation_args]).await;
 
     let user = User::new_with_balances(
