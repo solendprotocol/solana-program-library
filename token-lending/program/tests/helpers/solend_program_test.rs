@@ -664,6 +664,7 @@ impl User {
     }
 }
 
+#[derive(Debug, Clone)]
 pub struct PriceArgs {
     pub price: i64,
     pub conf: u64,
@@ -975,7 +976,7 @@ impl Info<LendingMarket> {
             Err(e) => return Err(e),
         };
 
-        let mut instructions = vec![ComputeBudgetInstruction::set_compute_unit_limit(80_000)];
+        let mut instructions = vec![ComputeBudgetInstruction::set_compute_unit_limit(1_000_000)];
         instructions.push(refresh_reserve_instructions.last().unwrap().clone());
 
         test.process_transaction(&instructions, None).await
@@ -997,7 +998,7 @@ impl Info<LendingMarket> {
             .await;
         test.process_transaction(&refresh_ixs, None).await.unwrap();
 
-        let mut instructions = vec![ComputeBudgetInstruction::set_compute_unit_limit(80_000)];
+        let mut instructions = vec![ComputeBudgetInstruction::set_compute_unit_limit(1_000_000)];
         instructions.push(borrow_obligation_liquidity(
             solend_program::id(),
             liquidity_amount,
@@ -1665,6 +1666,7 @@ pub async fn scenario_1(
     )
 }
 
+#[derive(Debug, Clone)]
 pub struct ReserveArgs {
     pub mint: Pubkey,
     pub config: ReserveConfig,
@@ -1689,9 +1691,17 @@ pub async fn custom_scenario(
     User,
 ) {
     let mut test = SolendProgramTest::start_new().await;
-    let mints_and_liquidity_amounts = reserve_args
-        .iter()
-        .map(|reserve_arg| (&reserve_arg.mint, reserve_arg.liquidity_amount))
+    let mut mints_and_liquidity_amounts = HashMap::new();
+    for arg in reserve_args {
+        mints_and_liquidity_amounts
+            .entry(&arg.mint)
+            .and_modify(|e| *e += arg.liquidity_amount)
+            .or_insert(arg.liquidity_amount);
+    }
+
+    let mints_and_liquidity_amounts = mints_and_liquidity_amounts
+        .into_iter()
+        .map(|(mint, liquidity_amount)| (mint, liquidity_amount))
         .collect::<Vec<_>>();
 
     let lending_market_owner =
