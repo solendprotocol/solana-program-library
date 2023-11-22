@@ -32,6 +32,7 @@ use solana_program::{
         Sysvar,
     },
 };
+use solend_sdk::state::ObligationCollateral;
 use solend_sdk::{
     oracles::{
         get_oracle_type, get_pyth_price_unchecked, validate_pyth_price_account_info, OracleType,
@@ -1146,10 +1147,42 @@ fn process_refresh_obligation(program_id: &Pubkey, accounts: &[AccountInfo]) -> 
 
     obligation.last_update.update_slot(clock.slot);
 
-    let deposit_infos = &mut accounts.iter().skip(1);
+    update_borrow_attribution_values(&mut obligation, &accounts[1..])?;
 
-    // attributed borrow calculation
-    for (_index, collateral) in obligation.deposits.iter_mut().enumerate() {
+    // move the ObligationLiquidity with the max borrow weight to the front
+    if let Some((_, max_borrow_weight_index)) = max_borrow_weight {
+        obligation.borrows.swap(0, max_borrow_weight_index);
+    }
+
+    // filter out ObligationCollaterals and ObligationLiquiditys with an amount of zero
+    obligation
+        .deposits
+        .retain(|collateral| collateral.deposited_amount > 0);
+    obligation
+        .borrows
+        .retain(|liquidity| liquidity.borrowed_amount_wads > Decimal::zero());
+
+    Obligation::pack(obligation, &mut obligation_info.data.borrow_mut())?;
+
+    Ok(())
+}
+
+/// This function updates the borrow attribution value on the ObligationCollateral and
+/// the reserve.
+///
+/// Prerequisites:
+/// - the collateral's market value must be refreshed
+/// - the obligation's deposited_value must be refreshed
+/// - the obligation's borrowed_value must be refreshed
+///
+/// Note that this function packs and unpacks deposit reserves.
+fn update_borrow_attribution_values(
+    obligation: &mut Obligation,
+    deposit_reserve_infos: &[AccountInfo],
+) -> ProgramResult {
+    let deposit_infos = &mut deposit_reserve_infos.iter();
+
+    for collateral in obligation.deposits.iter_mut() {
         let deposit_reserve_info = next_account_info(deposit_infos)?;
         let mut deposit_reserve = Reserve::unpack(&deposit_reserve_info.data.borrow())?;
 
@@ -1167,11 +1200,7 @@ fn process_refresh_obligation(program_id: &Pubkey, accounts: &[AccountInfo]) -> 
             collateral.attributed_borrow_value = collateral
                 .market_value
                 .try_mul(obligation.borrowed_value)?
-                .try_div(obligation.deposited_value)
-                .map_err(|e| {
-                    msg!("div failed");
-                    e
-                })?;
+                .try_div(obligation.deposited_value)?
         } else {
             collateral.attributed_borrow_value = Decimal::zero();
         }
@@ -1180,23 +1209,19 @@ fn process_refresh_obligation(program_id: &Pubkey, accounts: &[AccountInfo]) -> 
             .attributed_borrow_value
             .try_add(collateral.attributed_borrow_value)?;
 
+        if deposit_reserve.attributed_borrow_value
+            > Decimal::from(deposit_reserve.config.attributed_borrow_limit)
+        {
+            msg!(
+                "Attributed borrow value is over the limit for reserve {} and mint {}",
+                deposit_reserve_info.key,
+                deposit_reserve.liquidity.mint_pubkey
+            );
+            return Err(LendingError::InvalidAmount.into());
+        }
+
         Reserve::pack(deposit_reserve, &mut deposit_reserve_info.data.borrow_mut())?;
     }
-
-    // move the ObligationLiquidity with the max borrow weight to the front
-    if let Some((_, max_borrow_weight_index)) = max_borrow_weight {
-        obligation.borrows.swap(0, max_borrow_weight_index);
-    }
-
-    // filter out ObligationCollaterals and ObligationLiquiditys with an amount of zero
-    obligation
-        .deposits
-        .retain(|collateral| collateral.deposited_amount > 0);
-    obligation
-        .borrows
-        .retain(|liquidity| liquidity.borrowed_amount_wads > Decimal::zero());
-
-    Obligation::pack(obligation, &mut obligation_info.data.borrow_mut())?;
 
     Ok(())
 }
