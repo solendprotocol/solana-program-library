@@ -1188,7 +1188,7 @@ impl Info<LendingMarket> {
 
         test.process_transaction(
             &[
-                ComputeBudgetInstruction::set_compute_unit_limit(70_000),
+                ComputeBudgetInstruction::set_compute_unit_limit(100_000),
                 withdraw_obligation_collateral_and_redeem_reserve_collateral(
                     solend_program::id(),
                     collateral_amount,
@@ -1204,6 +1204,12 @@ impl Info<LendingMarket> {
                     withdraw_reserve.account.liquidity.supply_pubkey,
                     user.keypair.pubkey(),
                     user.keypair.pubkey(),
+                    obligation
+                        .account
+                        .deposits
+                        .iter()
+                        .map(|d| d.deposit_reserve)
+                        .collect(),
                 ),
             ],
             Some(&[&user.keypair]),
@@ -1226,7 +1232,7 @@ impl Info<LendingMarket> {
 
         test.process_transaction(
             &[
-                ComputeBudgetInstruction::set_compute_unit_limit(40_000),
+                ComputeBudgetInstruction::set_compute_unit_limit(100_000),
                 withdraw_obligation_collateral(
                     solend_program::id(),
                     collateral_amount,
@@ -1237,6 +1243,12 @@ impl Info<LendingMarket> {
                     obligation.pubkey,
                     self.pubkey,
                     user.keypair.pubkey(),
+                    obligation
+                        .account
+                        .deposits
+                        .iter()
+                        .map(|d| d.deposit_reserve)
+                        .collect(),
                 ),
             ],
             Some(&[&user.keypair]),

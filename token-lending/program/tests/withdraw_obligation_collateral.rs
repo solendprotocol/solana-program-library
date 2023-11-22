@@ -1,7 +1,9 @@
 #![cfg(feature = "test-bpf")]
 
+use solend_program::math::TrySub;
 mod helpers;
 
+use solend_sdk::math::Decimal;
 use crate::solend_program_test::scenario_1;
 use helpers::solend_program_test::{BalanceChecker, TokenBalanceChange};
 use helpers::*;
@@ -58,9 +60,11 @@ async fn test_success_withdraw_fixed_amount() {
             deposits: [ObligationCollateral {
                 deposit_reserve: usdc_reserve.pubkey,
                 deposited_amount: 100_000_000_000 - 1_000_000,
+                market_value: Decimal::from(99_999u64),
                 ..obligation.account.deposits[0]
             }]
             .to_vec(),
+            deposited_value: Decimal::from(99_999u64),
             ..obligation.account
         }
     );
@@ -121,9 +125,11 @@ async fn test_success_withdraw_max() {
             deposits: [ObligationCollateral {
                 deposit_reserve: usdc_reserve.pubkey,
                 deposited_amount: expected_remaining_collateral,
+                market_value: Decimal::from(200u64),
                 ..obligation.account.deposits[0]
             }]
             .to_vec(),
+            deposited_value: Decimal::from(200u64),
             ..obligation.account
         }
     );

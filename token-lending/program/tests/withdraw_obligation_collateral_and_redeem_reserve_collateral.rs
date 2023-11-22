@@ -141,9 +141,11 @@ async fn test_success() {
             deposits: [ObligationCollateral {
                 deposit_reserve: usdc_reserve.pubkey,
                 deposited_amount: 200 * FRACTIONAL_TO_USDC,
+                market_value: Decimal::from(200u64),
                 ..obligation.account.deposits[0]
             }]
             .to_vec(),
+            deposited_value: Decimal::from(200u64),
             ..obligation.account
         }
     );
