@@ -1361,7 +1361,7 @@ pub fn withdraw_obligation_collateral(
     obligation_pubkey: Pubkey,
     lending_market_pubkey: Pubkey,
     obligation_owner_pubkey: Pubkey,
-    collateral_reserves: Vec<Pubkey>
+    collateral_reserves: Vec<Pubkey>,
 ) -> Instruction {
     let (lending_market_authority_pubkey, _bump_seed) = Pubkey::find_program_address(
         &[&lending_market_pubkey.to_bytes()[..PUBKEY_BYTES]],
