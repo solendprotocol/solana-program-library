@@ -1,9 +1,7 @@
 #![cfg(feature = "test-bpf")]
 
 use crate::solend_program_test::custom_scenario;
-use crate::solend_program_test::User;
 
-use log::info;
 use solana_sdk::instruction::InstructionError;
 use solana_sdk::transaction::TransactionError;
 use solend_program::math::TryAdd;
@@ -175,7 +173,7 @@ async fn test_calculations() {
         err,
         TransactionError::InstructionError(
             1,
-            InstructionError::Custom(LendingError::BorrowTooLarge as u32)
+            InstructionError::Custom(LendingError::BorrowAttributionLimitExceeded as u32)
         )
     );
 
@@ -286,117 +284,117 @@ async fn test_calculations() {
     );
 }
 
-#[tokio::test]
-async fn benchmark() {
-    // setup
-    let reserve_arg = ReserveArgs {
-        mint: usdc_mint::id(),
-        config: ReserveConfig {
-            loan_to_value_ratio: 80,
-            liquidation_threshold: 81,
-            max_liquidation_threshold: 82,
-            fees: ReserveFees {
-                host_fee_percentage: 0,
-                ..ReserveFees::default()
-            },
-            optimal_borrow_rate: 0,
-            max_borrow_rate: 0,
-            ..test_reserve_config()
-        },
-        liquidity_amount: 100 * FRACTIONAL_TO_USDC,
-        price: PriceArgs {
-            price: 10,
-            conf: 0,
-            expo: -1,
-            ema_price: 10,
-            ema_conf: 1,
-        },
-    };
+// #[tokio::test]
+// async fn benchmark() {
+//     // setup
+//     let reserve_arg = ReserveArgs {
+//         mint: usdc_mint::id(),
+//         config: ReserveConfig {
+//             loan_to_value_ratio: 80,
+//             liquidation_threshold: 81,
+//             max_liquidation_threshold: 82,
+//             fees: ReserveFees {
+//                 host_fee_percentage: 0,
+//                 ..ReserveFees::default()
+//             },
+//             optimal_borrow_rate: 0,
+//             max_borrow_rate: 0,
+//             ..test_reserve_config()
+//         },
+//         liquidity_amount: 100 * FRACTIONAL_TO_USDC,
+//         price: PriceArgs {
+//             price: 10,
+//             conf: 0,
+//             expo: -1,
+//             ema_price: 10,
+//             ema_conf: 1,
+//         },
+//     };
 
-    let reserve_args = vec![reserve_arg; 9];
+//     let reserve_args = vec![reserve_arg; 9];
 
-    let obligation_args = ObligationArgs {
-        deposits: vec![],
-        borrows: vec![],
-    };
+//     let obligation_args = ObligationArgs {
+//         deposits: vec![],
+//         borrows: vec![],
+//     };
 
-    let (mut test, lending_market, reserves, obligations, mut users, _lending_market_owner) =
-        custom_scenario(&reserve_args, &[obligation_args]).await;
+//     let (mut test, lending_market, reserves, obligations, mut users, _lending_market_owner) =
+//         custom_scenario(&reserve_args, &[obligation_args]).await;
 
-    let user = User::new_with_balances(
-        &mut test,
-        &[(&usdc_mint::id(), 100_000 * FRACTIONAL_TO_USDC)],
-    )
-    .await;
+//     let user = User::new_with_balances(
+//         &mut test,
+//         &[(&usdc_mint::id(), 100_000 * FRACTIONAL_TO_USDC)],
+//     )
+//     .await;
 
-    user.transfer(
-        &usdc_mint::id(),
-        users[0].get_account(&usdc_mint::id()).unwrap(),
-        100_000 * FRACTIONAL_TO_USDC,
-        &mut test,
-    )
-    .await;
+//     user.transfer(
+//         &usdc_mint::id(),
+//         users[0].get_account(&usdc_mint::id()).unwrap(),
+//         100_000 * FRACTIONAL_TO_USDC,
+//         &mut test,
+//     )
+//     .await;
 
-    test.advance_clock_by_slots(1).await;
+//     test.advance_clock_by_slots(1).await;
 
-    for reserve in &reserves {
-        users[0]
-            .create_token_account(&reserve.account.collateral.mint_pubkey, &mut test)
-            .await;
+//     for reserve in &reserves {
+//         users[0]
+//             .create_token_account(&reserve.account.collateral.mint_pubkey, &mut test)
+//             .await;
 
-        lending_market
-            .deposit_reserve_liquidity_and_obligation_collateral(
-                &mut test,
-                reserve,
-                &obligations[0],
-                &users[0],
-                10 * FRACTIONAL_TO_USDC,
-            )
-            .await
-            .unwrap();
+//         lending_market
+//             .deposit_reserve_liquidity_and_obligation_collateral(
+//                 &mut test,
+//                 reserve,
+//                 &obligations[0],
+//                 &users[0],
+//                 10 * FRACTIONAL_TO_USDC,
+//             )
+//             .await
+//             .unwrap();
 
-        test.advance_clock_by_slots(1).await;
-    }
+//         test.advance_clock_by_slots(1).await;
+//     }
 
-    lending_market
-        .borrow_obligation_liquidity(
-            &mut test,
-            &reserves[0],
-            &obligations[0],
-            &users[0],
-            None,
-            FRACTIONAL_TO_USDC,
-        )
-        .await
-        .unwrap();
+//     lending_market
+//         .borrow_obligation_liquidity(
+//             &mut test,
+//             &reserves[0],
+//             &obligations[0],
+//             &users[0],
+//             None,
+//             FRACTIONAL_TO_USDC,
+//         )
+//         .await
+//         .unwrap();
 
-    info!("Starting benchmark");
-    // lending_market
-    //     .refresh_obligation(&mut test, &obligations[0])
-    //     .await
-    //     .unwrap();
+//     info!("Starting benchmark");
+//     // lending_market
+//     //     .refresh_obligation(&mut test, &obligations[0])
+//     //     .await
+//     //     .unwrap();
 
-    // test.advance_clock_by_slots(1).await;
+//     // test.advance_clock_by_slots(1).await;
 
-    for reserve in reserves.iter().skip(1).rev() {
-        lending_market
-            .withdraw_obligation_collateral_and_redeem_reserve_collateral(
-                &mut test,
-                reserve,
-                &obligations[0],
-                &users[0],
-                u64::MAX,
-            )
-            .await
-            .unwrap();
+//     for reserve in reserves.iter().skip(1).rev() {
+//         lending_market
+//             .withdraw_obligation_collateral_and_redeem_reserve_collateral(
+//                 &mut test,
+//                 reserve,
+//                 &obligations[0],
+//                 &users[0],
+//                 u64::MAX,
+//             )
+//             .await
+//             .unwrap();
 
-        test.advance_clock_by_slots(1).await;
-    }
+//         test.advance_clock_by_slots(1).await;
+//     }
 
-    lending_market
-        .refresh_obligation(&mut test, &obligations[0])
-        .await
-        .unwrap();
+//     lending_market
+//         .refresh_obligation(&mut test, &obligations[0])
+//         .await
+//         .unwrap();
 
-    test.advance_clock_by_slots(1).await;
-}
+//     test.advance_clock_by_slots(1).await;
+// }

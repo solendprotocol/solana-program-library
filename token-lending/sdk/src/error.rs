@@ -203,6 +203,9 @@ pub enum LendingError {
     /// Isolated Tier Asset Violation
     #[error("Isolated Tier Asset Violation")]
     IsolatedTierAssetViolation,
+    /// Borrow Attribution Limit Exceeded
+    #[error("Borrow Attribution Limit Exceeded")]
+    BorrowAttributionLimitExceeded,
 }
 
 impl From<LendingError> for ProgramError {

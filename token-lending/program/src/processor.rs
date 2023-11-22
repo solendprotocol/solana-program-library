@@ -32,7 +32,7 @@ use solana_program::{
         Sysvar,
     },
 };
-use solend_sdk::state::ObligationCollateral;
+
 use solend_sdk::{
     oracles::{
         get_oracle_type, get_pyth_price_unchecked, validate_pyth_price_account_info, OracleType,
@@ -1217,7 +1217,7 @@ fn update_borrow_attribution_values(
                 deposit_reserve_info.key,
                 deposit_reserve.liquidity.mint_pubkey
             );
-            return Err(LendingError::InvalidAmount.into());
+            return Err(LendingError::BorrowAttributionLimitExceeded.into());
         }
 
         Reserve::pack(deposit_reserve, &mut deposit_reserve_info.data.borrow_mut())?;
@@ -1821,55 +1821,15 @@ fn process_borrow_obligation_liquidity(
             })?;
     }
 
-    // check that the borrow doesn't exceed the borrow attribution limit for any of the deposit
-    // reserves
-    let borrow_value_usd = borrow_reserve.market_value(borrow_amount)?;
-    for deposit in obligation.deposits.iter_mut() {
-        let deposit_reserve_info = next_account_info(account_info_iter)?;
-        if *deposit_reserve_info.key != deposit.deposit_reserve {
-            msg!("Deposit reserve provided does not match the deposit reserve in the obligation");
-            return Err(LendingError::InvalidAccountInput.into());
-        }
-
-        let mut reserve = Reserve::unpack(&deposit_reserve_info.data.borrow())?;
-
-        // edge case. if the deposit reserve == borrow reserve, we need to use the already loaded
-        // borrow reserve instead of unpacking it again, otherwise we'll lose prior changes
-        let deposit_reserve = if deposit_reserve_info.key != borrow_reserve_info.key {
-            &mut reserve
-        } else {
-            &mut borrow_reserve
-        };
-
-        // divbyzero not possible since we check that it's nonzero earlier
-        let additional_borrow_attributed = borrow_value_usd
-            .try_mul(deposit.market_value)?
-            .try_div(obligation.deposited_value)?;
-
-        deposit_reserve.attributed_borrow_value = deposit_reserve
-            .attributed_borrow_value
-            .try_add(additional_borrow_attributed)?;
-
-        if deposit_reserve.attributed_borrow_value
-            > Decimal::from(deposit_reserve.config.attributed_borrow_limit)
-        {
-            msg!("Borrow would exceed the deposit reserve's borrow attribution limit");
-            return Err(LendingError::BorrowTooLarge.into());
-        }
-
-        deposit.attributed_borrow_value = deposit
-            .attributed_borrow_value
-            .try_add(additional_borrow_attributed)?;
-
-        if deposit_reserve_info.key != borrow_reserve_info.key {
-            Reserve::pack(reserve, &mut deposit_reserve_info.data.borrow_mut())?;
-        }
-    }
-
     LendingMarket::pack(lending_market, &mut lending_market_info.data.borrow_mut())?;
 
     borrow_reserve.liquidity.borrow(borrow_amount)?;
     borrow_reserve.last_update.mark_stale();
+
+    obligation.borrowed_value = obligation
+        .borrowed_value
+        .try_add(borrow_reserve.market_value(borrow_amount)?)?;
+
     Reserve::pack(*borrow_reserve, &mut borrow_reserve_info.data.borrow_mut())?;
 
     let obligation_liquidity = obligation
@@ -1877,6 +1837,13 @@ fn process_borrow_obligation_liquidity(
 
     obligation_liquidity.borrow(borrow_amount)?;
     obligation.last_update.mark_stale();
+
+    update_borrow_attribution_values(&mut obligation, &accounts[9..])?;
+    // HACK: fast forward through the used account info's
+    for _ in 0..obligation.deposits.len() {
+        next_account_info(account_info_iter)?;
+    }
+
     Obligation::pack(obligation, &mut obligation_info.data.borrow_mut())?;
 
     let mut owner_fee = borrow_fee;
