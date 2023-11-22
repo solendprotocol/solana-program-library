@@ -1,5 +1,6 @@
 #![cfg(feature = "test-bpf")]
 
+use solend_program::math::TryDiv;
 use crate::solend_program_test::custom_scenario;
 
 use solana_sdk::instruction::InstructionError;
@@ -398,3 +399,197 @@ async fn test_calculations() {
 
 //     test.advance_clock_by_slots(1).await;
 // }
+
+#[tokio::test]
+async fn test_withdraw() {
+    let (mut test, lending_market, reserves, obligations, users, lending_market_owner) =
+        custom_scenario(
+            &[
+                ReserveArgs {
+                    mint: usdc_mint::id(),
+                    config: ReserveConfig {
+                        loan_to_value_ratio: 80,
+                        liquidation_threshold: 81,
+                        max_liquidation_threshold: 82,
+                        fees: ReserveFees {
+                            host_fee_percentage: 0,
+                            ..ReserveFees::default()
+                        },
+                        optimal_borrow_rate: 0,
+                        max_borrow_rate: 0,
+                        ..test_reserve_config()
+                    },
+                    liquidity_amount: 100_000 * FRACTIONAL_TO_USDC,
+                    price: PriceArgs {
+                        price: 10,
+                        conf: 0,
+                        expo: -1,
+                        ema_price: 10,
+                        ema_conf: 1,
+                    },
+                },
+                ReserveArgs {
+                    mint: wsol_mint::id(),
+                    config: ReserveConfig {
+                        loan_to_value_ratio: 80,
+                        liquidation_threshold: 81,
+                        max_liquidation_threshold: 82,
+                        fees: ReserveFees {
+                            host_fee_percentage: 0,
+                            ..ReserveFees::default()
+                        },
+                        optimal_borrow_rate: 0,
+                        max_borrow_rate: 0,
+                        ..test_reserve_config()
+                    },
+                    liquidity_amount: 100 * LAMPORTS_PER_SOL,
+                    price: PriceArgs {
+                        price: 10,
+                        conf: 0,
+                        expo: 0,
+                        ema_price: 10,
+                        ema_conf: 0,
+                    },
+                },
+            ],
+            &[ObligationArgs {
+                deposits: vec![
+                    (usdc_mint::id(), 30 * FRACTIONAL_TO_USDC),
+                    (wsol_mint::id(), 2 * LAMPORTS_PER_SOL),
+                ],
+                borrows: vec![(usdc_mint::id(), 10 * FRACTIONAL_TO_USDC)],
+            }],
+        )
+        .await;
+
+    // usd borrow attribution is currently $6
+
+    // change borrow attribution limit
+    lending_market
+        .update_reserve_config(
+            &mut test,
+            &lending_market_owner,
+            &reserves[0],
+            ReserveConfig {
+                attributed_borrow_limit: 6,
+                ..reserves[0].account.config
+            },
+            reserves[0].account.rate_limiter.config,
+            None,
+        )
+        .await
+        .unwrap();
+
+    // attempt to withdraw 1 sol from obligation 0, this should fail
+    let err = lending_market
+        .withdraw_obligation_collateral(
+            &mut test,
+            &reserves[1],
+            &obligations[0],
+            &users[0],
+            LAMPORTS_PER_SOL,
+        )
+        .await
+        .unwrap_err()
+        .unwrap();
+
+    assert_eq!(
+        err,
+        TransactionError::InstructionError(
+            1,
+            InstructionError::Custom(LendingError::BorrowAttributionLimitExceeded as u32)
+        )
+    );
+
+    // change borrow attribution limit so that the borrow will succeed
+    lending_market
+        .update_reserve_config(
+            &mut test,
+            &lending_market_owner,
+            &reserves[0],
+            ReserveConfig {
+                attributed_borrow_limit: 10,
+                ..reserves[0].account.config
+            },
+            reserves[0].account.rate_limiter.config,
+            None,
+        )
+        .await
+        .unwrap();
+
+    test.advance_clock_by_slots(1).await;
+
+    // attempt to withdraw 1 sol from obligation 0, this should pass now
+    lending_market
+        .withdraw_obligation_collateral(
+            &mut test,
+            &reserves[1],
+            &obligations[0],
+            &users[0],
+            LAMPORTS_PER_SOL,
+        )
+        .await
+        .unwrap();
+
+    // check reserve and obligation borrow attribution values
+    {
+        let usdc_reserve_post = test.load_account::<Reserve>(reserves[0].pubkey).await;
+        assert_eq!(
+            usdc_reserve_post.account.attributed_borrow_value,
+            Decimal::from(7500u64).try_div(Decimal::from(1000u64)).unwrap()
+        );
+
+        let wsol_reserve_post = test.load_account::<Reserve>(reserves[1].pubkey).await;
+        assert_eq!(
+            wsol_reserve_post.account.attributed_borrow_value,
+            Decimal::from_percent(250)
+        );
+
+        let obligation_post = test.load_account::<Obligation>(obligations[0].pubkey).await;
+        assert_eq!(
+            obligation_post.account.deposits[0].attributed_borrow_value,
+            Decimal::from(7500u64).try_div(Decimal::from(1000u64)).unwrap()
+        );
+        assert_eq!(
+            obligation_post.account.deposits[1].attributed_borrow_value,
+            Decimal::from(2500u64).try_div(Decimal::from(1000u64)).unwrap()
+        );
+    }
+
+    test.advance_clock_by_slots(1).await;
+
+    // withdraw the rest
+    lending_market
+        .withdraw_obligation_collateral(
+            &mut test,
+            &reserves[1],
+            &obligations[0],
+            &users[0],
+            LAMPORTS_PER_SOL,
+        )
+        .await
+        .unwrap();
+
+    test.advance_clock_by_slots(1).await;
+
+    // check reserve and obligation borrow attribution values
+    {
+        let usdc_reserve_post = test.load_account::<Reserve>(reserves[0].pubkey).await;
+        assert_eq!(
+            usdc_reserve_post.account.attributed_borrow_value,
+            Decimal::from(10u64)
+        );
+
+        let wsol_reserve_post = test.load_account::<Reserve>(reserves[1].pubkey).await;
+        assert_eq!(
+            wsol_reserve_post.account.attributed_borrow_value,
+            Decimal::zero()
+        );
+
+        let obligation_post = test.load_account::<Obligation>(obligations[0].pubkey).await;
+        assert_eq!(
+            obligation_post.account.deposits[0].attributed_borrow_value,
+            Decimal::from(10u64)
+        );
+    }
+}

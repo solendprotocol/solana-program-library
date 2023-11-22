@@ -1312,27 +1312,37 @@ pub fn withdraw_obligation_collateral_and_redeem_reserve_collateral(
     reserve_liquidity_supply_pubkey: Pubkey,
     obligation_owner_pubkey: Pubkey,
     user_transfer_authority_pubkey: Pubkey,
+    collateral_reserves: Vec<Pubkey>,
 ) -> Instruction {
     let (lending_market_authority_pubkey, _bump_seed) = Pubkey::find_program_address(
         &[&lending_market_pubkey.to_bytes()[..PUBKEY_BYTES]],
         &program_id,
     );
+
+    let mut accounts = vec![
+        AccountMeta::new(source_collateral_pubkey, false),
+        AccountMeta::new(destination_collateral_pubkey, false),
+        AccountMeta::new(withdraw_reserve_pubkey, false),
+        AccountMeta::new(obligation_pubkey, false),
+        AccountMeta::new(lending_market_pubkey, false),
+        AccountMeta::new_readonly(lending_market_authority_pubkey, false),
+        AccountMeta::new(destination_liquidity_pubkey, false),
+        AccountMeta::new(reserve_collateral_mint_pubkey, false),
+        AccountMeta::new(reserve_liquidity_supply_pubkey, false),
+        AccountMeta::new_readonly(obligation_owner_pubkey, true),
+        AccountMeta::new_readonly(user_transfer_authority_pubkey, true),
+        AccountMeta::new_readonly(spl_token::id(), false),
+    ];
+
+    accounts.extend(
+        collateral_reserves
+            .into_iter()
+            .map(|pubkey| AccountMeta::new(pubkey, false)),
+    );
+
     Instruction {
         program_id,
-        accounts: vec![
-            AccountMeta::new(source_collateral_pubkey, false),
-            AccountMeta::new(destination_collateral_pubkey, false),
-            AccountMeta::new(withdraw_reserve_pubkey, false),
-            AccountMeta::new(obligation_pubkey, false),
-            AccountMeta::new(lending_market_pubkey, false),
-            AccountMeta::new_readonly(lending_market_authority_pubkey, false),
-            AccountMeta::new(destination_liquidity_pubkey, false),
-            AccountMeta::new(reserve_collateral_mint_pubkey, false),
-            AccountMeta::new(reserve_liquidity_supply_pubkey, false),
-            AccountMeta::new_readonly(obligation_owner_pubkey, true),
-            AccountMeta::new_readonly(user_transfer_authority_pubkey, true),
-            AccountMeta::new_readonly(spl_token::id(), false),
-        ],
+        accounts,
         data: LendingInstruction::WithdrawObligationCollateralAndRedeemReserveCollateral {
             collateral_amount,
         }
@@ -1351,23 +1361,33 @@ pub fn withdraw_obligation_collateral(
     obligation_pubkey: Pubkey,
     lending_market_pubkey: Pubkey,
     obligation_owner_pubkey: Pubkey,
+    collateral_reserves: Vec<Pubkey>
 ) -> Instruction {
     let (lending_market_authority_pubkey, _bump_seed) = Pubkey::find_program_address(
         &[&lending_market_pubkey.to_bytes()[..PUBKEY_BYTES]],
         &program_id,
     );
+
+    let mut accounts = vec![
+        AccountMeta::new(source_collateral_pubkey, false),
+        AccountMeta::new(destination_collateral_pubkey, false),
+        AccountMeta::new_readonly(withdraw_reserve_pubkey, false),
+        AccountMeta::new(obligation_pubkey, false),
+        AccountMeta::new_readonly(lending_market_pubkey, false),
+        AccountMeta::new_readonly(lending_market_authority_pubkey, false),
+        AccountMeta::new_readonly(obligation_owner_pubkey, true),
+        AccountMeta::new_readonly(spl_token::id(), false),
+    ];
+
+    accounts.extend(
+        collateral_reserves
+            .into_iter()
+            .map(|pubkey| AccountMeta::new(pubkey, false)),
+    );
+
     Instruction {
         program_id,
-        accounts: vec![
-            AccountMeta::new(source_collateral_pubkey, false),
-            AccountMeta::new(destination_collateral_pubkey, false),
-            AccountMeta::new_readonly(withdraw_reserve_pubkey, false),
-            AccountMeta::new(obligation_pubkey, false),
-            AccountMeta::new_readonly(lending_market_pubkey, false),
-            AccountMeta::new_readonly(lending_market_authority_pubkey, false),
-            AccountMeta::new_readonly(obligation_owner_pubkey, true),
-            AccountMeta::new_readonly(spl_token::id(), false),
-        ],
+        accounts,
         data: LendingInstruction::WithdrawObligationCollateral { collateral_amount }.pack(),
     }
 }

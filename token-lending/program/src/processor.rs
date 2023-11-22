@@ -1390,6 +1390,7 @@ fn process_withdraw_obligation_collateral(
         clock,
         token_program_id,
         false,
+        &accounts[8..],
     )?;
     Ok(())
 }
@@ -1408,6 +1409,7 @@ fn _withdraw_obligation_collateral<'a>(
     clock: &Clock,
     token_program_id: &AccountInfo<'a>,
     account_for_rate_limiter: bool,
+    deposit_reserve_infos: &[AccountInfo],
 ) -> Result<u64, ProgramError> {
     let lending_market = LendingMarket::unpack(&lending_market_info.data.borrow())?;
     if lending_market_info.owner != program_id {
@@ -1528,8 +1530,26 @@ fn _withdraw_obligation_collateral<'a>(
         return Err(LendingError::WithdrawTooLarge.into());
     }
 
+    let withdraw_value = withdraw_reserve.market_value(
+        withdraw_reserve
+            .collateral_exchange_rate()?
+            .decimal_collateral_to_liquidity(Decimal::from(withdraw_amount))?,
+    )?;
+
+    // update relevant values before updating borrow attribution values
+    obligation.deposited_value = obligation.deposited_value.saturating_sub(withdraw_value);
+
+    obligation.deposits[collateral_index].market_value = obligation.deposits[collateral_index]
+        .market_value
+        .saturating_sub(withdraw_value);
+
+    update_borrow_attribution_values(&mut obligation, deposit_reserve_infos)?;
+
+    // obligation.withdraw must be called after updating borrow attribution values, since we can
+    // lose information if an entire deposit is removed, making the former calculation incorrect
     obligation.withdraw(withdraw_amount, collateral_index)?;
     obligation.last_update.mark_stale();
+
     Obligation::pack(obligation, &mut obligation_info.data.borrow_mut())?;
 
     spl_token_transfer(TokenTransferParams {
@@ -2249,6 +2269,7 @@ fn process_withdraw_obligation_collateral_and_redeem_reserve_liquidity(
         clock,
         token_program_id,
         true,
+        &accounts[12..],
     )?;
 
     _redeem_reserve_collateral(

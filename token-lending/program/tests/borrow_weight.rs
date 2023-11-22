@@ -176,6 +176,8 @@ async fn test_borrow() {
 
     test.advance_clock_by_slots(1).await;
 
+    let obligation = test.load_account::<Obligation>(obligation.pubkey).await;
+
     // max withdraw
     {
         let balance_checker = BalanceChecker::start(&mut test, &[&user]).await;
