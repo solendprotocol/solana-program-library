@@ -1,7 +1,7 @@
 #![cfg(feature = "test-bpf")]
 
-use solend_program::math::TryDiv;
 use crate::solend_program_test::custom_scenario;
+use solend_program::math::TryDiv;
 
 use solana_sdk::instruction::InstructionError;
 use solana_sdk::transaction::TransactionError;
@@ -536,7 +536,9 @@ async fn test_withdraw() {
         let usdc_reserve_post = test.load_account::<Reserve>(reserves[0].pubkey).await;
         assert_eq!(
             usdc_reserve_post.account.attributed_borrow_value,
-            Decimal::from(7500u64).try_div(Decimal::from(1000u64)).unwrap()
+            Decimal::from(7500u64)
+                .try_div(Decimal::from(1000u64))
+                .unwrap()
         );
 
         let wsol_reserve_post = test.load_account::<Reserve>(reserves[1].pubkey).await;
@@ -548,11 +550,15 @@ async fn test_withdraw() {
         let obligation_post = test.load_account::<Obligation>(obligations[0].pubkey).await;
         assert_eq!(
             obligation_post.account.deposits[0].attributed_borrow_value,
-            Decimal::from(7500u64).try_div(Decimal::from(1000u64)).unwrap()
+            Decimal::from(7500u64)
+                .try_div(Decimal::from(1000u64))
+                .unwrap()
         );
         assert_eq!(
             obligation_post.account.deposits[1].attributed_borrow_value,
-            Decimal::from(2500u64).try_div(Decimal::from(1000u64)).unwrap()
+            Decimal::from(2500u64)
+                .try_div(Decimal::from(1000u64))
+                .unwrap()
         );
     }
 
