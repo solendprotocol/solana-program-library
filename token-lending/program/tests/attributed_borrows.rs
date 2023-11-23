@@ -1,6 +1,7 @@
 #![cfg(feature = "test-bpf")]
 
 use crate::solend_program_test::custom_scenario;
+use crate::solend_program_test::User;
 use solend_program::math::TryDiv;
 
 use solana_sdk::instruction::InstructionError;
@@ -598,4 +599,117 @@ async fn test_withdraw() {
             Decimal::from(10u64)
         );
     }
+}
+
+#[tokio::test]
+async fn test_liquidate() {
+    let (mut test, lending_market, reserves, obligations, _users, _lending_market_owner) =
+        custom_scenario(
+            &[
+                ReserveArgs {
+                    mint: usdc_mint::id(),
+                    config: ReserveConfig {
+                        loan_to_value_ratio: 80,
+                        liquidation_threshold: 81,
+                        max_liquidation_threshold: 82,
+                        fees: ReserveFees {
+                            host_fee_percentage: 0,
+                            ..ReserveFees::default()
+                        },
+                        optimal_borrow_rate: 0,
+                        max_borrow_rate: 0,
+                        ..test_reserve_config()
+                    },
+                    liquidity_amount: 100_000 * FRACTIONAL_TO_USDC,
+                    price: PriceArgs {
+                        price: 10,
+                        conf: 0,
+                        expo: -1,
+                        ema_price: 10,
+                        ema_conf: 1,
+                    },
+                },
+                ReserveArgs {
+                    mint: wsol_mint::id(),
+                    config: ReserveConfig {
+                        loan_to_value_ratio: 80,
+                        liquidation_threshold: 81,
+                        max_liquidation_threshold: 82,
+                        fees: ReserveFees {
+                            host_fee_percentage: 0,
+                            ..ReserveFees::default()
+                        },
+                        optimal_borrow_rate: 0,
+                        max_borrow_rate: 0,
+                        ..test_reserve_config()
+                    },
+                    liquidity_amount: 100 * LAMPORTS_PER_SOL,
+                    price: PriceArgs {
+                        price: 10,
+                        conf: 0,
+                        expo: 0,
+                        ema_price: 10,
+                        ema_conf: 0,
+                    },
+                },
+            ],
+            &[ObligationArgs {
+                deposits: vec![(usdc_mint::id(), FRACTIONAL_TO_USDC / 2)],
+                borrows: vec![(wsol_mint::id(), LAMPORTS_PER_SOL / 40)],
+            }],
+        )
+        .await;
+
+    assert_eq!(
+        reserves[0].account.attributed_borrow_value,
+        Decimal::from_percent(25)
+    );
+
+    assert_eq!(
+        obligations[0].account.deposits[0].attributed_borrow_value,
+        Decimal::from_percent(25)
+    );
+
+    let liquidator = User::new_with_balances(
+        &mut test,
+        &[
+            (&wsol_mint::id(), 100 * LAMPORTS_TO_SOL),
+            (&reserves[0].account.collateral.mint_pubkey, 0),
+            (&usdc_mint::id(), 0),
+        ],
+    )
+    .await;
+
+    test.set_price(
+        &wsol_mint::id(),
+        &PriceArgs {
+            price: 20,
+            conf: 0,
+            expo: 0,
+            ema_price: 10,
+            ema_conf: 0,
+        },
+    )
+    .await;
+
+    test.advance_clock_by_slots(1).await;
+
+    // full liquidation
+    lending_market
+        .liquidate_obligation_and_redeem_reserve_collateral(
+            &mut test,
+            &reserves[1],
+            &reserves[0],
+            &obligations[0],
+            &liquidator,
+            u64::MAX,
+        )
+        .await
+        .unwrap();
+
+    let usdc_reserve_post = test.load_account::<Reserve>(reserves[0].pubkey).await;
+    assert_eq!(
+        usdc_reserve_post.account.attributed_borrow_value,
+        Decimal::zero()
+    );
 }
