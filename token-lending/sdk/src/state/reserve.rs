@@ -1575,7 +1575,17 @@ impl Pack for Reserve {
                 } else {
                     Some(Pubkey::new_from_array(*config_extra_oracle_pubkey))
                 },
-                attributed_borrow_limit: u64::from_le_bytes(*config_attributed_borrow_limit),
+                // this field is added in v2.0.3 and we will never set it to zero. only time it'll
+                // be zero is when we upgrade from v2.0.2 to v2.0.3. in that case, the correct
+                // thing to do is set the value to u64::MAX.
+                attributed_borrow_limit: {
+                    let value = u64::from_le_bytes(*config_attributed_borrow_limit);
+                    if value == 0 {
+                        u64::MAX
+                    } else {
+                        value
+                    }
+                },
             },
             rate_limiter: RateLimiter::unpack_from_slice(rate_limiter)?,
             attributed_borrow_value: unpack_decimal(attributed_borrow_value),
