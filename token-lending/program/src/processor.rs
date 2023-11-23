@@ -935,6 +935,7 @@ fn process_refresh_obligation(program_id: &Pubkey, accounts: &[AccountInfo]) -> 
 
     let mut deposited_value = Decimal::zero();
     let mut borrowed_value = Decimal::zero(); // weighted borrow value wrt borrow weights
+    let mut true_borrowed_value = Decimal::zero();
     let mut borrowed_value_upper_bound = Decimal::zero();
     let mut allowed_borrow_value = Decimal::zero();
     let mut unhealthy_borrow_value = Decimal::zero();
@@ -992,7 +993,6 @@ fn process_refresh_obligation(program_id: &Pubkey, accounts: &[AccountInfo]) -> 
 
     let mut borrowing_isolated_asset = false;
     let mut max_borrow_weight = None;
-    let mut true_borrow_value = Decimal::zero();
     for (index, liquidity) in obligation.borrows.iter_mut().enumerate() {
         let borrow_reserve_info = next_account_info(account_info_iter)?;
         if borrow_reserve_info.owner != program_id {
@@ -1057,7 +1057,7 @@ fn process_refresh_obligation(program_id: &Pubkey, accounts: &[AccountInfo]) -> 
             borrowed_value.try_add(market_value.try_mul(borrow_reserve.borrow_weight())?)?;
         borrowed_value_upper_bound = borrowed_value_upper_bound
             .try_add(market_value_upper_bound.try_mul(borrow_reserve.borrow_weight())?)?;
-        true_borrow_value = true_borrow_value.try_add(market_value)?;
+        true_borrowed_value = true_borrowed_value.try_add(market_value)?;
     }
 
     if account_info_iter.peek().is_some() {
@@ -1067,6 +1067,7 @@ fn process_refresh_obligation(program_id: &Pubkey, accounts: &[AccountInfo]) -> 
 
     obligation.deposited_value = deposited_value;
     obligation.borrowed_value = borrowed_value;
+    obligation.true_borrowed_value = true_borrowed_value;
     obligation.borrowed_value_upper_bound = borrowed_value_upper_bound;
     obligation.borrowing_isolated_asset = borrowing_isolated_asset;
 
@@ -1106,7 +1107,7 @@ fn process_refresh_obligation(program_id: &Pubkey, accounts: &[AccountInfo]) -> 
 /// Prerequisites:
 /// - the collateral's market value must be refreshed
 /// - the obligation's deposited_value must be refreshed
-/// - the obligation's borrowed_value must be refreshed
+/// - the obligation's true_borrowed_value must be refreshed
 ///
 /// Note that this function packs and unpacks deposit reserves.
 fn update_borrow_attribution_values(
@@ -1132,7 +1133,7 @@ fn update_borrow_attribution_values(
         if obligation.deposited_value > Decimal::zero() {
             collateral.attributed_borrow_value = collateral
                 .market_value
-                .try_mul(obligation.borrowed_value)?
+                .try_mul(obligation.true_borrowed_value)?
                 .try_div(obligation.deposited_value)?
         } else {
             collateral.attributed_borrow_value = Decimal::zero();
@@ -1779,8 +1780,15 @@ fn process_borrow_obligation_liquidity(
     borrow_reserve.liquidity.borrow(borrow_amount)?;
     borrow_reserve.last_update.mark_stale();
 
-    obligation.borrowed_value = obligation
-        .borrowed_value
+    // updating these fields is needed to a correct borrow attribution value update later
+    obligation.borrowed_value = obligation.borrowed_value.try_add(
+        borrow_reserve
+            .market_value(borrow_amount)?
+            .try_mul(borrow_reserve.borrow_weight())?,
+    )?;
+
+    obligation.true_borrowed_value = obligation
+        .true_borrowed_value
         .try_add(borrow_reserve.market_value(borrow_amount)?)?;
 
     Reserve::pack(borrow_reserve, &mut borrow_reserve_info.data.borrow_mut())?;

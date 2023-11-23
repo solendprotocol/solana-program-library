@@ -268,6 +268,7 @@ async fn test_success() {
             }],
             deposited_value: Decimal::from(100u64),
             borrowed_value: borrow_value,
+            true_borrowed_value: borrow_value,
             allowed_borrow_value: Decimal::from(50u64),
             unhealthy_borrow_value: Decimal::from(55u64),
             ..obligation.account

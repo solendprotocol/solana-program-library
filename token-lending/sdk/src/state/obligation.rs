@@ -40,6 +40,8 @@ pub struct Obligation {
     /// Risk-adjusted market value of borrows.
     /// ie sum(b.borrowed_amount * b.current_spot_price * b.borrow_weight for b in borrows)
     pub borrowed_value: Decimal,
+    /// True borrow value. Ie, not risk adjusted like "borrowed_value"
+    pub true_borrowed_value: Decimal,
     /// Risk-adjusted upper bound market value of borrows.
     /// ie sum(b.borrowed_amount * max(b.current_spot_price, b.smoothed_price) * b.borrow_weight for b in borrows)
     pub borrowed_value_upper_bound: Decimal,
@@ -434,6 +436,7 @@ impl Pack for Obligation {
             borrowed_value_upper_bound,
             borrowing_isolated_asset,
             super_unhealthy_borrow_value,
+            true_borrowed_value,
             _padding,
             deposits_len,
             borrows_len,
@@ -452,7 +455,8 @@ impl Pack for Obligation {
             16,
             1,
             16,
-            31,
+            16,
+            15,
             1,
             1,
             OBLIGATION_COLLATERAL_LEN + (OBLIGATION_LIQUIDITY_LEN * (MAX_OBLIGATION_RESERVES - 1))
@@ -474,6 +478,7 @@ impl Pack for Obligation {
             self.super_unhealthy_borrow_value,
             super_unhealthy_borrow_value,
         );
+        pack_decimal(self.true_borrowed_value, true_borrowed_value);
 
         *deposits_len = u8::try_from(self.deposits.len()).unwrap().to_le_bytes();
         *borrows_len = u8::try_from(self.borrows.len()).unwrap().to_le_bytes();
@@ -537,6 +542,7 @@ impl Pack for Obligation {
             borrowed_value_upper_bound,
             borrowing_isolated_asset,
             super_unhealthy_borrow_value,
+            true_borrowed_value,
             _padding,
             deposits_len,
             borrows_len,
@@ -555,7 +561,8 @@ impl Pack for Obligation {
             16,
             1,
             16,
-            31,
+            16,
+            15,
             1,
             1,
             OBLIGATION_COLLATERAL_LEN + (OBLIGATION_LIQUIDITY_LEN * (MAX_OBLIGATION_RESERVES - 1))
@@ -622,6 +629,7 @@ impl Pack for Obligation {
             borrows,
             deposited_value: unpack_decimal(deposited_value),
             borrowed_value: unpack_decimal(borrowed_value),
+            true_borrowed_value: unpack_decimal(true_borrowed_value),
             borrowed_value_upper_bound: unpack_decimal(borrowed_value_upper_bound),
             allowed_borrow_value: unpack_decimal(allowed_borrow_value),
             unhealthy_borrow_value: unpack_decimal(unhealthy_borrow_value),
@@ -671,6 +679,7 @@ mod test {
                 }],
                 deposited_value: rand_decimal(),
                 borrowed_value: rand_decimal(),
+                true_borrowed_value: rand_decimal(),
                 borrowed_value_upper_bound: rand_decimal(),
                 allowed_borrow_value: rand_decimal(),
                 unhealthy_borrow_value: rand_decimal(),

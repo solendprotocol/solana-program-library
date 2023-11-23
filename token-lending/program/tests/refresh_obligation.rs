@@ -274,6 +274,12 @@ async fn test_success() {
                 .try_div(Decimal::from(LAMPORTS_PER_SOL))
                 .unwrap(),
 
+            true_borrowed_value: new_borrowed_amount_wads
+                .try_mul(Decimal::from(10u64))
+                .unwrap()
+                .try_div(Decimal::from(LAMPORTS_PER_SOL))
+                .unwrap(),
+
             // uses max(10, 11) = 11 for sol price
             borrowed_value_upper_bound: new_borrowed_amount_wads
                 .try_mul(Decimal::from(11u64))
