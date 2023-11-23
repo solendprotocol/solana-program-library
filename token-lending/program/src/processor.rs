@@ -2008,7 +2008,7 @@ fn _liquidate_obligation<'a>(
         return Err(LendingError::ReserveStale.into());
     }
 
-    let withdraw_reserve = Reserve::unpack(&withdraw_reserve_info.data.borrow())?;
+    let mut withdraw_reserve = Reserve::unpack(&withdraw_reserve_info.data.borrow())?;
     if withdraw_reserve_info.owner != program_id {
         msg!("Withdraw reserve provided is not owned by the lending program");
         return Err(LendingError::InvalidAccountOwner.into());
@@ -2121,7 +2121,23 @@ fn _liquidate_obligation<'a>(
 
     repay_reserve.liquidity.repay(repay_amount, settle_amount)?;
     repay_reserve.last_update.mark_stale();
+
     Reserve::pack(repay_reserve, &mut repay_reserve_info.data.borrow_mut())?;
+
+    // if there is a full withdraw here (which can happen on a full liquidation), then the borrow
+    // attribution value needs to be updated on the reserve. note that we can't depend on
+    // refresh_obligation to update this correctly because the ObligationCollateral object will be
+    // deleted after this call.
+    if withdraw_amount == collateral.deposited_amount {
+        withdraw_reserve.attributed_borrow_value = withdraw_reserve
+            .attributed_borrow_value
+            .saturating_sub(collateral.market_value);
+
+        Reserve::pack(
+            withdraw_reserve,
+            &mut withdraw_reserve_info.data.borrow_mut(),
+        )?;
+    }
 
     obligation.repay(settle_amount, liquidity_index)?;
     obligation.withdraw(withdraw_amount, collateral_index)?;
