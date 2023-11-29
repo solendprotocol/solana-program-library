@@ -1081,7 +1081,7 @@ fn process_refresh_obligation(program_id: &Pubkey, accounts: &[AccountInfo]) -> 
 
     obligation.last_update.update_slot(clock.slot);
 
-    update_borrow_attribution_values(&mut obligation, &accounts[1..])?;
+    update_borrow_attribution_values(&mut obligation, &accounts[1..], false)?;
 
     // move the ObligationLiquidity with the max borrow weight to the front
     if let Some((_, max_borrow_weight_index)) = max_borrow_weight {
@@ -1113,6 +1113,7 @@ fn process_refresh_obligation(program_id: &Pubkey, accounts: &[AccountInfo]) -> 
 fn update_borrow_attribution_values(
     obligation: &mut Obligation,
     deposit_reserve_infos: &[AccountInfo],
+    error_if_limit_exceeded: bool,
 ) -> ProgramResult {
     let deposit_infos = &mut deposit_reserve_infos.iter();
 
@@ -1143,8 +1144,9 @@ fn update_borrow_attribution_values(
             .attributed_borrow_value
             .try_add(collateral.attributed_borrow_value)?;
 
-        if deposit_reserve.attributed_borrow_value
-            > Decimal::from(deposit_reserve.config.attributed_borrow_limit)
+        if error_if_limit_exceeded
+            && deposit_reserve.attributed_borrow_value
+                > Decimal::from(deposit_reserve.config.attributed_borrow_limit)
         {
             msg!(
                 "Attributed borrow value is over the limit for reserve {} and mint {}",
@@ -1544,7 +1546,7 @@ fn _withdraw_obligation_collateral<'a>(
         .market_value
         .saturating_sub(withdraw_value);
 
-    update_borrow_attribution_values(&mut obligation, deposit_reserve_infos)?;
+    update_borrow_attribution_values(&mut obligation, deposit_reserve_infos, true)?;
 
     // obligation.withdraw must be called after updating borrow attribution values, since we can
     // lose information if an entire deposit is removed, making the former calculation incorrect
@@ -1799,7 +1801,7 @@ fn process_borrow_obligation_liquidity(
     obligation_liquidity.borrow(borrow_amount)?;
     obligation.last_update.mark_stale();
 
-    update_borrow_attribution_values(&mut obligation, &accounts[9..])?;
+    update_borrow_attribution_values(&mut obligation, &accounts[9..], true)?;
     // HACK: fast forward through the used account info's
     for _ in 0..obligation.deposits.len() {
         next_account_info(account_info_iter)?;

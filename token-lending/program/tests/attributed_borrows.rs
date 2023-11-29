@@ -29,6 +29,144 @@ use helpers::*;
 use solana_program_test::*;
 
 #[tokio::test]
+async fn test_refresh_obligation() {
+    let (mut test, lending_market, reserves, obligations, users, lending_market_owner) =
+        custom_scenario(
+            &[
+                ReserveArgs {
+                    mint: usdc_mint::id(),
+                    config: ReserveConfig {
+                        loan_to_value_ratio: 80,
+                        liquidation_threshold: 81,
+                        max_liquidation_threshold: 82,
+                        fees: ReserveFees {
+                            host_fee_percentage: 0,
+                            ..ReserveFees::default()
+                        },
+                        optimal_borrow_rate: 0,
+                        max_borrow_rate: 0,
+                        ..test_reserve_config()
+                    },
+                    liquidity_amount: 100_000 * FRACTIONAL_TO_USDC,
+                    price: PriceArgs {
+                        price: 10,
+                        conf: 0,
+                        expo: -1,
+                        ema_price: 10,
+                        ema_conf: 1,
+                    },
+                },
+                ReserveArgs {
+                    mint: wsol_mint::id(),
+                    config: ReserveConfig {
+                        loan_to_value_ratio: 80,
+                        liquidation_threshold: 81,
+                        max_liquidation_threshold: 82,
+                        fees: ReserveFees {
+                            host_fee_percentage: 0,
+                            ..ReserveFees::default()
+                        },
+                        optimal_borrow_rate: 0,
+                        max_borrow_rate: 0,
+                        ..test_reserve_config()
+                    },
+                    liquidity_amount: 100 * LAMPORTS_PER_SOL,
+                    price: PriceArgs {
+                        price: 10,
+                        conf: 0,
+                        expo: 0,
+                        ema_price: 10,
+                        ema_conf: 0,
+                    },
+                },
+            ],
+            &[
+                ObligationArgs {
+                    deposits: vec![
+                        (usdc_mint::id(), 80 * FRACTIONAL_TO_USDC),
+                        (wsol_mint::id(), 2 * LAMPORTS_PER_SOL),
+                    ],
+                    borrows: vec![
+                        (usdc_mint::id(), 10 * FRACTIONAL_TO_USDC),
+                        (wsol_mint::id(), LAMPORTS_PER_SOL),
+                    ],
+                },
+                ObligationArgs {
+                    deposits: vec![
+                        (usdc_mint::id(), 400 * FRACTIONAL_TO_USDC),
+                        (wsol_mint::id(), 10 * LAMPORTS_PER_SOL),
+                    ],
+                    borrows: vec![
+                        (usdc_mint::id(), 100 * FRACTIONAL_TO_USDC),
+                        (wsol_mint::id(), 2 * LAMPORTS_PER_SOL),
+                    ],
+                },
+            ],
+        )
+        .await;
+
+    // check initial borrow attribution values
+    // obligation 0
+    // usdc.borrow_attribution = 80 / 100 * 20 = 16
+    assert_eq!(
+        obligations[0].account.deposits[0].attributed_borrow_value,
+        Decimal::from(16u64)
+    );
+    // wsol.borrow_attribution = 20 / 100 * 20 = 4
+    assert_eq!(
+        obligations[0].account.deposits[1].attributed_borrow_value,
+        Decimal::from(4u64)
+    );
+
+    // obligation 1
+    // usdc.borrow_attribution = 400 / 500 * 120 = 96
+    assert_eq!(
+        obligations[1].account.deposits[0].attributed_borrow_value,
+        Decimal::from(96u64)
+    );
+    // wsol.borrow_attribution = 100 / 500 * 120 = 24
+    assert_eq!(
+        obligations[1].account.deposits[1].attributed_borrow_value,
+        Decimal::from(24u64)
+    );
+
+    // usdc reserve: 16 + 96 = 112
+    assert_eq!(
+        reserves[0].account.attributed_borrow_value,
+        Decimal::from(112u64)
+    );
+    // wsol reserve: 4 + 24 = 28
+    assert_eq!(
+        reserves[1].account.attributed_borrow_value,
+        Decimal::from(28u64)
+    );
+
+    // change borrow attribution limit, check that it's applied
+    lending_market
+        .update_reserve_config(
+            &mut test,
+            &lending_market_owner,
+            &reserves[0],
+            ReserveConfig {
+                attributed_borrow_limit: 1,
+                ..reserves[0].account.config
+            },
+            reserves[0].account.rate_limiter.config,
+            None,
+        )
+        .await
+        .unwrap();
+
+    test.advance_clock_by_slots(1).await;
+
+    // make sure it doesn't error
+    lending_market
+        .refresh_obligation(&mut test, &obligations[0])
+        .await
+        .unwrap();
+}
+
+#[tokio::test]
 async fn test_calculations() {
     let (mut test, lending_market, reserves, obligations, users, lending_market_owner) =
         custom_scenario(
