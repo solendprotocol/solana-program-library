@@ -1194,9 +1194,11 @@ fn update_borrow_attribution_values(
             return Err(LendingError::InvalidAccountInput.into());
         }
 
-        deposit_reserve.attributed_borrow_value = deposit_reserve
-            .attributed_borrow_value
-            .saturating_sub(collateral.attributed_borrow_value);
+        if obligation.updated_borrow_attribution_after_upgrade {
+            deposit_reserve.attributed_borrow_value = deposit_reserve
+                .attributed_borrow_value
+                .saturating_sub(collateral.attributed_borrow_value);
+        }
 
         if obligation.deposited_value > Decimal::zero() {
             collateral.attributed_borrow_value = collateral
@@ -1225,6 +1227,8 @@ fn update_borrow_attribution_values(
 
         Reserve::pack(deposit_reserve, &mut deposit_reserve_info.data.borrow_mut())?;
     }
+
+    obligation.updated_borrow_attribution_after_upgrade = true;
 
     Ok(())
 }
