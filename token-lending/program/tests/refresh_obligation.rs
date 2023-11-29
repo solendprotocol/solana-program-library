@@ -274,7 +274,7 @@ async fn test_success() {
                 .try_div(Decimal::from(LAMPORTS_PER_SOL))
                 .unwrap(),
 
-            true_borrowed_value: new_borrowed_amount_wads
+            unweighted_borrowed_value: new_borrowed_amount_wads
                 .try_mul(Decimal::from(10u64))
                 .unwrap()
                 .try_div(Decimal::from(LAMPORTS_PER_SOL))

@@ -124,7 +124,7 @@ async fn test_refresh_obligation() {
                 market_value: Decimal::from(10u64),
             }],
             borrowed_value: Decimal::from(10u64),
-            true_borrowed_value: Decimal::from(10u64),
+            unweighted_borrowed_value: Decimal::from(10u64),
             borrowed_value_upper_bound: Decimal::from(10u64),
             borrowing_isolated_asset: true,
             ..obligations[0].account.clone()

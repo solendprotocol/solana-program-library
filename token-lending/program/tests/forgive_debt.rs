@@ -177,7 +177,7 @@ async fn test_forgive_debt_success_easy() {
             borrows: vec![],
             deposited_value: Decimal::zero(),
             borrowed_value: Decimal::from(8u64),
-            true_borrowed_value: Decimal::from(8u64),
+            unweighted_borrowed_value: Decimal::from(8u64),
             borrowed_value_upper_bound: Decimal::from(8u64),
             allowed_borrow_value: Decimal::zero(),
             unhealthy_borrow_value: Decimal::zero(),
