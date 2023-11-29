@@ -935,7 +935,7 @@ fn process_refresh_obligation(program_id: &Pubkey, accounts: &[AccountInfo]) -> 
 
     let mut deposited_value = Decimal::zero();
     let mut borrowed_value = Decimal::zero(); // weighted borrow value wrt borrow weights
-    let mut true_borrowed_value = Decimal::zero();
+    let mut unweighted_borrowed_value = Decimal::zero();
     let mut borrowed_value_upper_bound = Decimal::zero();
     let mut allowed_borrow_value = Decimal::zero();
     let mut unhealthy_borrow_value = Decimal::zero();
@@ -1057,7 +1057,7 @@ fn process_refresh_obligation(program_id: &Pubkey, accounts: &[AccountInfo]) -> 
             borrowed_value.try_add(market_value.try_mul(borrow_reserve.borrow_weight())?)?;
         borrowed_value_upper_bound = borrowed_value_upper_bound
             .try_add(market_value_upper_bound.try_mul(borrow_reserve.borrow_weight())?)?;
-        true_borrowed_value = true_borrowed_value.try_add(market_value)?;
+        unweighted_borrowed_value = unweighted_borrowed_value.try_add(market_value)?;
     }
 
     if account_info_iter.peek().is_some() {
@@ -1067,7 +1067,7 @@ fn process_refresh_obligation(program_id: &Pubkey, accounts: &[AccountInfo]) -> 
 
     obligation.deposited_value = deposited_value;
     obligation.borrowed_value = borrowed_value;
-    obligation.true_borrowed_value = true_borrowed_value;
+    obligation.unweighted_borrowed_value = unweighted_borrowed_value;
     obligation.borrowed_value_upper_bound = borrowed_value_upper_bound;
     obligation.borrowing_isolated_asset = borrowing_isolated_asset;
 
@@ -1134,7 +1134,7 @@ fn update_borrow_attribution_values(
         if obligation.deposited_value > Decimal::zero() {
             collateral.attributed_borrow_value = collateral
                 .market_value
-                .try_mul(obligation.true_borrowed_value)?
+                .try_mul(obligation.unweighted_borrowed_value)?
                 .try_div(obligation.deposited_value)?
         } else {
             collateral.attributed_borrow_value = Decimal::zero();
@@ -1789,8 +1789,8 @@ fn process_borrow_obligation_liquidity(
             .try_mul(borrow_reserve.borrow_weight())?,
     )?;
 
-    obligation.true_borrowed_value = obligation
-        .true_borrowed_value
+    obligation.unweighted_borrowed_value = obligation
+        .unweighted_borrowed_value
         .try_add(borrow_reserve.market_value(borrow_amount)?)?;
 
     Reserve::pack(borrow_reserve, &mut borrow_reserve_info.data.borrow_mut())?;
