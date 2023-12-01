@@ -63,6 +63,8 @@ pub struct Obligation {
     pub borrowing_isolated_asset: bool,
     /// Updated borrow attribution after upgrade. initially false when upgrading to v2.0.3
     pub updated_borrow_attribution_after_upgrade: bool,
+    /// Obligation can be marked as closeable for a certain time period.
+    pub closeable_by: Slot,
 }
 
 impl Obligation {
@@ -440,6 +442,7 @@ impl Pack for Obligation {
             super_unhealthy_borrow_value,
             unweighted_borrowed_value,
             updated_borrow_attribution_after_upgrade,
+            closeable_by,
             _padding,
             deposits_len,
             borrows_len,
@@ -460,7 +463,8 @@ impl Pack for Obligation {
             16,
             16,
             1,
-            14,
+            8,
+            6,
             1,
             1,
             OBLIGATION_COLLATERAL_LEN + (OBLIGATION_LIQUIDITY_LEN * (MAX_OBLIGATION_RESERVES - 1))
@@ -487,6 +491,7 @@ impl Pack for Obligation {
             self.updated_borrow_attribution_after_upgrade,
             updated_borrow_attribution_after_upgrade,
         );
+        *closeable_by = self.closeable_by.to_le_bytes();
 
         *deposits_len = u8::try_from(self.deposits.len()).unwrap().to_le_bytes();
         *borrows_len = u8::try_from(self.borrows.len()).unwrap().to_le_bytes();
@@ -552,6 +557,7 @@ impl Pack for Obligation {
             super_unhealthy_borrow_value,
             unweighted_borrowed_value,
             updated_borrow_attribution_after_upgrade,
+            closeable_by,
             _padding,
             deposits_len,
             borrows_len,
@@ -572,7 +578,8 @@ impl Pack for Obligation {
             16,
             16,
             1,
-            14,
+            8,
+            6,
             1,
             1,
             OBLIGATION_COLLATERAL_LEN + (OBLIGATION_LIQUIDITY_LEN * (MAX_OBLIGATION_RESERVES - 1))
@@ -648,6 +655,7 @@ impl Pack for Obligation {
             updated_borrow_attribution_after_upgrade: unpack_bool(
                 updated_borrow_attribution_after_upgrade,
             )?,
+            closeable_by: u64::from_le_bytes(*closeable_by),
         })
     }
 }
@@ -699,6 +707,7 @@ mod test {
                 super_unhealthy_borrow_value: rand_decimal(),
                 borrowing_isolated_asset: rng.gen(),
                 updated_borrow_attribution_after_upgrade: rng.gen(),
+                closeable_by: rng.gen(),
             };
 
             let mut packed = [0u8; OBLIGATION_LEN];

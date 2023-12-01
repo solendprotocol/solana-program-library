@@ -1,4 +1,5 @@
 use bytemuck::checked::from_bytes;
+use solana_sdk::slot_history::Slot;
 use solend_sdk::instruction::*;
 use solend_sdk::state::*;
 
@@ -679,6 +680,32 @@ pub struct SwitchboardPriceArgs {
 }
 
 impl Info<LendingMarket> {
+    pub async fn mark_obligation_as_closable(
+        &self,
+        test: &mut SolendProgramTest,
+        obligation: &Info<Obligation>,
+        reserve: &Info<Reserve>,
+        risk_authority: &User,
+        closeable_by: Slot,
+    ) -> Result<(), BanksClientError> {
+        let refresh_ixs = self
+            .build_refresh_instructions(test, obligation, None)
+            .await;
+        test.process_transaction(&refresh_ixs, None).await.unwrap();
+
+        let ix = vec![mark_obligation_as_closeable(
+            solend_program::id(),
+            obligation.pubkey,
+            reserve.pubkey,
+            self.pubkey,
+            risk_authority.keypair.pubkey(),
+            closeable_by,
+        )];
+
+        test.process_transaction(&ix, Some(&[&risk_authority.keypair]))
+            .await
+    }
+
     pub async fn deposit(
         &self,
         test: &mut SolendProgramTest,

@@ -15,6 +15,7 @@ use crate::{
 };
 use bytemuck::bytes_of;
 use pyth_sdk_solana::{self, state::ProductAccount};
+use solana_program::slot_history::Slot;
 use solana_program::{
     account_info::{next_account_info, AccountInfo},
     entrypoint::ProgramResult,
@@ -204,6 +205,10 @@ pub fn process_instruction(
         LendingInstruction::ResizeReserve => {
             msg!("Instruction: Resize Reserve");
             process_resize_reserve(program_id, accounts)
+        }
+        LendingInstruction::MarkObligationAsClosable { closeable_by } => {
+            msg!("Instruction: Mark Obligation As Closable");
+            process_mark_obligation_as_closeable(program_id, closeable_by, accounts)
         }
     }
 }
@@ -3111,6 +3116,84 @@ pub fn process_resize_reserve(_program_id: &Pubkey, accounts: &[AccountInfo]) ->
         msg!("new data's first 619 bytes don't match old data!");
         return Err(LendingError::InvalidAccountInput.into());
     }
+
+    Ok(())
+}
+
+/// process mark obligation as closable
+pub fn process_mark_obligation_as_closeable(
+    program_id: &Pubkey,
+    closeable_by: Slot,
+    accounts: &[AccountInfo],
+) -> ProgramResult {
+    let account_info_iter = &mut accounts.iter();
+    let obligation_info = next_account_info(account_info_iter)?;
+    let lending_market_info = next_account_info(account_info_iter)?;
+    let reserve_info = next_account_info(account_info_iter)?;
+    let risk_authority_info = next_account_info(account_info_iter)?;
+    let clock = Clock::get()?;
+
+    let lending_market = LendingMarket::unpack(&lending_market_info.data.borrow())?;
+    if lending_market_info.owner != program_id {
+        msg!("Lending market provided is not owned by the lending program");
+        return Err(LendingError::InvalidAccountOwner.into());
+    }
+
+    let reserve = Reserve::unpack(&reserve_info.data.borrow())?;
+    if reserve_info.owner != program_id {
+        msg!("Reserve provided is not owned by the lending program");
+        return Err(LendingError::InvalidAccountOwner.into());
+    }
+    if &reserve.lending_market != lending_market_info.key {
+        msg!("Reserve lending market does not match the lending market provided");
+        return Err(LendingError::InvalidAccountInput.into());
+    }
+
+    if reserve.attributed_borrow_value < Decimal::from(reserve.config.attributed_borrow_limit) {
+        msg!("Reserve attributed borrow value is below the attributed borrow limit");
+        return Err(LendingError::BorrowAttributionLimitNotExceeded.into());
+    }
+
+    let mut obligation = Obligation::unpack(&obligation_info.data.borrow())?;
+    if obligation_info.owner != program_id {
+        msg!("Obligation provided is not owned by the lending program");
+        return Err(LendingError::InvalidAccountOwner.into());
+    }
+
+    if &obligation.lending_market != lending_market_info.key {
+        msg!("Obligation lending market does not match the lending market provided");
+        return Err(LendingError::InvalidAccountInput.into());
+    }
+    if obligation.last_update.is_stale(clock.slot)? {
+        msg!("Obligation is stale and must be refreshed");
+        return Err(LendingError::ObligationStale.into());
+    }
+
+    if &lending_market.risk_authority != risk_authority_info.key {
+        msg!("Lending market risk authority does not match the risk authority provided");
+        return Err(LendingError::InvalidAccountInput.into());
+    }
+
+    if !risk_authority_info.is_signer {
+        msg!("Risk authority provided must be a signer");
+        return Err(LendingError::InvalidSigner.into());
+    }
+
+    if obligation.borrowed_value == Decimal::zero() {
+        msg!("Obligation borrowed value is zero");
+        return Err(LendingError::ObligationBorrowsZero.into());
+    }
+
+    obligation
+        .find_collateral_in_deposits(*reserve_info.key)
+        .map_err(|_| {
+            msg!("Obligation does not have a deposit for the reserve provided");
+            LendingError::ObligationCollateralEmpty
+        })?;
+
+    obligation.closeable_by = closeable_by;
+
+    Obligation::pack(obligation, &mut obligation_info.data.borrow_mut())?;
 
     Ok(())
 }
