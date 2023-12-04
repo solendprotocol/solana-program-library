@@ -458,7 +458,7 @@ async fn test_success_insufficient_liquidity() {
         .account
         .calculate_protocol_liquidation_fee(
             available_amount * FRACTIONAL_TO_USDC,
-            Decimal::from_percent(105),
+            Decimal::from_percent(5),
         )
         .unwrap();
 
