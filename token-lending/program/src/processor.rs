@@ -1086,7 +1086,13 @@ fn process_refresh_obligation(program_id: &Pubkey, accounts: &[AccountInfo]) -> 
 
     obligation.last_update.update_slot(clock.slot);
 
-    update_borrow_attribution_values(&mut obligation, &accounts[1..], false)?;
+    let any_borrow_attribution_limit_exceeded =
+        update_borrow_attribution_values(&mut obligation, &accounts[1..], false)?;
+
+    // unmark obligation as closable after it's been liquidated enough times
+    if obligation.is_closeable(clock.slot) && !any_borrow_attribution_limit_exceeded {
+        obligation.closeable_by = 0;
+    }
 
     // move the ObligationLiquidity with the max borrow weight to the front
     if let Some((_, max_borrow_weight_index)) = max_borrow_weight {
@@ -1114,13 +1120,16 @@ fn process_refresh_obligation(program_id: &Pubkey, accounts: &[AccountInfo]) -> 
 /// - the obligation's deposited_value must be refreshed
 /// - the obligation's true_borrowed_value must be refreshed
 ///
+/// Returns true if any of the borrow attribution limits were exceeded
+///
 /// Note that this function packs and unpacks deposit reserves.
 fn update_borrow_attribution_values(
     obligation: &mut Obligation,
     deposit_reserve_infos: &[AccountInfo],
     error_if_limit_exceeded: bool,
-) -> ProgramResult {
+) -> Result<bool, ProgramError> {
     let deposit_infos = &mut deposit_reserve_infos.iter();
+    let mut any_attribution_limit_exceeded = false;
 
     for collateral in obligation.deposits.iter_mut() {
         let deposit_reserve_info = next_account_info(deposit_infos)?;
@@ -1151,16 +1160,19 @@ fn update_borrow_attribution_values(
             .attributed_borrow_value
             .try_add(collateral.attributed_borrow_value)?;
 
-        if error_if_limit_exceeded
-            && deposit_reserve.attributed_borrow_value
-                > Decimal::from(deposit_reserve.config.attributed_borrow_limit)
+        if deposit_reserve.attributed_borrow_value
+            > Decimal::from(deposit_reserve.config.attributed_borrow_limit)
         {
-            msg!(
-                "Attributed borrow value is over the limit for reserve {} and mint {}",
-                deposit_reserve_info.key,
-                deposit_reserve.liquidity.mint_pubkey
-            );
-            return Err(LendingError::BorrowAttributionLimitExceeded.into());
+            any_attribution_limit_exceeded = true;
+
+            if error_if_limit_exceeded {
+                msg!(
+                    "Attributed borrow value is over the limit for reserve {} and mint {}",
+                    deposit_reserve_info.key,
+                    deposit_reserve.liquidity.mint_pubkey
+                );
+                return Err(LendingError::BorrowAttributionLimitExceeded.into());
+            }
         }
 
         Reserve::pack(deposit_reserve, &mut deposit_reserve_info.data.borrow_mut())?;
@@ -1168,7 +1180,7 @@ fn update_borrow_attribution_values(
 
     obligation.updated_borrow_attribution_after_upgrade = true;
 
-    Ok(())
+    Ok(any_attribution_limit_exceeded)
 }
 
 #[inline(never)] // avoid stack frame limit
@@ -2066,8 +2078,11 @@ fn _liquidate_obligation<'a>(
         msg!("Obligation borrowed value is zero");
         return Err(LendingError::ObligationBorrowsZero.into());
     }
-    if obligation.borrowed_value < obligation.unhealthy_borrow_value {
-        msg!("Obligation is healthy and cannot be liquidated");
+
+    if obligation.borrowed_value < obligation.unhealthy_borrow_value
+        && !obligation.is_closeable(clock.slot)
+    {
+        msg!("Obligation must be unhealthy or marked as closeable to be liquidated");
         return Err(LendingError::ObligationHealthy.into());
     }
 
@@ -2109,16 +2124,17 @@ fn _liquidate_obligation<'a>(
         return Err(LendingError::InvalidMarketAuthority.into());
     }
 
+    let bonus_rate = withdraw_reserve.calculate_bonus(&obligation, clock.slot)?;
     let CalculateLiquidationResult {
         settle_amount,
         repay_amount,
         withdraw_amount,
-        bonus_rate,
     } = withdraw_reserve.calculate_liquidation(
         liquidity_amount,
         &obligation,
         liquidity,
         collateral,
+        bonus_rate,
     )?;
 
     if repay_amount == 0 {

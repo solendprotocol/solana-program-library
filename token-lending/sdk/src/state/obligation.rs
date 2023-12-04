@@ -85,6 +85,11 @@ impl Obligation {
         self.borrows = params.borrows;
     }
 
+    /// Check if obligation is marked to be closeable
+    pub fn is_closeable(&self, current_slot: Slot) -> bool {
+        current_slot <= self.closeable_by
+    }
+
     /// Calculate the current ratio of borrowed value to deposited value
     pub fn loan_to_value(&self) -> Result<Decimal, ProgramError> {
         self.borrowed_value.try_div(self.deposited_value)
