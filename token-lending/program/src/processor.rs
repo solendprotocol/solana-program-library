@@ -1086,11 +1086,8 @@ fn process_refresh_obligation(program_id: &Pubkey, accounts: &[AccountInfo]) -> 
 
     obligation.last_update.update_slot(clock.slot);
 
-    let any_borrow_attribution_limit_exceeded =
-        update_borrow_attribution_values(&mut obligation, &accounts[1..], false)?;
-
-    // unmark obligation as closable after it's been liquidated enough times
-    if obligation.closeable && !any_borrow_attribution_limit_exceeded {
+    let (_, close_exceeded) = update_borrow_attribution_values(&mut obligation, &accounts[1..])?;
+    if close_exceeded.is_none() {
         obligation.closeable = false;
     }
 
@@ -1120,16 +1117,15 @@ fn process_refresh_obligation(program_id: &Pubkey, accounts: &[AccountInfo]) -> 
 /// - the obligation's deposited_value must be refreshed
 /// - the obligation's true_borrowed_value must be refreshed
 ///
-/// Returns true if any of the borrow attribution limits were exceeded
-///
 /// Note that this function packs and unpacks deposit reserves.
 fn update_borrow_attribution_values(
     obligation: &mut Obligation,
     deposit_reserve_infos: &[AccountInfo],
-    error_if_limit_exceeded: bool,
-) -> Result<bool, ProgramError> {
+) -> Result<(Option<Pubkey>, Option<Pubkey>), ProgramError> {
     let deposit_infos = &mut deposit_reserve_infos.iter();
-    let mut any_attribution_limit_exceeded = false;
+
+    let mut open_exceeded = None;
+    let mut close_exceeded = None;
 
     for collateral in obligation.deposits.iter_mut() {
         let deposit_reserve_info = next_account_info(deposit_infos)?;
@@ -1161,18 +1157,14 @@ fn update_borrow_attribution_values(
             .try_add(collateral.attributed_borrow_value)?;
 
         if deposit_reserve.attributed_borrow_value
-            > Decimal::from(deposit_reserve.config.attributed_borrow_limit)
+            > Decimal::from(deposit_reserve.config.attributed_borrow_limit_open)
         {
-            any_attribution_limit_exceeded = true;
-
-            if error_if_limit_exceeded {
-                msg!(
-                    "Attributed borrow value is over the limit for reserve {} and mint {}",
-                    deposit_reserve_info.key,
-                    deposit_reserve.liquidity.mint_pubkey
-                );
-                return Err(LendingError::BorrowAttributionLimitExceeded.into());
-            }
+            open_exceeded = Some(*deposit_reserve_info.key);
+        }
+        if deposit_reserve.attributed_borrow_value
+            > Decimal::from(deposit_reserve.config.attributed_borrow_limit_close)
+        {
+            close_exceeded = Some(*deposit_reserve_info.key);
         }
 
         Reserve::pack(deposit_reserve, &mut deposit_reserve_info.data.borrow_mut())?;
@@ -1180,7 +1172,7 @@ fn update_borrow_attribution_values(
 
     obligation.updated_borrow_attribution_after_upgrade = true;
 
-    Ok(any_attribution_limit_exceeded)
+    Ok((open_exceeded, close_exceeded))
 }
 
 #[inline(never)] // avoid stack frame limit
@@ -1567,7 +1559,15 @@ fn _withdraw_obligation_collateral<'a>(
         .market_value
         .saturating_sub(withdraw_value);
 
-    update_borrow_attribution_values(&mut obligation, deposit_reserve_infos, true)?;
+    let (open_exceeded, _) =
+        update_borrow_attribution_values(&mut obligation, deposit_reserve_infos)?;
+    if let Some(reserve_pubkey) = open_exceeded {
+        msg!(
+            "Open borrow attribution limit exceeded for reserve {:?}",
+            reserve_pubkey
+        );
+        return Err(LendingError::BorrowAttributionLimitExceeded.into());
+    }
 
     // obligation.withdraw must be called after updating borrow attribution values, since we can
     // lose information if an entire deposit is removed, making the former calculation incorrect
@@ -1822,8 +1822,16 @@ fn process_borrow_obligation_liquidity(
     obligation_liquidity.borrow(borrow_amount)?;
     obligation.last_update.mark_stale();
 
-    update_borrow_attribution_values(&mut obligation, &accounts[9..], true)?;
-    // HACK: fast forward through the used account info's
+    let (open_exceeded, _) = update_borrow_attribution_values(&mut obligation, &accounts[9..])?;
+    if let Some(reserve_pubkey) = open_exceeded {
+        msg!(
+            "Open borrow attribution limit exceeded for reserve {:?}",
+            reserve_pubkey
+        );
+        return Err(LendingError::BorrowAttributionLimitExceeded.into());
+    }
+
+    // HACK: fast forward through the deposit reserve infos
     for _ in 0..obligation.deposits.len() {
         next_account_info(account_info_iter)?;
     }
@@ -3163,7 +3171,8 @@ pub fn process_set_obligation_closeability_status(
         return Err(LendingError::InvalidAccountInput.into());
     }
 
-    if reserve.attributed_borrow_value < Decimal::from(reserve.config.attributed_borrow_limit) {
+    if reserve.attributed_borrow_value < Decimal::from(reserve.config.attributed_borrow_limit_close)
+    {
         msg!("Reserve attributed borrow value is below the attributed borrow limit");
         return Err(LendingError::BorrowAttributionLimitNotExceeded.into());
     }

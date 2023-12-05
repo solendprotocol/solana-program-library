@@ -52,7 +52,8 @@ pub fn reserve_config_no_fees() -> ReserveConfig {
         protocol_take_rate: 0,
         added_borrow_weight_bps: 0,
         reserve_type: ReserveType::Regular,
-        attributed_borrow_limit: u64::MAX,
+        attributed_borrow_limit_open: u64::MAX,
+        attributed_borrow_limit_close: u64::MAX,
     }
 }
 
@@ -81,7 +82,8 @@ pub fn test_reserve_config() -> ReserveConfig {
         protocol_take_rate: 0,
         added_borrow_weight_bps: 0,
         reserve_type: ReserveType::Regular,
-        attributed_borrow_limit: u64::MAX,
+        attributed_borrow_limit_open: u64::MAX,
+        attributed_borrow_limit_close: u64::MAX,
     }
 }
 

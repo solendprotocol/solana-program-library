@@ -731,7 +731,8 @@ async fn test_liquidate_closeable_obligation() {
             &lending_market_owner,
             usdc_reserve,
             ReserveConfig {
-                attributed_borrow_limit: 1,
+                attributed_borrow_limit_open: 1,
+                attributed_borrow_limit_close: 1,
                 ..usdc_reserve.account.config
             },
             usdc_reserve.account.rate_limiter.config,

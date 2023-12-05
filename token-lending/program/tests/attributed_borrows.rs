@@ -157,7 +157,7 @@ async fn test_refresh_obligation() {
             &lending_market_owner,
             &reserves[0],
             ReserveConfig {
-                attributed_borrow_limit: 1,
+                attributed_borrow_limit_open: 1,
                 ..reserves[0].account.config
             },
             reserves[0].account.rate_limiter.config,
@@ -295,7 +295,7 @@ async fn test_calculations() {
             &lending_market_owner,
             &reserves[0],
             ReserveConfig {
-                attributed_borrow_limit: 113,
+                attributed_borrow_limit_open: 113,
                 ..reserves[0].account.config
             },
             reserves[0].account.rate_limiter.config,
@@ -333,7 +333,7 @@ async fn test_calculations() {
             &lending_market_owner,
             &reserves[0],
             ReserveConfig {
-                attributed_borrow_limit: 120,
+                attributed_borrow_limit_open: 120,
                 ..reserves[0].account.config
             },
             reserves[0].account.rate_limiter.config,
@@ -386,7 +386,7 @@ async fn test_calculations() {
             },
             attributed_borrow_value: Decimal::from(120u64),
             config: ReserveConfig {
-                attributed_borrow_limit: 120,
+                attributed_borrow_limit_open: 120,
                 ..usdc_reserve.config
             },
             ..usdc_reserve
@@ -619,7 +619,7 @@ async fn test_withdraw() {
             &lending_market_owner,
             &reserves[0],
             ReserveConfig {
-                attributed_borrow_limit: 6,
+                attributed_borrow_limit_open: 6,
                 ..reserves[0].account.config
             },
             reserves[0].account.rate_limiter.config,
@@ -656,7 +656,7 @@ async fn test_withdraw() {
             &lending_market_owner,
             &reserves[0],
             ReserveConfig {
-                attributed_borrow_limit: 10,
+                attributed_borrow_limit_open: 10,
                 ..reserves[0].account.config
             },
             reserves[0].account.rate_limiter.config,

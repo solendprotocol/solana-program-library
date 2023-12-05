@@ -108,7 +108,8 @@ async fn test_mark_obligation_as_closeable_success() {
             &lending_market_owner,
             &reserves[0],
             ReserveConfig {
-                attributed_borrow_limit: 1,
+                attributed_borrow_limit_open: 1,
+                attributed_borrow_limit_close: 1,
                 ..reserves[0].account.config
             },
             reserves[0].account.rate_limiter.config,
@@ -198,7 +199,8 @@ async fn invalid_signer() {
             &lending_market_owner,
             &reserves[0],
             ReserveConfig {
-                attributed_borrow_limit: 1,
+                attributed_borrow_limit_open: 1,
+                attributed_borrow_limit_close: 1,
                 ..reserves[0].account.config
             },
             reserves[0].account.rate_limiter.config,

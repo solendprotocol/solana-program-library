@@ -916,8 +916,10 @@ pub struct ReserveConfig {
     pub added_borrow_weight_bps: u64,
     /// Type of the reserve (Regular, Isolated)
     pub reserve_type: ReserveType,
-    /// Attributed Borrow limit in USD
-    pub attributed_borrow_limit: u64,
+    /// Open Attributed Borrow limit in USD
+    pub attributed_borrow_limit_open: u64,
+    /// Close Attributed Borrow limit in USD
+    pub attributed_borrow_limit_close: u64,
 }
 
 /// validates reserve configs
@@ -1005,6 +1007,11 @@ pub fn validate_reserve_config(config: ReserveConfig) -> ProgramResult {
         msg!("open/close LTV must be 0 for isolated reserves");
         return Err(LendingError::InvalidConfig.into());
     }
+    if config.attributed_borrow_limit_open > config.attributed_borrow_limit_close {
+        msg!("open attributed borrow limit must be <= close attributed borrow limit");
+        return Err(LendingError::InvalidConfig.into());
+    }
+
     Ok(())
 }
 
@@ -1192,7 +1199,8 @@ impl Pack for Reserve {
             config_max_liquidation_bonus,
             config_max_liquidation_threshold,
             attributed_borrow_value,
-            config_attributed_borrow_limit,
+            config_attributed_borrow_limit_open,
+            config_attributed_borrow_limit_close,
             _padding,
         ) = mut_array_refs![
             output,
@@ -1238,7 +1246,8 @@ impl Pack for Reserve {
             1,
             16,
             8,
-            714
+            8,
+            706
         ];
 
         // reserve
@@ -1303,7 +1312,10 @@ impl Pack for Reserve {
         *config_added_borrow_weight_bps = self.config.added_borrow_weight_bps.to_le_bytes();
         *config_max_liquidation_bonus = self.config.max_liquidation_bonus.to_le_bytes();
         *config_max_liquidation_threshold = self.config.max_liquidation_threshold.to_le_bytes();
-        *config_attributed_borrow_limit = self.config.attributed_borrow_limit.to_le_bytes();
+        *config_attributed_borrow_limit_open =
+            self.config.attributed_borrow_limit_open.to_le_bytes();
+        *config_attributed_borrow_limit_close =
+            self.config.attributed_borrow_limit_close.to_le_bytes();
 
         pack_decimal(self.attributed_borrow_value, attributed_borrow_value);
     }
@@ -1354,7 +1366,8 @@ impl Pack for Reserve {
             config_max_liquidation_bonus,
             config_max_liquidation_threshold,
             attributed_borrow_value,
-            config_attributed_borrow_limit,
+            config_attributed_borrow_limit_open,
+            config_attributed_borrow_limit_close,
             _padding,
         ) = array_refs![
             input,
@@ -1400,7 +1413,8 @@ impl Pack for Reserve {
             1,
             16,
             8,
-            714
+            8,
+            706
         ];
 
         let version = u8::from_le_bytes(*version);
@@ -1491,11 +1505,19 @@ impl Pack for Reserve {
                 protocol_take_rate: u8::from_le_bytes(*config_protocol_take_rate),
                 added_borrow_weight_bps: u64::from_le_bytes(*config_added_borrow_weight_bps),
                 reserve_type: ReserveType::from_u8(config_asset_type[0]).unwrap(),
-                // this field is added in v2.0.3 and we will never set it to zero. only time it'll
+                // the following two fields are added in v2.0.3 and we will never set it to zero. only time they will
                 // be zero is when we upgrade from v2.0.2 to v2.0.3. in that case, the correct
                 // thing to do is set the value to u64::MAX.
-                attributed_borrow_limit: {
-                    let value = u64::from_le_bytes(*config_attributed_borrow_limit);
+                attributed_borrow_limit_open: {
+                    let value = u64::from_le_bytes(*config_attributed_borrow_limit_open);
+                    if value == 0 {
+                        u64::MAX
+                    } else {
+                        value
+                    }
+                },
+                attributed_borrow_limit_close: {
+                    let value = u64::from_le_bytes(*config_attributed_borrow_limit_close);
                     if value == 0 {
                         u64::MAX
                     } else {
@@ -1580,7 +1602,8 @@ mod test {
                     protocol_take_rate: rng.gen(),
                     added_borrow_weight_bps: rng.gen(),
                     reserve_type: ReserveType::from_u8(rng.gen::<u8>() % 2).unwrap(),
-                    attributed_borrow_limit: rng.gen(),
+                    attributed_borrow_limit_open: rng.gen(),
+                    attributed_borrow_limit_close: rng.gen(),
                 },
                 rate_limiter: rand_rate_limiter(),
                 attributed_borrow_value: rand_decimal(),
@@ -2147,6 +2170,22 @@ mod test {
             Just(ReserveConfigTestCase {
                 config: ReserveConfig {
                     protocol_liquidation_fee: 51,
+                    ..ReserveConfig::default()
+                },
+                result: Err(LendingError::InvalidConfig.into()),
+            }),
+            Just(ReserveConfigTestCase {
+                config: ReserveConfig {
+                    attributed_borrow_limit_open: 50,
+                    attributed_borrow_limit_close: 51,
+                    ..ReserveConfig::default()
+                },
+                result: Ok(())
+            }),
+            Just(ReserveConfigTestCase {
+                config: ReserveConfig {
+                    attributed_borrow_limit_open: 51,
+                    attributed_borrow_limit_close: 50,
                     ..ReserveConfig::default()
                 },
                 result: Err(LendingError::InvalidConfig.into()),
