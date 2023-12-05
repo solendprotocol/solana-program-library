@@ -2,7 +2,6 @@
 
 use crate::solend_program_test::custom_scenario;
 use solana_program::{
-    clock::Slot,
     instruction::{AccountMeta, Instruction},
     pubkey::Pubkey,
 };
@@ -82,12 +81,12 @@ async fn test_mark_obligation_as_closeable_success() {
     test.advance_clock_by_slots(1).await;
 
     let err = lending_market
-        .mark_obligation_as_closable(
+        .set_obligation_closeability_status(
             &mut test,
             &obligations[0],
             &reserves[0],
             &risk_authority,
-            10000,
+            true,
         )
         .await
         .unwrap_err()
@@ -119,12 +118,12 @@ async fn test_mark_obligation_as_closeable_success() {
         .unwrap();
 
     lending_market
-        .mark_obligation_as_closable(
+        .set_obligation_closeability_status(
             &mut test,
             &obligations[0],
             &reserves[0],
             &risk_authority,
-            10000,
+            true,
         )
         .await
         .unwrap();
@@ -137,7 +136,7 @@ async fn test_mark_obligation_as_closeable_success() {
                 slot: 1002,
                 stale: false
             },
-            closeable_by: 10000,
+            closeable: true,
             ..obligations[0].account.clone()
         }
     );
@@ -210,7 +209,7 @@ async fn invalid_signer() {
 
     let rando = User::new_with_keypair(Keypair::new());
     let err = lending_market
-        .mark_obligation_as_closable(&mut test, &obligations[0], &reserves[0], &rando, 10000)
+        .set_obligation_closeability_status(&mut test, &obligations[0], &reserves[0], &rando, true)
         .await
         .unwrap_err()
         .unwrap();
@@ -225,13 +224,13 @@ async fn invalid_signer() {
 
     let err = test
         .process_transaction(
-            &[malicious_mark_obligation_as_closeable(
+            &[malicious_set_obligation_closeability_status(
                 solend_mainnet::id(),
                 obligations[0].pubkey,
                 reserves[0].pubkey,
                 lending_market.pubkey,
                 risk_authority.keypair.pubkey(),
-                10_000,
+                true,
             )],
             None,
         )
@@ -248,13 +247,13 @@ async fn invalid_signer() {
     );
 }
 
-pub fn malicious_mark_obligation_as_closeable(
+pub fn malicious_set_obligation_closeability_status(
     program_id: Pubkey,
     obligation_pubkey: Pubkey,
     reserve_pubkey: Pubkey,
     lending_market_pubkey: Pubkey,
     risk_authority: Pubkey,
-    closeable_by: Slot,
+    closeable: bool,
 ) -> Instruction {
     Instruction {
         program_id,
@@ -264,6 +263,6 @@ pub fn malicious_mark_obligation_as_closeable(
             AccountMeta::new_readonly(reserve_pubkey, false),
             AccountMeta::new_readonly(risk_authority, false),
         ],
-        data: LendingInstruction::MarkObligationAsClosable { closeable_by }.pack(),
+        data: LendingInstruction::SetObligationCloseabilityStatus { closeable }.pack(),
     }
 }

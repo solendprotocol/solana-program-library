@@ -15,7 +15,7 @@ use crate::{
 };
 use bytemuck::bytes_of;
 use pyth_sdk_solana::{self, state::ProductAccount};
-use solana_program::slot_history::Slot;
+
 use solana_program::{
     account_info::{next_account_info, AccountInfo},
     entrypoint::ProgramResult,
@@ -206,9 +206,9 @@ pub fn process_instruction(
             msg!("Instruction: Resize Reserve");
             process_resize_reserve(program_id, accounts)
         }
-        LendingInstruction::MarkObligationAsClosable { closeable_by } => {
+        LendingInstruction::SetObligationCloseabilityStatus { closeable } => {
             msg!("Instruction: Mark Obligation As Closable");
-            process_mark_obligation_as_closeable(program_id, closeable_by, accounts)
+            process_set_obligation_closeability_status(program_id, closeable, accounts)
         }
     }
 }
@@ -1090,8 +1090,8 @@ fn process_refresh_obligation(program_id: &Pubkey, accounts: &[AccountInfo]) -> 
         update_borrow_attribution_values(&mut obligation, &accounts[1..], false)?;
 
     // unmark obligation as closable after it's been liquidated enough times
-    if obligation.is_closeable(clock.slot) && !any_borrow_attribution_limit_exceeded {
-        obligation.closeable_by = 0;
+    if obligation.closeable && !any_borrow_attribution_limit_exceeded {
+        obligation.closeable = false;
     }
 
     // move the ObligationLiquidity with the max borrow weight to the front
@@ -2079,9 +2079,7 @@ fn _liquidate_obligation<'a>(
         return Err(LendingError::ObligationBorrowsZero.into());
     }
 
-    if obligation.borrowed_value < obligation.unhealthy_borrow_value
-        && !obligation.is_closeable(clock.slot)
-    {
+    if obligation.borrowed_value < obligation.unhealthy_borrow_value && !obligation.closeable {
         msg!("Obligation must be unhealthy or marked as closeable to be liquidated");
         return Err(LendingError::ObligationHealthy.into());
     }
@@ -2124,7 +2122,7 @@ fn _liquidate_obligation<'a>(
         return Err(LendingError::InvalidMarketAuthority.into());
     }
 
-    let bonus_rate = withdraw_reserve.calculate_bonus(&obligation, clock.slot)?;
+    let bonus_rate = withdraw_reserve.calculate_bonus(&obligation)?;
     let CalculateLiquidationResult {
         settle_amount,
         repay_amount,
@@ -3137,16 +3135,16 @@ pub fn process_resize_reserve(_program_id: &Pubkey, accounts: &[AccountInfo]) ->
 }
 
 /// process mark obligation as closable
-pub fn process_mark_obligation_as_closeable(
+pub fn process_set_obligation_closeability_status(
     program_id: &Pubkey,
-    closeable_by: Slot,
+    closeable: bool,
     accounts: &[AccountInfo],
 ) -> ProgramResult {
     let account_info_iter = &mut accounts.iter();
     let obligation_info = next_account_info(account_info_iter)?;
     let lending_market_info = next_account_info(account_info_iter)?;
     let reserve_info = next_account_info(account_info_iter)?;
-    let risk_authority_info = next_account_info(account_info_iter)?;
+    let signer_info = next_account_info(account_info_iter)?;
     let clock = Clock::get()?;
 
     let lending_market = LendingMarket::unpack(&lending_market_info.data.borrow())?;
@@ -3185,13 +3183,14 @@ pub fn process_mark_obligation_as_closeable(
         return Err(LendingError::ObligationStale.into());
     }
 
-    if &lending_market.risk_authority != risk_authority_info.key {
+    if &lending_market.risk_authority != signer_info.key && &lending_market.owner != signer_info.key
+    {
         msg!("Lending market risk authority does not match the risk authority provided");
         return Err(LendingError::InvalidAccountInput.into());
     }
 
-    if !risk_authority_info.is_signer {
-        msg!("Risk authority provided must be a signer");
+    if !signer_info.is_signer {
+        msg!("Risk authority or lending market owner must be a signer");
         return Err(LendingError::InvalidSigner.into());
     }
 
@@ -3207,7 +3206,7 @@ pub fn process_mark_obligation_as_closeable(
             LendingError::ObligationCollateralEmpty
         })?;
 
-    obligation.closeable_by = closeable_by;
+    obligation.closeable = closeable;
 
     Obligation::pack(obligation, &mut obligation_info.data.borrow_mut())?;
 

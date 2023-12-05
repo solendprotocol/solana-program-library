@@ -338,13 +338,9 @@ impl Reserve {
 
     /// Calculate bonus as a percentage
     /// the value will be in range [0, MAX_BONUS_PCT]
-    pub fn calculate_bonus(
-        &self,
-        obligation: &Obligation,
-        current_slot: Slot,
-    ) -> Result<Decimal, ProgramError> {
+    pub fn calculate_bonus(&self, obligation: &Obligation) -> Result<Decimal, ProgramError> {
         if obligation.borrowed_value < obligation.unhealthy_borrow_value {
-            if obligation.is_closeable(current_slot) {
+            if obligation.closeable {
                 return Ok(Decimal::zero());
             }
 
@@ -503,7 +499,7 @@ impl Reserve {
     }
 
     /// Calculate protocol cut of liquidation bonus always at least 1 lamport
-    /// the bonus rate is always <= MAX_BONUS_PCT and includes both liquidator bonus and protocol fee.
+    /// the bonus rate is always <= MAX_BONUS_PCT
     /// the bonus rate has to be passed into this function because bonus calculations are dynamic
     /// and can't be recalculated after liquidation.
     pub fn calculate_protocol_liquidation_fee(
@@ -516,17 +512,18 @@ impl Reserve {
             return Err(LendingError::InvalidAmount.into());
         }
 
+        let protocol_liquidation_fee = min(
+            Decimal::from_deca_bps(self.config.protocol_liquidation_fee),
+            bonus_rate,
+        );
+
         let amount_liquidated_wads = Decimal::from(amount_liquidated);
         let nonbonus_amount =
             amount_liquidated_wads.try_div(Decimal::one().try_add(bonus_rate)?)?;
-        // After deploying must update all reserves to set liquidation fee then redeploy with this line instead of hardcode
-        let protocol_fee = std::cmp::max(
-            nonbonus_amount
-                .try_mul(Decimal::from_deca_bps(self.config.protocol_liquidation_fee))?
-                .try_ceil_u64()?,
-            1,
-        );
-        Ok(protocol_fee)
+
+        nonbonus_amount
+            .try_mul(protocol_liquidation_fee)?
+            .try_ceil_u64()
     }
 
     /// Calculate protocol fee redemption accounting for availible liquidity and accumulated fees
@@ -2008,6 +2005,20 @@ mod test {
                 .unwrap(),
             2
         );
+
+        assert_eq!(
+            reserve
+                .calculate_protocol_liquidation_fee(10000, Decimal::from_percent(0))
+                .unwrap(),
+            0
+        );
+
+        assert_eq!(
+            reserve
+                .calculate_protocol_liquidation_fee(10000, Decimal::from_percent(1))
+                .unwrap(),
+            100
+        );
     }
 
     #[test]
@@ -2155,12 +2166,11 @@ mod test {
         borrowed_value: Decimal,
         unhealthy_borrow_value: Decimal,
         super_unhealthy_borrow_value: Decimal,
-        closeable_by: Slot,
+        closeable: bool,
 
         liquidation_bonus: u8,
         max_liquidation_bonus: u8,
         protocol_liquidation_fee: u8,
-        current_slot: Slot,
 
         result: Result<Decimal, ProgramError>,
     }
@@ -2172,11 +2182,10 @@ mod test {
                 borrowed_value: Decimal::from(100u64),
                 unhealthy_borrow_value: Decimal::from(101u64),
                 super_unhealthy_borrow_value: Decimal::from(150u64),
-                closeable_by: 100,
+                closeable: false,
                 liquidation_bonus: 10,
                 max_liquidation_bonus: 20,
                 protocol_liquidation_fee: 10,
-                current_slot: 101,
                 result: Err(LendingError::ObligationHealthy.into()),
             }),
             // healthy but closeable
@@ -2184,11 +2193,10 @@ mod test {
                 borrowed_value: Decimal::from(100u64),
                 unhealthy_borrow_value: Decimal::from(101u64),
                 super_unhealthy_borrow_value: Decimal::from(150u64),
-                closeable_by: 102,
+                closeable: true,
                 liquidation_bonus: 10,
                 max_liquidation_bonus: 20,
                 protocol_liquidation_fee: 10,
-                current_slot: 101,
                 result: Ok(Decimal::zero()),
             }),
             // unhealthy and also closeable
@@ -2196,88 +2204,80 @@ mod test {
                 borrowed_value: Decimal::from(100u64),
                 unhealthy_borrow_value: Decimal::from(100u64),
                 super_unhealthy_borrow_value: Decimal::from(150u64),
-                closeable_by: 101,
+                closeable: true,
                 liquidation_bonus: 10,
                 max_liquidation_bonus: 20,
                 protocol_liquidation_fee: 10,
-                current_slot: 101,
                 result: Ok(Decimal::from_percent(11))
             }),
             Just(LiquidationBonusTestCase {
                 borrowed_value: Decimal::from(100u64),
                 unhealthy_borrow_value: Decimal::from(100u64),
                 super_unhealthy_borrow_value: Decimal::from(150u64),
-                closeable_by: 100,
+                closeable: false,
                 liquidation_bonus: 10,
                 max_liquidation_bonus: 20,
                 protocol_liquidation_fee: 10,
-                current_slot: 101,
                 result: Ok(Decimal::from_percent(11))
             }),
             Just(LiquidationBonusTestCase {
                 borrowed_value: Decimal::from(100u64),
                 unhealthy_borrow_value: Decimal::from(50u64),
                 super_unhealthy_borrow_value: Decimal::from(150u64),
-                closeable_by: 100,
+                closeable: false,
                 liquidation_bonus: 10,
                 max_liquidation_bonus: 20,
                 protocol_liquidation_fee: 10,
-                current_slot: 101,
                 result: Ok(Decimal::from_percent(16))
             }),
             Just(LiquidationBonusTestCase {
                 borrowed_value: Decimal::from(100u64),
                 unhealthy_borrow_value: Decimal::from(50u64),
                 super_unhealthy_borrow_value: Decimal::from(100u64),
-                closeable_by: 100,
+                closeable: false,
                 liquidation_bonus: 10,
                 max_liquidation_bonus: 20,
                 protocol_liquidation_fee: 10,
-                current_slot: 101,
                 result: Ok(Decimal::from_percent(21))
             }),
             Just(LiquidationBonusTestCase {
                 borrowed_value: Decimal::from(200u64),
                 unhealthy_borrow_value: Decimal::from(50u64),
                 super_unhealthy_borrow_value: Decimal::from(100u64),
-                closeable_by: 100,
+                closeable: false,
                 liquidation_bonus: 10,
                 max_liquidation_bonus: 20,
                 protocol_liquidation_fee: 10,
-                current_slot: 101,
                 result: Ok(Decimal::from_percent(21))
             }),
             Just(LiquidationBonusTestCase {
                 borrowed_value: Decimal::from(60u64),
                 unhealthy_borrow_value: Decimal::from(50u64),
                 super_unhealthy_borrow_value: Decimal::from(50u64),
-                closeable_by: 100,
+                closeable: false,
                 liquidation_bonus: 10,
                 max_liquidation_bonus: 20,
                 protocol_liquidation_fee: 10,
-                current_slot: 101,
                 result: Ok(Decimal::from_percent(11))
             }),
             Just(LiquidationBonusTestCase {
                 borrowed_value: Decimal::from(60u64),
                 unhealthy_borrow_value: Decimal::from(40u64),
                 super_unhealthy_borrow_value: Decimal::from(60u64),
-                closeable_by: 100,
+                closeable: false,
                 liquidation_bonus: 10,
                 max_liquidation_bonus: 30,
                 protocol_liquidation_fee: 10,
-                current_slot: 101,
                 result: Ok(Decimal::from_percent(25))
             }),
             Just(LiquidationBonusTestCase {
                 borrowed_value: Decimal::from(60u64),
                 unhealthy_borrow_value: Decimal::from(40u64),
                 super_unhealthy_borrow_value: Decimal::from(60u64),
-                closeable_by: 100,
+                closeable: false,
                 liquidation_bonus: 30,
                 max_liquidation_bonus: 30,
                 protocol_liquidation_fee: 30,
-                current_slot: 101,
                 result: Ok(Decimal::from_percent(25))
             }),
         ]
@@ -2300,12 +2300,12 @@ mod test {
                 borrowed_value: test_case.borrowed_value,
                 unhealthy_borrow_value: test_case.unhealthy_borrow_value,
                 super_unhealthy_borrow_value: test_case.super_unhealthy_borrow_value,
-                closeable_by: test_case.closeable_by,
+                closeable: test_case.closeable,
                 ..Obligation::default()
             };
 
             assert_eq!(
-                reserve.calculate_bonus(&obligation, test_case.current_slot),
+                reserve.calculate_bonus(&obligation),
                 test_case.result
             );
         }

@@ -63,8 +63,8 @@ pub struct Obligation {
     pub borrowing_isolated_asset: bool,
     /// Updated borrow attribution after upgrade. initially false when upgrading to v2.0.3
     pub updated_borrow_attribution_after_upgrade: bool,
-    /// Obligation can be marked as closeable for a certain time period.
-    pub closeable_by: Slot,
+    /// Obligation can be marked as closeable
+    pub closeable: bool,
 }
 
 impl Obligation {
@@ -83,11 +83,6 @@ impl Obligation {
         self.owner = params.owner;
         self.deposits = params.deposits;
         self.borrows = params.borrows;
-    }
-
-    /// Check if obligation is marked to be closeable
-    pub fn is_closeable(&self, current_slot: Slot) -> bool {
-        current_slot <= self.closeable_by
     }
 
     /// Calculate the current ratio of borrowed value to deposited value
@@ -447,7 +442,7 @@ impl Pack for Obligation {
             super_unhealthy_borrow_value,
             unweighted_borrowed_value,
             updated_borrow_attribution_after_upgrade,
-            closeable_by,
+            closeable,
             _padding,
             deposits_len,
             borrows_len,
@@ -468,8 +463,8 @@ impl Pack for Obligation {
             16,
             16,
             1,
-            8,
-            6,
+            1,
+            13,
             1,
             1,
             OBLIGATION_COLLATERAL_LEN + (OBLIGATION_LIQUIDITY_LEN * (MAX_OBLIGATION_RESERVES - 1))
@@ -496,7 +491,7 @@ impl Pack for Obligation {
             self.updated_borrow_attribution_after_upgrade,
             updated_borrow_attribution_after_upgrade,
         );
-        *closeable_by = self.closeable_by.to_le_bytes();
+        pack_bool(self.closeable, closeable);
 
         *deposits_len = u8::try_from(self.deposits.len()).unwrap().to_le_bytes();
         *borrows_len = u8::try_from(self.borrows.len()).unwrap().to_le_bytes();
@@ -562,7 +557,7 @@ impl Pack for Obligation {
             super_unhealthy_borrow_value,
             unweighted_borrowed_value,
             updated_borrow_attribution_after_upgrade,
-            closeable_by,
+            closeable,
             _padding,
             deposits_len,
             borrows_len,
@@ -583,8 +578,8 @@ impl Pack for Obligation {
             16,
             16,
             1,
-            8,
-            6,
+            1,
+            13,
             1,
             1,
             OBLIGATION_COLLATERAL_LEN + (OBLIGATION_LIQUIDITY_LEN * (MAX_OBLIGATION_RESERVES - 1))
@@ -660,7 +655,7 @@ impl Pack for Obligation {
             updated_borrow_attribution_after_upgrade: unpack_bool(
                 updated_borrow_attribution_after_upgrade,
             )?,
-            closeable_by: u64::from_le_bytes(*closeable_by),
+            closeable: unpack_bool(closeable)?,
         })
     }
 }
@@ -712,7 +707,7 @@ mod test {
                 super_unhealthy_borrow_value: rand_decimal(),
                 borrowing_isolated_asset: rng.gen(),
                 updated_borrow_attribution_after_upgrade: rng.gen(),
-                closeable_by: rng.gen(),
+                closeable: rng.gen(),
             };
 
             let mut packed = [0u8; OBLIGATION_LEN];

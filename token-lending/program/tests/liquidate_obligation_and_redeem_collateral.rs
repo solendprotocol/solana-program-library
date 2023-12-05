@@ -671,6 +671,7 @@ async fn test_liquidate_closeable_obligation() {
                     config: ReserveConfig {
                         liquidation_bonus: 5,
                         max_liquidation_bonus: 10,
+                        protocol_liquidation_fee: 1,
                         ..reserve_config_no_fees()
                     },
                     liquidity_amount: 100_000 * FRACTIONAL_TO_USDC,
@@ -740,12 +741,12 @@ async fn test_liquidate_closeable_obligation() {
         .unwrap();
 
     lending_market
-        .mark_obligation_as_closable(
+        .set_obligation_closeability_status(
             &mut test,
             &obligations[0],
             usdc_reserve,
             &lending_market_owner,
-            10_000,
+            true,
         )
         .await
         .unwrap();
@@ -772,7 +773,7 @@ async fn test_liquidate_closeable_obligation() {
         TokenBalanceChange {
             token_account: liquidator.get_account(&usdc_mint::id()).unwrap(),
             mint: usdc_mint::id(),
-            diff: (2 * FRACTIONAL_TO_USDC - 1) as i128,
+            diff: (2 * FRACTIONAL_TO_USDC) as i128,
         },
         TokenBalanceChange {
             token_account: liquidator.get_account(&wsol_mint::id()).unwrap(),
@@ -790,11 +791,11 @@ async fn test_liquidate_closeable_obligation() {
             mint: usdc_mint::id(),
             diff: -((2 * FRACTIONAL_TO_USDC) as i128),
         },
-        TokenBalanceChange {
-            token_account: usdc_reserve.account.config.fee_receiver,
-            mint: usdc_mint::id(),
-            diff: 1,
-        },
+        // TokenBalanceChange {
+        //     token_account: usdc_reserve.account.config.fee_receiver,
+        //     mint: usdc_mint::id(),
+        //     diff: 1,
+        // },
         // wsol reserve
         TokenBalanceChange {
             token_account: wsol_reserve.account.liquidity.supply_pubkey,

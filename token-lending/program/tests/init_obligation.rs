@@ -52,7 +52,7 @@ async fn test_success() {
             super_unhealthy_borrow_value: Decimal::zero(),
             borrowing_isolated_asset: false,
             updated_borrow_attribution_after_upgrade: false,
-            closeable_by: 0,
+            closeable: false,
         }
     );
 }

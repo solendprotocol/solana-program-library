@@ -10,7 +10,6 @@ use bytemuck::bytes_of;
 use num_traits::FromPrimitive;
 use solana_program::system_program;
 use solana_program::{
-    clock::Slot,
     instruction::{AccountMeta, Instruction},
     msg,
     program_error::ProgramError,
@@ -516,10 +515,10 @@ pub enum LendingInstruction {
     /// 0. `[writable]` Obligation account - refreshed.
     /// 1. `[]` Lending market account.
     /// 2. `[]` Reserve account - refreshed.
-    /// 3. `[signer]` risk authority of lending market
-    MarkObligationAsClosable {
-        /// Obligation is closable before this slot
-        closeable_by: Slot,
+    /// 3. `[signer]` risk authority of lending market or lending market owner
+    SetObligationCloseabilityStatus {
+        /// Obligation is closable
+        closeable: bool,
     },
 }
 
@@ -742,8 +741,13 @@ impl LendingInstruction {
             22 => Self::UpdateMarketMetadata,
             23 => Self::ResizeReserve,
             24 => {
-                let (closeable_by, _rest) = Self::unpack_u64(rest)?;
-                Self::MarkObligationAsClosable { closeable_by }
+                let (closeable, _rest) = match Self::unpack_u8(rest)? {
+                    (0, rest) => (false, rest),
+                    (1, rest) => (true, rest),
+                    _ => return Err(LendingError::InstructionUnpackError.into()),
+                };
+
+                Self::SetObligationCloseabilityStatus { closeable }
             }
             _ => {
                 msg!("Instruction cannot be unpacked {:?} {:?}", tag, rest);
@@ -1000,11 +1004,9 @@ impl LendingInstruction {
             Self::ResizeReserve => {
                 buf.push(23);
             }
-            Self::MarkObligationAsClosable {
-                closeable_by: expiry_time,
-            } => {
+            Self::SetObligationCloseabilityStatus { closeable } => {
                 buf.push(24);
-                buf.extend_from_slice(&expiry_time.to_le_bytes());
+                buf.extend_from_slice(&(closeable as u8).to_le_bytes());
             }
         }
         buf
@@ -1771,13 +1773,13 @@ pub fn resize_reserve(program_id: Pubkey, reserve_pubkey: Pubkey, signer: Pubkey
 }
 
 /// Creates a `MarkObligationAsClosable` instruction
-pub fn mark_obligation_as_closeable(
+pub fn set_obligation_closeability_status(
     program_id: Pubkey,
     obligation_pubkey: Pubkey,
     reserve_pubkey: Pubkey,
     lending_market_pubkey: Pubkey,
     risk_authority: Pubkey,
-    closeable_by: Slot,
+    closeable: bool,
 ) -> Instruction {
     Instruction {
         program_id,
@@ -1787,7 +1789,7 @@ pub fn mark_obligation_as_closeable(
             AccountMeta::new_readonly(reserve_pubkey, false),
             AccountMeta::new_readonly(risk_authority, true),
         ],
-        data: LendingInstruction::MarkObligationAsClosable { closeable_by }.pack(),
+        data: LendingInstruction::SetObligationCloseabilityStatus { closeable }.pack(),
     }
 }
 
@@ -2100,8 +2102,8 @@ mod test {
 
             // MarkObligationAsClosable
             {
-                let instruction = LendingInstruction::MarkObligationAsClosable {
-                    closeable_by: rng.gen(),
+                let instruction = LendingInstruction::SetObligationCloseabilityStatus {
+                    closeable: rng.gen(),
                 };
 
                 let packed = instruction.pack();
