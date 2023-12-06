@@ -210,6 +210,10 @@ pub fn process_instruction(
             msg!("Instruction: Mark Obligation As Closable");
             process_set_obligation_closeability_status(program_id, closeable, accounts)
         }
+        LendingInstruction::ResizeLendingMarket => {
+            msg!("Instruction: Resize Lending Market");
+            process_resize_lending_market(program_id, accounts)
+        }
     }
 }
 
@@ -3136,6 +3140,74 @@ pub fn process_resize_reserve(_program_id: &Pubkey, accounts: &[AccountInfo]) ->
 
     if data[..] != new_data[0..619] {
         msg!("new data's first 619 bytes don't match old data!");
+        return Err(LendingError::InvalidAccountInput.into());
+    }
+
+    if let Err(e) = Reserve::unpack(&new_data) {
+        msg!("failed to unpack new data: {:?}", e);
+        return Err(LendingError::InvalidAccountInput.into());
+    }
+
+    Ok(())
+}
+
+/// resize a lending market
+pub fn process_resize_lending_market(
+    _program_id: &Pubkey,
+    accounts: &[AccountInfo],
+) -> ProgramResult {
+    let account_info_iter = &mut accounts.iter();
+    let lending_market_info = next_account_info(account_info_iter)?;
+    let signer_info = next_account_info(account_info_iter)?;
+    let system_program_info = next_account_info(account_info_iter)?;
+
+    if *signer_info.key != resizer::id() || !signer_info.is_signer {
+        msg!("Resizer pubkey must be a signer");
+        return Err(LendingError::InvalidSigner.into());
+    }
+
+    let data: Vec<u8> = lending_market_info.data.clone().borrow().to_vec();
+
+    if data.len() != 290 {
+        msg!("initial data doesn't match expected length!");
+        return Err(LendingError::InvalidAccountInput.into());
+    }
+
+    let new_size = LendingMarket::LEN;
+    let rent = Rent::get()?;
+    let new_minimum_balance = rent.minimum_balance(new_size);
+
+    let lamports_diff = new_minimum_balance.saturating_sub(lending_market_info.lamports());
+    invoke(
+        &transfer(signer_info.key, lending_market_info.key, lamports_diff),
+        &[
+            signer_info.clone(),
+            lending_market_info.clone(),
+            system_program_info.clone(),
+        ],
+    )?;
+
+    // idk who signer should be lol
+    lending_market_info
+        .realloc(LendingMarket::LEN, true)
+        .map_err(|e| {
+            msg!("realloc failed: {:?}", e);
+            e
+        })?;
+
+    let new_data: Vec<u8> = lending_market_info.data.clone().borrow().to_vec();
+    if new_data.len() != 1290 {
+        msg!("new data doesn't match expected length!");
+        return Err(LendingError::InvalidAccountInput.into());
+    }
+
+    if data[..] != new_data[0..290] {
+        msg!("new data's first 290 bytes don't match old data!");
+        return Err(LendingError::InvalidAccountInput.into());
+    }
+
+    if let Err(e) = LendingMarket::unpack(&new_data) {
+        msg!("failed to unpack new data: {:?}", e);
         return Err(LendingError::InvalidAccountInput.into());
     }
 

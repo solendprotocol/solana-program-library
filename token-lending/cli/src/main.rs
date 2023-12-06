@@ -11,7 +11,7 @@ use solend_sdk::instruction::resize_reserve;
 use solend_sdk::{
     instruction::{
         liquidate_obligation_and_redeem_reserve_collateral, redeem_reserve_collateral,
-        refresh_obligation, refresh_reserve,
+        refresh_obligation, refresh_reserve, resize_lending_market,
     },
     state::Obligation,
     state::ReserveType,
@@ -216,6 +216,19 @@ fn main() {
                         .takes_value(true)
                         .required(true)
                         .help("reserve pubkey"),
+                )
+        )
+        .subcommand(
+            SubCommand::with_name("resize-lending-market")
+                .about("Resize lending market")
+                .arg(
+                    Arg::with_name("lending_market")
+                        .long("lending-market")
+                        .validator(is_pubkey)
+                        .value_name("PUBKEY")
+                        .takes_value(true)
+                        .required(true)
+                        .help("lending market pubkey"),
                 )
         )
         .subcommand(
@@ -1041,6 +1054,12 @@ fn main() {
 
             Ok(())
         }
+        ("resize-lending-market", Some(arg_matches)) => {
+            let lending_market = pubkey_of(arg_matches, "lending_market").unwrap();
+            command_resize_lending_market(&config, &lending_market).unwrap();
+
+            Ok(())
+        }
         ("view-market", Some(arg_matches)) => {
             let market = pubkey_of(arg_matches, "market").unwrap();
             let data = config.rpc_client.get_account_data(&market).unwrap();
@@ -1319,7 +1338,7 @@ fn main() {
                 lending_market_owner_keypair,
             )
         }
-        _ => unreachable!(),
+        (s, _) => unreachable!("{}", s),
     }
     .map_err(|err| {
         eprintln!("{}", err);
@@ -1409,6 +1428,23 @@ fn command_resize_reserve(config: &Config, reserve: &Pubkey) -> CommandResult {
     );
 
     send_transaction(config, tx)?;
+    Ok(())
+}
+
+fn command_resize_lending_market(config: &Config, lending_market: &Pubkey) -> CommandResult {
+    let ix = resize_lending_market(
+        config.lending_program_id,
+        *lending_market,
+        config.fee_payer.pubkey(),
+    );
+    let tx = Transaction::new_signed_with_payer(
+        &[ix],
+        Some(&config.fee_payer.pubkey()),
+        &vec![config.fee_payer.as_ref()],
+        config.rpc_client.get_latest_blockhash().unwrap(),
+    );
+
+    send_transaction(config, tx).unwrap();
     Ok(())
 }
 

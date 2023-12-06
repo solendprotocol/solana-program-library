@@ -520,6 +520,15 @@ pub enum LendingInstruction {
         /// Obligation is closable
         closeable: bool,
     },
+
+    // 25
+    /// ResizeLendingMarket
+    ///
+    /// Accounts expected by this instruction:
+    /// 0. `[]` LendingMarket account.
+    /// 1. `[signer]` fee payer.
+    /// 2. '[]' System Program
+    ResizeLendingMarket,
 }
 
 impl LendingInstruction {
@@ -753,6 +762,7 @@ impl LendingInstruction {
 
                 Self::SetObligationCloseabilityStatus { closeable }
             }
+            25 => Self::ResizeLendingMarket,
             _ => {
                 msg!("Instruction cannot be unpacked {:?} {:?}", tag, rest);
                 return Err(LendingError::InstructionUnpackError.into());
@@ -1014,6 +1024,9 @@ impl LendingInstruction {
             Self::SetObligationCloseabilityStatus { closeable } => {
                 buf.push(24);
                 buf.extend_from_slice(&(closeable as u8).to_le_bytes());
+            }
+            Self::ResizeLendingMarket => {
+                buf.push(25);
             }
         }
         buf
@@ -1800,6 +1813,23 @@ pub fn set_obligation_closeability_status(
     }
 }
 
+/// Creates a `ResizeLendingMarket` instruction
+pub fn resize_lending_market(
+    program_id: Pubkey,
+    lending_market_pubkey: Pubkey,
+    signer: Pubkey,
+) -> Instruction {
+    Instruction {
+        program_id,
+        accounts: vec![
+            AccountMeta::new(lending_market_pubkey, false),
+            AccountMeta::new_readonly(signer, true),
+            AccountMeta::new_readonly(system_program::id(), false),
+        ],
+        data: LendingInstruction::ResizeLendingMarket.pack(),
+    }
+}
+
 #[cfg(test)]
 mod test {
     use super::*;
@@ -2114,6 +2144,15 @@ mod test {
                 let instruction = LendingInstruction::SetObligationCloseabilityStatus {
                     closeable: rng.gen(),
                 };
+
+                let packed = instruction.pack();
+                let unpacked = LendingInstruction::unpack(&packed).unwrap();
+                assert_eq!(instruction, unpacked);
+            }
+
+            // resize lending market
+            {
+                let instruction = LendingInstruction::ResizeLendingMarket {};
 
                 let packed = instruction.pack();
                 let unpacked = LendingInstruction::unpack(&packed).unwrap();

@@ -80,7 +80,7 @@ impl IsInitialized for LendingMarket {
     }
 }
 
-const LENDING_MARKET_LEN: usize = 290; // 1 + 1 + 32 + 32 + 32 + 32 + 32 + 56 + 32 + 40
+const LENDING_MARKET_LEN: usize = 1290; // 1 + 1 + 32 + 32 + 32 + 32 + 32 + 56 + 32 + 40
 impl Pack for LendingMarket {
     const LEN: usize = LENDING_MARKET_LEN;
 
@@ -111,7 +111,7 @@ impl Pack for LendingMarket {
             RATE_LIMITER_LEN,
             PUBKEY_BYTES,
             PUBKEY_BYTES,
-            8
+            1008
         ];
 
         *version = self.version.to_le_bytes();
@@ -161,7 +161,7 @@ impl Pack for LendingMarket {
             RATE_LIMITER_LEN,
             PUBKEY_BYTES,
             PUBKEY_BYTES,
-            8
+            1008
         ];
 
         let version = u8::from_le_bytes(*version);
