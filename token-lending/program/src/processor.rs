@@ -511,10 +511,11 @@ fn _refresh_reserve<'a>(
     let (market_price, smoothed_market_price) =
         get_price(switchboard_feed_info, pyth_price_info, clock)?;
 
-    reserve.liquidity.market_price = market_price;
+    reserve.liquidity.market_price = market_price.try_mul(reserve.price_weight())?;
 
     if let Some(smoothed_market_price) = smoothed_market_price {
-        reserve.liquidity.smoothed_market_price = smoothed_market_price;
+        reserve.liquidity.smoothed_market_price =
+            smoothed_market_price.try_mul(reserve.price_weight())?;
     }
 
     // currently there's no way to support two prices without a pyth oracle. So if a reserve

@@ -35,6 +35,9 @@ pub const MAX_BONUS_PCT: u8 = 25;
 /// Maximum protocol liquidation fee in deca bps (1 deca bp = 10 bps)
 pub const MAX_PROTOCOL_LIQUIDATION_FEE_DECA_BPS: u8 = 50;
 
+/// Upper bound on price weight
+pub const MAX_PRICE_WEIGHT_BPS: u64 = 10000;
+
 /// Lending market reserve state
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct Reserve {
@@ -77,6 +80,13 @@ impl Reserve {
     pub fn borrow_weight(&self) -> Decimal {
         Decimal::one()
             .try_add(Decimal::from_bps(self.config.added_borrow_weight_bps))
+            .unwrap()
+    }
+
+    /// get price weight. Guaranteed to be greater than 1
+    pub fn price_weight(&self) -> Decimal {
+        Decimal::one()
+            .try_add(Decimal::from_bps(self.config.added_price_weight_bps))
             .unwrap()
     }
 
@@ -900,6 +910,9 @@ pub struct ReserveConfig {
     pub added_borrow_weight_bps: u64,
     /// Type of the reserve (Regular, Isolated)
     pub reserve_type: ReserveType,
+    /// Added price weight in basis points. Exclusively used to calculate a more reliable asset price for
+    /// staked assets (mSOL, stETH).
+    pub added_price_weight_bps: u64,
 }
 
 /// validates reserve configs
@@ -987,6 +1000,15 @@ pub fn validate_reserve_config(config: ReserveConfig) -> ProgramResult {
         msg!("open/close LTV must be 0 for isolated reserves");
         return Err(LendingError::InvalidConfig.into());
     }
+
+    if config.added_price_weight_bps > MAX_PRICE_WEIGHT_BPS {
+        msg!(
+            "Added price weight must be in range [0, {}]",
+            MAX_PRICE_WEIGHT_BPS
+        );
+        return Err(LendingError::InvalidConfig.into());
+    }
+
     Ok(())
 }
 
@@ -1173,6 +1195,7 @@ impl Pack for Reserve {
             config_super_max_borrow_rate,
             config_max_liquidation_bonus,
             config_max_liquidation_threshold,
+            config_added_price_weight_bps,
             _padding,
         ) = mut_array_refs![
             output,
@@ -1216,7 +1239,8 @@ impl Pack for Reserve {
             8,
             1,
             1,
-            138
+            8,
+            130
         ];
 
         // reserve
@@ -1275,6 +1299,7 @@ impl Pack for Reserve {
         *config_protocol_liquidation_fee = self.config.protocol_liquidation_fee.to_le_bytes();
         *config_protocol_take_rate = self.config.protocol_take_rate.to_le_bytes();
         *config_asset_type = (self.config.reserve_type as u8).to_le_bytes();
+        *config_added_price_weight_bps = self.config.added_price_weight_bps.to_le_bytes();
 
         self.rate_limiter.pack_into_slice(rate_limiter);
 
@@ -1328,6 +1353,7 @@ impl Pack for Reserve {
             config_super_max_borrow_rate,
             config_max_liquidation_bonus,
             config_max_liquidation_threshold,
+            config_added_price_weight_bps,
             _padding,
         ) = array_refs![
             input,
@@ -1371,7 +1397,8 @@ impl Pack for Reserve {
             8,
             1,
             1,
-            138
+            8,
+            130
         ];
 
         let version = u8::from_le_bytes(*version);
@@ -1462,6 +1489,7 @@ impl Pack for Reserve {
                 protocol_take_rate: u8::from_le_bytes(*config_protocol_take_rate),
                 added_borrow_weight_bps: u64::from_le_bytes(*config_added_borrow_weight_bps),
                 reserve_type: ReserveType::from_u8(config_asset_type[0]).unwrap(),
+                added_price_weight_bps: u64::from_le_bytes(*config_added_price_weight_bps),
             },
             rate_limiter: RateLimiter::unpack_from_slice(rate_limiter)?,
         })
@@ -1539,6 +1567,7 @@ mod test {
                     protocol_take_rate: rng.gen(),
                     added_borrow_weight_bps: rng.gen(),
                     reserve_type: ReserveType::from_u8(rng.gen::<u8>() % 2).unwrap(),
+                    added_price_weight_bps: rng.gen(),
                 },
                 rate_limiter: rand_rate_limiter(),
             };
@@ -2093,6 +2122,20 @@ mod test {
                     ..ReserveConfig::default()
                 },
                 result: Err(LendingError::InvalidConfig.into()),
+            }),
+            Just(ReserveConfigTestCase {
+                config: ReserveConfig {
+                    added_price_weight_bps: 10001,
+                    ..ReserveConfig::default()
+                },
+                result: Err(LendingError::InvalidConfig.into()),
+            }),
+            Just(ReserveConfigTestCase {
+                config: ReserveConfig {
+                    added_price_weight_bps: 9999,
+                    ..ReserveConfig::default()
+                },
+                result: Ok(())
             })
         ]
     }
