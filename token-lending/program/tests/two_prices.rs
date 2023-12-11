@@ -478,7 +478,7 @@ async fn test_liquidation_doesnt_use_smoothed_price() {
         TokenBalanceChange {
             token_account: liquidator.get_account(&usdc_mint::id()).unwrap(),
             mint: usdc_mint::id(),
-            diff: (20 * FRACTIONAL_TO_USDC * 105 / 100) as i128,
+            diff: (20 * FRACTIONAL_TO_USDC * 105 / 100 - 1) as i128,
         },
         TokenBalanceChange {
             token_account: liquidator.get_account(&wsol_mint::id()).unwrap(),

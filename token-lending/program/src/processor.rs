@@ -1,5 +1,6 @@
 //! Program state processor
 
+use crate::state::Bonus;
 use crate::{
     self as solend_program,
     error::LendingError,
@@ -1137,11 +1138,9 @@ fn update_borrow_attribution_values(
             return Err(LendingError::InvalidAccountInput.into());
         }
 
-        if obligation.updated_borrow_attribution_after_upgrade {
-            deposit_reserve.attributed_borrow_value = deposit_reserve
-                .attributed_borrow_value
-                .saturating_sub(collateral.attributed_borrow_value);
-        }
+        deposit_reserve.attributed_borrow_value = deposit_reserve
+            .attributed_borrow_value
+            .saturating_sub(collateral.attributed_borrow_value);
 
         if obligation.deposited_value > Decimal::zero() {
             collateral.attributed_borrow_value = collateral
@@ -1169,8 +1168,6 @@ fn update_borrow_attribution_values(
 
         Reserve::pack(deposit_reserve, &mut deposit_reserve_info.data.borrow_mut())?;
     }
-
-    obligation.updated_borrow_attribution_after_upgrade = true;
 
     Ok((open_exceeded, close_exceeded))
 }
@@ -2000,7 +1997,7 @@ fn _liquidate_obligation<'a>(
     user_transfer_authority_info: &AccountInfo<'a>,
     clock: &Clock,
     token_program_id: &AccountInfo<'a>,
-) -> Result<(u64, Decimal), ProgramError> {
+) -> Result<(u64, Bonus), ProgramError> {
     let lending_market = LendingMarket::unpack(&lending_market_info.data.borrow())?;
     if lending_market_info.owner != program_id {
         msg!("Lending market provided is not owned by the lending program");
@@ -2130,7 +2127,7 @@ fn _liquidate_obligation<'a>(
         return Err(LendingError::InvalidMarketAuthority.into());
     }
 
-    let bonus_rate = withdraw_reserve.calculate_bonus(&obligation)?;
+    let bonus = withdraw_reserve.calculate_bonus(&obligation)?;
     let CalculateLiquidationResult {
         settle_amount,
         repay_amount,
@@ -2140,7 +2137,7 @@ fn _liquidate_obligation<'a>(
         &obligation,
         liquidity,
         collateral,
-        bonus_rate,
+        &bonus,
     )?;
 
     if repay_amount == 0 {
@@ -2195,7 +2192,7 @@ fn _liquidate_obligation<'a>(
         token_program: token_program_id.clone(),
     })?;
 
-    Ok((withdraw_amount, bonus_rate))
+    Ok((withdraw_amount, bonus))
 }
 
 #[inline(never)] // avoid stack frame limit
@@ -2227,7 +2224,7 @@ fn process_liquidate_obligation_and_redeem_reserve_collateral(
     let token_program_id = next_account_info(account_info_iter)?;
     let clock = &Clock::get()?;
 
-    let (withdrawn_collateral_amount, bonus_rate) = _liquidate_obligation(
+    let (withdrawn_collateral_amount, bonus) = _liquidate_obligation(
         program_id,
         liquidity_amount,
         source_liquidity_info,
@@ -2274,7 +2271,7 @@ fn process_liquidate_obligation_and_redeem_reserve_collateral(
             return Err(LendingError::InvalidAccountInput.into());
         }
         let protocol_fee = withdraw_reserve
-            .calculate_protocol_liquidation_fee(withdraw_liquidity_amount, bonus_rate)?;
+            .calculate_protocol_liquidation_fee(withdraw_liquidity_amount, &bonus)?;
 
         spl_token_transfer(TokenTransferParams {
             source: destination_liquidity_info.clone(),
@@ -3194,7 +3191,7 @@ pub fn process_set_obligation_closeability_status(
 
     if &lending_market.risk_authority != signer_info.key && &lending_market.owner != signer_info.key
     {
-        msg!("Lending market risk authority does not match the risk authority provided");
+        msg!("Signer must be risk authority or lending market owner");
         return Err(LendingError::InvalidAccountInput.into());
     }
 

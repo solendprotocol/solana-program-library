@@ -15,6 +15,7 @@ use solend_program::state::ObligationCollateral;
 use solend_program::state::ObligationLiquidity;
 use solend_program::state::ReserveConfig;
 use solend_program::state::ReserveFees;
+use solend_sdk::state::Bonus;
 use solend_sdk::NULL_PUBKEY;
 mod helpers;
 
@@ -458,7 +459,12 @@ async fn test_success_insufficient_liquidity() {
         .account
         .calculate_protocol_liquidation_fee(
             available_amount * FRACTIONAL_TO_USDC,
-            Decimal::from_percent(5),
+            &Bonus {
+                total_bonus: Decimal::from_percent(bonus as u8),
+                protocol_liquidation_fee: Decimal::from_deca_bps(
+                    usdc_reserve.account.config.protocol_liquidation_fee,
+                ),
+            },
         )
         .unwrap();
 
@@ -774,7 +780,7 @@ async fn test_liquidate_closeable_obligation() {
         TokenBalanceChange {
             token_account: liquidator.get_account(&usdc_mint::id()).unwrap(),
             mint: usdc_mint::id(),
-            diff: (2 * FRACTIONAL_TO_USDC) as i128,
+            diff: (2 * FRACTIONAL_TO_USDC - 1) as i128,
         },
         TokenBalanceChange {
             token_account: liquidator.get_account(&wsol_mint::id()).unwrap(),
@@ -792,11 +798,11 @@ async fn test_liquidate_closeable_obligation() {
             mint: usdc_mint::id(),
             diff: -((2 * FRACTIONAL_TO_USDC) as i128),
         },
-        // TokenBalanceChange {
-        //     token_account: usdc_reserve.account.config.fee_receiver,
-        //     mint: usdc_mint::id(),
-        //     diff: 1,
-        // },
+        TokenBalanceChange {
+            token_account: usdc_reserve.account.config.fee_receiver,
+            mint: usdc_mint::id(),
+            diff: 1,
+        },
         // wsol reserve
         TokenBalanceChange {
             token_account: wsol_reserve.account.liquidity.supply_pubkey,
