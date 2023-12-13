@@ -35,11 +35,11 @@ pub const MAX_BONUS_PCT: u8 = 25;
 /// Maximum protocol liquidation fee in deca bps (1 deca bp = 10 bps)
 pub const MAX_PROTOCOL_LIQUIDATION_FEE_DECA_BPS: u8 = 50;
 
-/// Upper bound on added price weight
-pub const MAX_ADDED_PRICE_WEIGHT_BPS: i64 = 2000;
+/// Upper bound on scaled price offset
+pub const MAX_SCALED_PRICE_OFFSET_BPS: i64 = 2000;
 
-/// Lower bound on added price weight
-pub const MIN_ADDED_PRICE_WEIGHT_BPS: i64 = -2000;
+/// Lower bound on scaled price offset
+pub const MIN_SCALED_PRICE_OFFSET_BPS: i64 = -2000;
 
 /// Lending market reserve state
 #[derive(Clone, Debug, Default, PartialEq)]
@@ -87,16 +87,16 @@ impl Reserve {
     }
 
     /// get price weight. Guaranteed to be greater than 1
-    pub fn price_weight(&self) -> Decimal {
-        let added_price_weight_bps = min(
-            MAX_ADDED_PRICE_WEIGHT_BPS,
+    pub fn price_scale(&self) -> Decimal {
+        let scaled_price_offset_bps = min(
+            MAX_SCALED_PRICE_OFFSET_BPS,
             max(
-                MIN_ADDED_PRICE_WEIGHT_BPS,
-                self.config.added_price_weight_bps,
+                MIN_SCALED_PRICE_OFFSET_BPS,
+                self.config.scaled_price_offset_bps,
             ),
         );
 
-        let price_weight_bps = 10_000 + added_price_weight_bps;
+        let price_weight_bps = 10_000 + scaled_price_offset_bps;
         Decimal::from_bps(price_weight_bps as u64)
     }
 
@@ -920,9 +920,9 @@ pub struct ReserveConfig {
     pub added_borrow_weight_bps: u64,
     /// Type of the reserve (Regular, Isolated)
     pub reserve_type: ReserveType,
-    /// Added price weight in basis points. Exclusively used to calculate a more reliable asset price for
+    /// scaled price offset in basis points. Exclusively used to calculate a more reliable asset price for
     /// staked assets (mSOL, stETH).
-    pub added_price_weight_bps: i64,
+    pub scaled_price_offset_bps: i64,
 }
 
 /// validates reserve configs
@@ -1011,13 +1011,13 @@ pub fn validate_reserve_config(config: ReserveConfig) -> ProgramResult {
         return Err(LendingError::InvalidConfig.into());
     }
 
-    if config.added_price_weight_bps < MIN_ADDED_PRICE_WEIGHT_BPS
-        || config.added_price_weight_bps > MAX_ADDED_PRICE_WEIGHT_BPS
+    if config.scaled_price_offset_bps < MIN_SCALED_PRICE_OFFSET_BPS
+        || config.scaled_price_offset_bps > MAX_SCALED_PRICE_OFFSET_BPS
     {
         msg!(
-            "Added price weight must be in range [{}, {}]",
-            MIN_ADDED_PRICE_WEIGHT_BPS,
-            MAX_ADDED_PRICE_WEIGHT_BPS
+            "scaled price offset must be in range [{}, {}]",
+            MIN_SCALED_PRICE_OFFSET_BPS,
+            MAX_SCALED_PRICE_OFFSET_BPS
         );
         return Err(LendingError::InvalidConfig.into());
     }
@@ -1208,7 +1208,7 @@ impl Pack for Reserve {
             config_super_max_borrow_rate,
             config_max_liquidation_bonus,
             config_max_liquidation_threshold,
-            config_added_price_weight_bps,
+            config_scaled_price_offset_bps,
             _padding,
         ) = mut_array_refs![
             output,
@@ -1312,7 +1312,7 @@ impl Pack for Reserve {
         *config_protocol_liquidation_fee = self.config.protocol_liquidation_fee.to_le_bytes();
         *config_protocol_take_rate = self.config.protocol_take_rate.to_le_bytes();
         *config_asset_type = (self.config.reserve_type as u8).to_le_bytes();
-        *config_added_price_weight_bps = self.config.added_price_weight_bps.to_le_bytes();
+        *config_scaled_price_offset_bps = self.config.scaled_price_offset_bps.to_le_bytes();
 
         self.rate_limiter.pack_into_slice(rate_limiter);
 
@@ -1366,7 +1366,7 @@ impl Pack for Reserve {
             config_super_max_borrow_rate,
             config_max_liquidation_bonus,
             config_max_liquidation_threshold,
-            config_added_price_weight_bps,
+            config_scaled_price_offset_bps,
             _padding,
         ) = array_refs![
             input,
@@ -1502,7 +1502,7 @@ impl Pack for Reserve {
                 protocol_take_rate: u8::from_le_bytes(*config_protocol_take_rate),
                 added_borrow_weight_bps: u64::from_le_bytes(*config_added_borrow_weight_bps),
                 reserve_type: ReserveType::from_u8(config_asset_type[0]).unwrap(),
-                added_price_weight_bps: i64::from_le_bytes(*config_added_price_weight_bps),
+                scaled_price_offset_bps: i64::from_le_bytes(*config_scaled_price_offset_bps),
             },
             rate_limiter: RateLimiter::unpack_from_slice(rate_limiter)?,
         })
@@ -1580,7 +1580,7 @@ mod test {
                     protocol_take_rate: rng.gen(),
                     added_borrow_weight_bps: rng.gen(),
                     reserve_type: ReserveType::from_u8(rng.gen::<u8>() % 2).unwrap(),
-                    added_price_weight_bps: rng.gen(),
+                    scaled_price_offset_bps: rng.gen(),
                 },
                 rate_limiter: rand_rate_limiter(),
             };
@@ -2138,28 +2138,28 @@ mod test {
             }),
             Just(ReserveConfigTestCase {
                 config: ReserveConfig {
-                    added_price_weight_bps: 2001,
+                    scaled_price_offset_bps: 2001,
                     ..ReserveConfig::default()
                 },
                 result: Err(LendingError::InvalidConfig.into()),
             }),
             Just(ReserveConfigTestCase {
                 config: ReserveConfig {
-                    added_price_weight_bps: 1999,
+                    scaled_price_offset_bps: 1999,
                     ..ReserveConfig::default()
                 },
                 result: Ok(())
             }),
             Just(ReserveConfigTestCase {
                 config: ReserveConfig {
-                    added_price_weight_bps: -2001,
+                    scaled_price_offset_bps: -2001,
                     ..ReserveConfig::default()
                 },
                 result: Err(LendingError::InvalidConfig.into()),
             }),
             Just(ReserveConfigTestCase {
                 config: ReserveConfig {
-                    added_price_weight_bps: -1999,
+                    scaled_price_offset_bps: -1999,
                     ..ReserveConfig::default()
                 },
                 result: Ok(())

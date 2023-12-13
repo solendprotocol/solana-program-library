@@ -363,7 +363,7 @@ async fn test_use_price_weight() {
             &[ReserveArgs {
                 mint: wsol_mint::id(),
                 config: ReserveConfig {
-                    added_price_weight_bps: 2_000,
+                    scaled_price_offset_bps: 2_000,
                     ..test_reserve_config()
                 },
                 liquidity_amount: 100_000 * FRACTIONAL_TO_USDC,
@@ -416,7 +416,7 @@ async fn test_use_price_weight() {
             &lending_market_owner,
             &wsol_reserve,
             ReserveConfig {
-                added_price_weight_bps: -2_000,
+                scaled_price_offset_bps: -2_000,
                 ..wsol_reserve.account.config
             },
             wsol_reserve.account.rate_limiter.config,
