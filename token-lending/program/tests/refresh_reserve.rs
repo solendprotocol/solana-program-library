@@ -358,25 +358,26 @@ async fn test_success_only_switchboard_reserve() {
 
 #[tokio::test]
 async fn test_use_price_weight() {
-    let (mut test, lending_market, reserves, _obligations, _users, _) = custom_scenario(
-        &[ReserveArgs {
-            mint: wsol_mint::id(),
-            config: ReserveConfig {
-                added_price_weight_bps: 5_000,
-                ..test_reserve_config()
-            },
-            liquidity_amount: 100_000 * FRACTIONAL_TO_USDC,
-            price: PriceArgs {
-                price: 10,
-                conf: 0,
-                expo: 0,
-                ema_price: 10,
-                ema_conf: 0,
-            },
-        }],
-        &[],
-    )
-    .await;
+    let (mut test, lending_market, reserves, _obligations, _users, lending_market_owner) =
+        custom_scenario(
+            &[ReserveArgs {
+                mint: wsol_mint::id(),
+                config: ReserveConfig {
+                    added_price_weight_bps: 2_000,
+                    ..test_reserve_config()
+                },
+                liquidity_amount: 100_000 * FRACTIONAL_TO_USDC,
+                price: PriceArgs {
+                    price: 10,
+                    conf: 0,
+                    expo: 0,
+                    ema_price: 10,
+                    ema_conf: 0,
+                },
+            }],
+            &[],
+        )
+        .await;
 
     test.set_price(
         &wsol_mint::id(),
@@ -384,7 +385,7 @@ async fn test_use_price_weight() {
             price: 10,
             conf: 0,
             expo: 0,
-            ema_price: 12,
+            ema_price: 20,
             ema_conf: 0,
         },
     )
@@ -400,10 +401,44 @@ async fn test_use_price_weight() {
     let wsol_reserve = test.load_account::<Reserve>(reserves[0].pubkey).await;
     assert_eq!(
         wsol_reserve.account.liquidity.market_price,
-        Decimal::from(15u64)
+        Decimal::from(12u64)
     );
     assert_eq!(
         wsol_reserve.account.liquidity.smoothed_market_price,
-        Decimal::from(18u64)
+        Decimal::from(24u64)
+    );
+
+    test.advance_clock_by_slots(1).await;
+
+    lending_market
+        .update_reserve_config(
+            &mut test,
+            &lending_market_owner,
+            &wsol_reserve,
+            ReserveConfig {
+                added_price_weight_bps: -2_000,
+                ..wsol_reserve.account.config
+            },
+            wsol_reserve.account.rate_limiter.config,
+            None,
+        )
+        .await
+        .unwrap();
+
+    test.advance_clock_by_slots(1).await;
+
+    lending_market
+        .refresh_reserve(&mut test, &reserves[0])
+        .await
+        .unwrap();
+
+    let wsol_reserve = test.load_account::<Reserve>(reserves[0].pubkey).await;
+    assert_eq!(
+        wsol_reserve.account.liquidity.market_price,
+        Decimal::from(8u64)
+    );
+    assert_eq!(
+        wsol_reserve.account.liquidity.smoothed_market_price,
+        Decimal::from(16u64)
     );
 }

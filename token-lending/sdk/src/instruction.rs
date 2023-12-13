@@ -562,7 +562,7 @@ impl LendingInstruction {
                 let (asset_type, rest) = Self::unpack_u8(rest)?;
                 let (max_liquidation_bonus, rest) = Self::unpack_u8(rest)?;
                 let (max_liquidation_threshold, rest) = Self::unpack_u8(rest)?;
-                let (added_price_weight_bps, _rest) = Self::unpack_u64(rest)?;
+                let (added_price_weight_bps, _rest) = Self::unpack_i64(rest)?;
                 Self::InitReserve {
                     liquidity_amount,
                     config: ReserveConfig {
@@ -658,7 +658,7 @@ impl LendingInstruction {
                 let (asset_type, rest) = Self::unpack_u8(rest)?;
                 let (max_liquidation_bonus, rest) = Self::unpack_u8(rest)?;
                 let (max_liquidation_threshold, rest) = Self::unpack_u8(rest)?;
-                let (added_price_weight_bps, rest) = Self::unpack_u64(rest)?;
+                let (added_price_weight_bps, rest) = Self::unpack_i64(rest)?;
                 let (window_duration, rest) = Self::unpack_u64(rest)?;
                 let (max_outflow, _rest) = Self::unpack_u64(rest)?;
 
@@ -734,6 +734,20 @@ impl LendingInstruction {
             .get(..8)
             .and_then(|slice| slice.try_into().ok())
             .map(u64::from_le_bytes)
+            .ok_or(LendingError::InstructionUnpackError)?;
+        Ok((value, rest))
+    }
+
+    fn unpack_i64(input: &[u8]) -> Result<(i64, &[u8]), ProgramError> {
+        if input.len() < 8 {
+            msg!("i64 cannot be unpacked");
+            return Err(LendingError::InstructionUnpackError.into());
+        }
+        let (bytes, rest) = input.split_at(8);
+        let value = bytes
+            .get(..8)
+            .and_then(|slice| slice.try_into().ok())
+            .map(i64::from_le_bytes)
             .ok_or(LendingError::InstructionUnpackError)?;
         Ok((value, rest))
     }
@@ -1764,7 +1778,7 @@ mod test {
                         protocol_take_rate: rng.gen::<u8>(),
                         added_borrow_weight_bps: rng.gen::<u64>(),
                         reserve_type: ReserveType::from_u8(rng.gen::<u8>() % 2).unwrap(),
-                        added_price_weight_bps: rng.gen::<u64>(),
+                        added_price_weight_bps: rng.gen(),
                     },
                 };
 
@@ -1925,7 +1939,7 @@ mod test {
                         protocol_take_rate: rng.gen::<u8>(),
                         added_borrow_weight_bps: rng.gen::<u64>(),
                         reserve_type: ReserveType::from_u8(rng.gen::<u8>() % 2).unwrap(),
-                        added_price_weight_bps: rng.gen::<u64>(),
+                        added_price_weight_bps: rng.gen(),
                     },
                     rate_limiter_config: RateLimiterConfig {
                         window_duration: rng.gen::<u64>(),
