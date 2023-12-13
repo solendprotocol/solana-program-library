@@ -561,7 +561,8 @@ impl LendingInstruction {
                 let (added_borrow_weight_bps, rest) = Self::unpack_u64(rest)?;
                 let (asset_type, rest) = Self::unpack_u8(rest)?;
                 let (max_liquidation_bonus, rest) = Self::unpack_u8(rest)?;
-                let (max_liquidation_threshold, _rest) = Self::unpack_u8(rest)?;
+                let (max_liquidation_threshold, rest) = Self::unpack_u8(rest)?;
+                let (scaled_price_offset_bps, _rest) = Self::unpack_i64(rest)?;
                 Self::InitReserve {
                     liquidity_amount,
                     config: ReserveConfig {
@@ -588,6 +589,7 @@ impl LendingInstruction {
                         protocol_take_rate,
                         added_borrow_weight_bps,
                         reserve_type: ReserveType::from_u8(asset_type).unwrap(),
+                        scaled_price_offset_bps,
                     },
                 }
             }
@@ -656,6 +658,7 @@ impl LendingInstruction {
                 let (asset_type, rest) = Self::unpack_u8(rest)?;
                 let (max_liquidation_bonus, rest) = Self::unpack_u8(rest)?;
                 let (max_liquidation_threshold, rest) = Self::unpack_u8(rest)?;
+                let (scaled_price_offset_bps, rest) = Self::unpack_i64(rest)?;
                 let (window_duration, rest) = Self::unpack_u64(rest)?;
                 let (max_outflow, _rest) = Self::unpack_u64(rest)?;
 
@@ -684,6 +687,7 @@ impl LendingInstruction {
                         protocol_take_rate,
                         added_borrow_weight_bps,
                         reserve_type: ReserveType::from_u8(asset_type).unwrap(),
+                        scaled_price_offset_bps,
                     },
                     rate_limiter_config: RateLimiterConfig {
                         window_duration,
@@ -730,6 +734,20 @@ impl LendingInstruction {
             .get(..8)
             .and_then(|slice| slice.try_into().ok())
             .map(u64::from_le_bytes)
+            .ok_or(LendingError::InstructionUnpackError)?;
+        Ok((value, rest))
+    }
+
+    fn unpack_i64(input: &[u8]) -> Result<(i64, &[u8]), ProgramError> {
+        if input.len() < 8 {
+            msg!("i64 cannot be unpacked");
+            return Err(LendingError::InstructionUnpackError.into());
+        }
+        let (bytes, rest) = input.split_at(8);
+        let value = bytes
+            .get(..8)
+            .and_then(|slice| slice.try_into().ok())
+            .map(i64::from_le_bytes)
             .ok_or(LendingError::InstructionUnpackError)?;
         Ok((value, rest))
     }
@@ -833,6 +851,7 @@ impl LendingInstruction {
                         protocol_take_rate,
                         added_borrow_weight_bps: borrow_weight_bps,
                         reserve_type: asset_type,
+                        scaled_price_offset_bps,
                     },
             } => {
                 buf.push(2);
@@ -858,6 +877,7 @@ impl LendingInstruction {
                 buf.extend_from_slice(&(asset_type as u8).to_le_bytes());
                 buf.extend_from_slice(&max_liquidation_bonus.to_le_bytes());
                 buf.extend_from_slice(&max_liquidation_threshold.to_le_bytes());
+                buf.extend_from_slice(&scaled_price_offset_bps.to_le_bytes());
             }
             Self::RefreshReserve => {
                 buf.push(3);
@@ -934,6 +954,7 @@ impl LendingInstruction {
                 buf.extend_from_slice(&(config.reserve_type as u8).to_le_bytes());
                 buf.extend_from_slice(&config.max_liquidation_bonus.to_le_bytes());
                 buf.extend_from_slice(&config.max_liquidation_threshold.to_le_bytes());
+                buf.extend_from_slice(&config.scaled_price_offset_bps.to_le_bytes());
                 buf.extend_from_slice(&rate_limiter_config.window_duration.to_le_bytes());
                 buf.extend_from_slice(&rate_limiter_config.max_outflow.to_le_bytes());
             }
@@ -1757,6 +1778,7 @@ mod test {
                         protocol_take_rate: rng.gen::<u8>(),
                         added_borrow_weight_bps: rng.gen::<u64>(),
                         reserve_type: ReserveType::from_u8(rng.gen::<u8>() % 2).unwrap(),
+                        scaled_price_offset_bps: rng.gen(),
                     },
                 };
 
@@ -1917,6 +1939,7 @@ mod test {
                         protocol_take_rate: rng.gen::<u8>(),
                         added_borrow_weight_bps: rng.gen::<u64>(),
                         reserve_type: ReserveType::from_u8(rng.gen::<u8>() % 2).unwrap(),
+                        scaled_price_offset_bps: rng.gen(),
                     },
                     rate_limiter_config: RateLimiterConfig {
                         window_duration: rng.gen::<u64>(),

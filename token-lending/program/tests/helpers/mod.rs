@@ -52,6 +52,7 @@ pub fn test_reserve_config() -> ReserveConfig {
         protocol_take_rate: 0,
         added_borrow_weight_bps: 0,
         reserve_type: ReserveType::Regular,
+        scaled_price_offset_bps: 0,
     }
 }
 
