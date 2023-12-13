@@ -262,7 +262,11 @@ fn process_set_lending_market_owner_and_config(
 
         lending_market.whitelisted_liquidator = whitelisted_liquidator;
     } else if market_change_authority_info.key == &lending_market.risk_authority {
-        if rate_limiter_config != lending_market.rate_limiter.config {
+        // only can disable outflows
+        if rate_limiter_config != lending_market.rate_limiter.config
+            && rate_limiter_config.window_duration > 0
+            && rate_limiter_config.max_outflow == 0
+        {
             lending_market.rate_limiter = RateLimiter::new(rate_limiter_config, Clock::get()?.slot);
         }
     } else {

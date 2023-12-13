@@ -88,8 +88,8 @@ async fn test_risk_authority_can_set_only_rate_limiter() {
     test.advance_clock_by_slots(1).await;
 
     let new_rate_limiter_config = RateLimiterConfig {
-        max_outflow: 45,
-        window_duration: 5,
+        max_outflow: 0,
+        window_duration: 1,
     };
 
     let lending_market = test
@@ -123,7 +123,7 @@ async fn test_risk_authority_can_set_only_rate_limiter() {
     assert_eq!(
         lending_market_post.account,
         LendingMarket {
-            rate_limiter: RateLimiter::new(new_rate_limiter_config, 1000), // only thing that changed
+            rate_limiter: RateLimiter::new(new_rate_limiter_config, 1001), // only thing that changed
             ..lending_market.account
         }
     );
