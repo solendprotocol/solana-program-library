@@ -455,6 +455,50 @@ async fn test_use_price_weight() {
         wsol_reserve.account.liquidity.smoothed_market_price,
         Decimal::from(16u64)
     );
+
+    // check we do same thing for switchboard
+    let switchboard_feed_pubkey = Some(test.init_switchboard_feed(&wsol_mint::id()).await);
+    test.set_switchboard_price(
+        &wsol_mint::id(),
+        SwitchboardPriceArgs { price: 30, expo: 0 },
+    )
+    .await;
+
+    // update reserve so the switchboard feed is not NULL_PUBKEY
+    lending_market
+        .update_reserve_config(
+            &mut test,
+            &lending_market_owner,
+            &wsol_reserve,
+            wsol_reserve.account.config,
+            wsol_reserve.account.rate_limiter.config,
+            Some(&Oracle {
+                pyth_price_pubkey: NULL_PUBKEY,
+                pyth_product_pubkey: NULL_PUBKEY,
+                switchboard_feed_pubkey,
+            }),
+        )
+        .await
+        .unwrap();
+
+    test.advance_clock_by_slots(1).await;
+
+    let wsol_reserve = test.load_account::<Reserve>(reserves[0].pubkey).await;
+    lending_market
+        .refresh_reserve(&mut test, &wsol_reserve)
+        .await
+        .unwrap();
+
+    let wsol_reserve = test.load_account::<Reserve>(reserves[0].pubkey).await;
+    assert_eq!(
+        wsol_reserve.account.liquidity.market_price,
+        Decimal::from(24u64)
+    );
+
+    assert_eq!(
+        wsol_reserve.account.liquidity.smoothed_market_price,
+        Decimal::from(24u64)
+    );
 }
 
 #[tokio::test]
