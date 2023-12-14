@@ -133,7 +133,7 @@ impl Obligation {
 
         // convert max_withdraw_value to max withdraw liquidity amount
 
-        // why is min used and not max? seems scary
+        // why is lower bound used and not upper bound? seems scary
         //
         // the tldr is that allowed borrow value is calculated with the minimum
         // of the spot price and the smoothed price, so we have to use the min here to be
@@ -146,10 +146,7 @@ impl Obligation {
         // as using min.
         //
         // therefore, we use min for the better UX.
-        let price = min(
-            withdraw_reserve.liquidity.market_price,
-            withdraw_reserve.liquidity.smoothed_market_price,
-        );
+        let price = withdraw_reserve.price_lower_bound();
 
         let decimals = 10u64
             .checked_pow(withdraw_reserve.liquidity.mint_decimals as u32)

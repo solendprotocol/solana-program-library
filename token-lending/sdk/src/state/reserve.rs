@@ -105,6 +105,22 @@ impl Reserve {
         Rate::from_percent(self.config.loan_to_value_ratio)
     }
 
+    /// Upper bound price for reserve mint
+    pub fn price_upper_bound(&self) -> Decimal {
+        std::cmp::max(
+            self.liquidity.market_price,
+            self.liquidity.smoothed_market_price,
+        )
+    }
+
+    /// Lower bound price for reserve mint
+    pub fn price_lower_bound(&self) -> Decimal {
+        std::cmp::min(
+            self.liquidity.market_price,
+            self.liquidity.smoothed_market_price,
+        )
+    }
+
     /// Convert USD to liquidity tokens.
     /// eg how much SOL can you get for 100USD?
     pub fn usd_to_liquidity_amount_lower_bound(
@@ -118,10 +134,7 @@ impl Reserve {
                     .checked_pow(self.liquidity.mint_decimals as u32)
                     .ok_or(LendingError::MathOverflow)?,
             ))?
-            .try_div(max(
-                self.liquidity.smoothed_market_price,
-                self.liquidity.market_price,
-            ))
+            .try_div(self.price_upper_bound())
     }
 
     /// find current market value of tokens
@@ -142,12 +155,7 @@ impl Reserve {
         &self,
         liquidity_amount: Decimal,
     ) -> Result<Decimal, ProgramError> {
-        let price_upper_bound = std::cmp::max(
-            self.liquidity.market_price,
-            self.liquidity.smoothed_market_price,
-        );
-
-        price_upper_bound
+        self.price_upper_bound()
             .try_mul(liquidity_amount)?
             .try_div(Decimal::from(
                 (10u128)
@@ -162,12 +170,7 @@ impl Reserve {
         &self,
         liquidity_amount: Decimal,
     ) -> Result<Decimal, ProgramError> {
-        let price_lower_bound = std::cmp::min(
-            self.liquidity.market_price,
-            self.liquidity.smoothed_market_price,
-        );
-
-        price_lower_bound
+        self.price_lower_bound()
             .try_mul(liquidity_amount)?
             .try_div(Decimal::from(
                 (10u128)
@@ -286,10 +289,7 @@ impl Reserve {
         if amount_to_borrow == u64::MAX {
             let borrow_amount = max_borrow_value
                 .try_mul(decimals)?
-                .try_div(max(
-                    self.liquidity.market_price,
-                    self.liquidity.smoothed_market_price,
-                ))?
+                .try_div(self.price_upper_bound())?
                 .try_div(self.borrow_weight())?
                 .min(remaining_reserve_borrow)
                 .min(self.liquidity.available_amount.into());
@@ -2004,6 +2004,22 @@ mod test {
                 .unwrap(),
             2
         );
+    }
+
+    #[test]
+    fn price() {
+        let reserve = Reserve {
+            liquidity: ReserveLiquidity {
+                mint_decimals: 9,
+                market_price: Decimal::from(25u64),
+                smoothed_market_price: Decimal::from(50u64),
+                ..ReserveLiquidity::default()
+            },
+            ..Reserve::default()
+        };
+
+        assert_eq!(reserve.price_upper_bound(), Decimal::from(50u64));
+        assert_eq!(reserve.price_lower_bound(), Decimal::from(25u64));
     }
 
     #[test]
