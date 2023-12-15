@@ -33,7 +33,7 @@ use solana_program::{
     },
 };
 use solend_sdk::{
-    oracles::validate_pyth_price_account_info,
+    oracles::{get_oracle_type, validate_pyth_price_account_info, OracleType},
     state::{LendingMarketMetadata, RateLimiter, RateLimiterConfig, ReserveType},
 };
 use solend_sdk::{switchboard_v2_devnet, switchboard_v2_mainnet};
@@ -368,22 +368,7 @@ fn process_init_reserve(
 
     if let Some(extra_oracle_pubkey) = config.extra_oracle_pubkey {
         let extra_oracle_info = next_account_info(account_info_iter)?;
-
-        if extra_oracle_info.key != &extra_oracle_pubkey {
-            msg!("Extra oracle provided does not match the extra oracle pubkey in the config");
-            return Err(LendingError::InvalidOracleConfig.into());
-        }
-
-        if *extra_oracle_info.owner == lending_market.oracle_program_id {
-            validate_pyth_price_account_info(&lending_market, extra_oracle_info)?;
-        } else if *extra_oracle_info.owner == lending_market.switchboard_oracle_program_id
-            || *extra_oracle_info.owner == switchboard_v2_mainnet::id()
-        {
-            validate_switchboard_keys(&lending_market, extra_oracle_info)?;
-        } else {
-            msg!("Extra oracle provided is not owned by pyth or switchboard");
-            return Err(LendingError::InvalidOracleConfig.into());
-        }
+        validate_extra_oracle(&lending_market, extra_oracle_pubkey, extra_oracle_info)?;
     }
 
     let (market_price, smoothed_market_price) =
@@ -492,6 +477,33 @@ fn process_init_reserve(
     Ok(())
 }
 
+fn validate_extra_oracle(
+    lending_market: &LendingMarket,
+    extra_oracle_pubkey: Pubkey,
+    extra_oracle_info: &AccountInfo<'_>,
+) -> Result<(), ProgramError> {
+    if extra_oracle_pubkey == solend_program::NULL_PUBKEY {
+        msg!("Extra oracle cannot equal the null pubkey");
+        return Err(LendingError::InvalidOracleConfig.into());
+    }
+
+    if extra_oracle_info.key != &extra_oracle_pubkey {
+        msg!("Extra oracle provided does not match the extra oracle pubkey in the config");
+        return Err(LendingError::InvalidOracleConfig.into());
+    }
+
+    match get_oracle_type(extra_oracle_info)? {
+        OracleType::Pyth => {
+            validate_pyth_price_account_info(lending_market, extra_oracle_info)?;
+        }
+        OracleType::Switchboard => {
+            validate_switchboard_keys(lending_market, extra_oracle_info)?;
+        }
+    }
+
+    Ok(())
+}
+
 fn process_refresh_reserve(program_id: &Pubkey, accounts: &[AccountInfo]) -> ProgramResult {
     let account_info_iter = &mut accounts.iter().peekable();
     let reserve_info = next_account_info(account_info_iter)?;
@@ -565,7 +577,13 @@ fn _refresh_reserve<'a>(
                     return Err(LendingError::InvalidAccountInput.into());
                 }
 
-                let (market_price, _) = get_price(None, extra_oracle_account_info, clock)?;
+                let market_price = match get_oracle_type(extra_oracle_account_info)? {
+                    OracleType::Pyth => get_pyth_price(extra_oracle_account_info, clock)?.0,
+                    OracleType::Switchboard => {
+                        get_switchboard_price_v2(extra_oracle_account_info, clock)?
+                    }
+                };
+
                 Some(market_price.try_mul(reserve.price_scale())?)
             }
             None => {
@@ -2342,22 +2360,7 @@ fn process_update_reserve_config(
 
         if let Some(extra_oracle_pubkey) = config.extra_oracle_pubkey {
             let extra_oracle_info = next_account_info(account_info_iter)?;
-
-            if extra_oracle_info.key != &extra_oracle_pubkey {
-                msg!("Extra oracle provided does not match the extra oracle pubkey in the config");
-                return Err(LendingError::InvalidOracleConfig.into());
-            }
-
-            if *extra_oracle_info.owner == lending_market.oracle_program_id {
-                validate_pyth_price_account_info(&lending_market, extra_oracle_info)?;
-            } else if *extra_oracle_info.owner == lending_market.switchboard_oracle_program_id
-                || *extra_oracle_info.owner == switchboard_v2_mainnet::id()
-            {
-                validate_switchboard_keys(&lending_market, extra_oracle_info)?;
-            } else {
-                msg!("Extra oracle provided is not owned by pyth or switchboard");
-                return Err(LendingError::InvalidOracleConfig.into());
-            }
+            validate_extra_oracle(&lending_market, extra_oracle_pubkey, extra_oracle_info)?;
         }
 
         reserve.config = config;

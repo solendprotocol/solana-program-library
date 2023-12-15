@@ -1101,7 +1101,7 @@ pub fn init_reserve(
         &[&lending_market_pubkey.to_bytes()[..PUBKEY_BYTES]],
         &program_id,
     );
-    let accounts = vec![
+    let mut accounts = vec![
         AccountMeta::new(source_liquidity_pubkey, false),
         AccountMeta::new(destination_collateral_pubkey, false),
         AccountMeta::new(reserve_pubkey, false),
@@ -1120,6 +1120,11 @@ pub fn init_reserve(
         AccountMeta::new_readonly(sysvar::rent::id(), false),
         AccountMeta::new_readonly(spl_token::id(), false),
     ];
+
+    if let Some(extra_oracle_pubkey) = config.extra_oracle_pubkey {
+        accounts.push(AccountMeta::new_readonly(extra_oracle_pubkey, false));
+    }
+
     Instruction {
         program_id,
         accounts,
@@ -1137,12 +1142,18 @@ pub fn refresh_reserve(
     reserve_pubkey: Pubkey,
     reserve_liquidity_pyth_oracle_pubkey: Pubkey,
     reserve_liquidity_switchboard_oracle_pubkey: Pubkey,
+    extra_oracle_pubkey: Option<Pubkey>,
 ) -> Instruction {
-    let accounts = vec![
+    let mut accounts = vec![
         AccountMeta::new(reserve_pubkey, false),
         AccountMeta::new_readonly(reserve_liquidity_pyth_oracle_pubkey, false),
         AccountMeta::new_readonly(reserve_liquidity_switchboard_oracle_pubkey, false),
     ];
+
+    if let Some(extra_oracle_pubkey) = extra_oracle_pubkey {
+        accounts.push(AccountMeta::new_readonly(extra_oracle_pubkey, false));
+    }
+
     Instruction {
         program_id,
         accounts,
@@ -1531,7 +1542,7 @@ pub fn update_reserve_config(
         &[&lending_market_pubkey.to_bytes()[..PUBKEY_BYTES]],
         &program_id,
     );
-    let accounts = vec![
+    let mut accounts = vec![
         AccountMeta::new(reserve_pubkey, false),
         AccountMeta::new_readonly(lending_market_pubkey, false),
         AccountMeta::new_readonly(lending_market_authority_pubkey, false),
@@ -1540,6 +1551,11 @@ pub fn update_reserve_config(
         AccountMeta::new_readonly(pyth_price_pubkey, false),
         AccountMeta::new_readonly(switchboard_feed_pubkey, false),
     ];
+
+    if let Some(extra_oracle_pubkey) = config.extra_oracle_pubkey {
+        accounts.push(AccountMeta::new_readonly(extra_oracle_pubkey, false));
+    }
+
     Instruction {
         program_id,
         accounts,

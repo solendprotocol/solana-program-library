@@ -1,10 +1,12 @@
 use bytemuck::checked::from_bytes;
 use solend_sdk::instruction::*;
+use solend_sdk::pyth_mainnet;
 use solend_sdk::state::*;
+use solend_sdk::switchboard_v2_mainnet;
 
 use super::{
     flash_loan_proxy::proxy_program,
-    mock_pyth::{init_switchboard, set_switchboard_price},
+    mock_switchboard::{init_switchboard, set_switchboard_price},
 };
 use crate::helpers::*;
 use solana_program::native_token::LAMPORTS_PER_SOL;
@@ -43,7 +45,7 @@ use std::{
     str::FromStr,
 };
 
-use super::mock_pyth::{init, mock_pyth_program, set_price};
+use super::mock_pyth::{init, set_price};
 
 pub struct SolendProgramTest {
     pub context: ProgramTestContext,
@@ -73,8 +75,13 @@ impl SolendProgramTest {
         test.prefer_bpf(false);
         test.add_program(
             "mock_pyth",
-            mock_pyth_program::id(),
+            pyth_mainnet::id(),
             processor!(mock_pyth::process_instruction),
+        );
+        test.add_program(
+            "mock_switchboard",
+            switchboard_v2_mainnet::id(),
+            processor!(mock_switchboard::process_instruction),
         );
 
         test.add_program(
@@ -88,6 +95,7 @@ impl SolendProgramTest {
         add_mint(&mut test, usdc_mint::id(), 6, authority.pubkey());
         add_mint(&mut test, usdt_mint::id(), 6, authority.pubkey());
         add_mint(&mut test, wsol_mint::id(), 9, authority.pubkey());
+        add_mint(&mut test, msol_mint::id(), 9, authority.pubkey());
         add_mint(&mut test, bonk_mint::id(), 5, authority.pubkey());
 
         let mut context = test.start_with_context().await;
@@ -100,6 +108,7 @@ impl SolendProgramTest {
             mints: HashMap::from([
                 (usdc_mint::id(), None),
                 (wsol_mint::id(), None),
+                (msol_mint::id(), None),
                 (usdt_mint::id(), None),
                 (bonk_mint::id(), None),
             ]),
@@ -116,8 +125,13 @@ impl SolendProgramTest {
         test.prefer_bpf(false);
         test.add_program(
             "mock_pyth",
-            mock_pyth_program::id(),
+            pyth_mainnet::id(),
             processor!(mock_pyth::process_instruction),
+        );
+        test.add_program(
+            "mock_switchboard",
+            switchboard_v2_mainnet::id(),
+            processor!(mock_switchboard::process_instruction),
         );
 
         test.add_program(
@@ -131,6 +145,7 @@ impl SolendProgramTest {
         add_mint(&mut test, usdc_mint::id(), 6, authority.pubkey());
         add_mint(&mut test, usdt_mint::id(), 6, authority.pubkey());
         add_mint(&mut test, wsol_mint::id(), 9, authority.pubkey());
+        add_mint(&mut test, msol_mint::id(), 9, authority.pubkey());
         add_mint(&mut test, bonk_mint::id(), 5, authority.pubkey());
 
         let mut context = test.start_with_context().await;
@@ -143,6 +158,7 @@ impl SolendProgramTest {
             mints: HashMap::from([
                 (usdc_mint::id(), None),
                 (wsol_mint::id(), None),
+                (msol_mint::id(), None),
                 (usdt_mint::id(), None),
                 (bonk_mint::id(), None),
             ]),
@@ -381,8 +397,8 @@ impl SolendProgramTest {
                         owner.keypair.pubkey(),
                         QUOTE_CURRENCY,
                         lending_market_key.pubkey(),
-                        mock_pyth_program::id(),
-                        mock_pyth_program::id(), // TODO suspicious
+                        pyth_mainnet::id(),
+                        switchboard_v2_mainnet::id(),
                     ),
                 ],
                 Some(&[lending_market_key]),
@@ -397,17 +413,17 @@ impl SolendProgramTest {
         }
     }
 
-    pub async fn init_pyth_feed(&mut self, mint: &Pubkey) {
+    pub async fn init_pyth_feed(&mut self, mint: &Pubkey) -> Pubkey {
         let pyth_price_pubkey = self
-            .create_account(3312, &mock_pyth_program::id(), None)
+            .create_account(3312, &pyth_mainnet::id(), None)
             .await;
         let pyth_product_pubkey = self
-            .create_account(PROD_ACCT_SIZE, &mock_pyth_program::id(), None)
+            .create_account(PROD_ACCT_SIZE, &pyth_mainnet::id(), None)
             .await;
 
         self.process_transaction(
             &[init(
-                mock_pyth_program::id(),
+                pyth_mainnet::id(),
                 pyth_price_pubkey,
                 pyth_product_pubkey,
             )],
@@ -424,13 +440,15 @@ impl SolendProgramTest {
                 switchboard_feed_pubkey: None,
             }),
         );
+
+        pyth_price_pubkey
     }
 
     pub async fn set_price(&mut self, mint: &Pubkey, price: &PriceArgs) {
         let oracle = self.mints.get(mint).unwrap().unwrap();
         self.process_transaction(
             &[set_price(
-                mock_pyth_program::id(),
+                pyth_mainnet::id(),
                 oracle.pyth_price_pubkey,
                 price.price,
                 price.conf,
@@ -448,14 +466,14 @@ impl SolendProgramTest {
         let switchboard_feed_pubkey = self
             .create_account(
                 std::mem::size_of::<AggregatorAccountData>() + 8,
-                &mock_pyth_program::id(),
+                &switchboard_v2_mainnet::id(),
                 None,
             )
             .await;
 
         self.process_transaction(
             &[init_switchboard(
-                mock_pyth_program::id(),
+                switchboard_v2_mainnet::id(),
                 switchboard_feed_pubkey,
             )],
             None,
@@ -476,7 +494,7 @@ impl SolendProgramTest {
         let oracle = self.mints.get(mint).unwrap().unwrap();
         self.process_transaction(
             &[set_switchboard_price(
-                mock_pyth_program::id(),
+                switchboard_v2_mainnet::id(),
                 oracle.switchboard_feed_pubkey.unwrap(),
                 price.price,
                 price.expo,
@@ -723,7 +741,7 @@ impl Info<LendingMarket> {
         let oracle = oracle.unwrap_or(&default_oracle);
 
         let instructions = [
-            ComputeBudgetInstruction::set_compute_unit_limit(20_000),
+            ComputeBudgetInstruction::set_compute_unit_limit(30_000),
             update_reserve_config(
                 solend_program::id(),
                 config,
@@ -789,6 +807,7 @@ impl Info<LendingMarket> {
                 reserve.pubkey,
                 reserve.account.liquidity.pyth_oracle_pubkey,
                 reserve.account.liquidity.switchboard_oracle_pubkey,
+                reserve.account.config.extra_oracle_pubkey
             ),
             redeem_reserve_collateral(
                 solend_program::id(),
@@ -884,6 +903,7 @@ impl Info<LendingMarket> {
                     reserve.pubkey,
                     reserve.account.liquidity.pyth_oracle_pubkey,
                     reserve.account.liquidity.switchboard_oracle_pubkey,
+                    reserve.account.config.extra_oracle_pubkey
                 ),
             ],
             None,
@@ -929,6 +949,7 @@ impl Info<LendingMarket> {
                     reserve.pubkey,
                     reserve.account.liquidity.pyth_oracle_pubkey,
                     reserve.account.liquidity.switchboard_oracle_pubkey,
+                    reserve.account.config.extra_oracle_pubkey
                 )
             })
             .collect();
@@ -1055,6 +1076,7 @@ impl Info<LendingMarket> {
                 reserve.pubkey,
                 reserve.account.liquidity.pyth_oracle_pubkey,
                 reserve.account.liquidity.switchboard_oracle_pubkey,
+                reserve.account.config.extra_oracle_pubkey
             ),
             redeem_fees(
                 solend_program::id(),

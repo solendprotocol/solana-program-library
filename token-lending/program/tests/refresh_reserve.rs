@@ -442,3 +442,171 @@ async fn test_use_price_weight() {
         Decimal::from(16u64)
     );
 }
+
+#[tokio::test]
+async fn test_use_extra_oracle() {
+    let (mut test, lending_market, reserves, obligations, users, lending_market_owner) =
+        custom_scenario(
+            &[ReserveArgs {
+                mint: msol_mint::id(),
+                config: test_reserve_config(),
+                liquidity_amount: 1000,
+                price: PriceArgs {
+                    price: 10,
+                    conf: 0,
+                    expo: 0,
+                    ema_price: 10,
+                    ema_conf: 0,
+                },
+            }],
+            &[],
+        )
+        .await;
+
+    let msol_reserve = &reserves[0];
+
+    // add extra pyth oracle
+    let wsol_pyth_feed = test.init_pyth_feed(&wsol_mint::id()).await;
+    test.set_price(
+        &wsol_mint::id(),
+        &PriceArgs {
+            price: 5,
+            conf: 0,
+            expo: 0,
+            ema_price: 5,
+            ema_conf: 0,
+        },
+    )
+    .await;
+
+    lending_market
+        .update_reserve_config(
+            &mut test,
+            &lending_market_owner,
+            msol_reserve,
+            ReserveConfig {
+                extra_oracle_pubkey: Some(wsol_pyth_feed),
+                scaled_price_offset_bps: 2_000,
+                ..msol_reserve.account.config
+            },
+            msol_reserve.account.rate_limiter.config,
+            None,
+        )
+        .await
+        .unwrap();
+
+    test.advance_clock_by_slots(1).await;
+
+    let msol_reserve = test.load_account::<Reserve>(reserves[0].pubkey).await;
+    lending_market
+        .refresh_reserve(&mut test, &msol_reserve)
+        .await
+        .unwrap();
+
+    let msol_reserve_post = test.load_account::<Reserve>(reserves[0].pubkey).await;
+    assert_eq!(
+        msol_reserve_post.account,
+        Reserve {
+            last_update: LastUpdate {
+                slot: 1001,
+                stale: false
+            },
+            liquidity: ReserveLiquidity {
+                market_price: Decimal::from(12u64),
+                smoothed_market_price: Decimal::from(12u64),
+                extra_market_price: Some(Decimal::from(6u64)),
+                ..msol_reserve.account.liquidity
+            },
+            ..msol_reserve.account
+        }
+    );
+
+    // add extra switchboard oracle
+    let msol_reserve = test.load_account::<Reserve>(reserves[0].pubkey).await;
+    let wsol_switchboard_feed = test.init_switchboard_feed(&wsol_mint::id()).await;
+    test.set_switchboard_price(
+        &wsol_mint::id(),
+        SwitchboardPriceArgs { price: 2, expo: 0 }
+    )
+    .await;
+
+    lending_market
+        .update_reserve_config(
+            &mut test,
+            &lending_market_owner,
+            &msol_reserve,
+            ReserveConfig {
+                extra_oracle_pubkey: Some(wsol_switchboard_feed),
+                ..msol_reserve.account.config
+            },
+            msol_reserve.account.rate_limiter.config,
+            None,
+        )
+        .await
+        .unwrap();
+
+    test.advance_clock_by_slots(1).await;
+
+    let msol_reserve = test.load_account::<Reserve>(reserves[0].pubkey).await;
+    lending_market
+        .refresh_reserve(&mut test, &msol_reserve)
+        .await
+        .unwrap();
+
+    let msol_reserve_post = test.load_account::<Reserve>(reserves[0].pubkey).await;
+    assert_eq!(
+        msol_reserve_post.account,
+        Reserve {
+            last_update: LastUpdate {
+                slot: 1002,
+                stale: false
+            },
+            liquidity: ReserveLiquidity {
+                extra_market_price: Some(Decimal::from_percent(240)),
+                ..msol_reserve.account.liquidity
+            },
+            ..msol_reserve.account
+        }
+    );
+
+    test.advance_clock_by_slots(1).await;
+
+    // remove extra oracle, make sure extra price is None now
+    let msol_reserve = test.load_account::<Reserve>(reserves[0].pubkey).await;
+    lending_market
+        .update_reserve_config(
+            &mut test,
+            &lending_market_owner,
+            &msol_reserve,
+            ReserveConfig {
+                extra_oracle_pubkey: None,
+                ..msol_reserve.account.config
+            },
+            msol_reserve.account.rate_limiter.config,
+            None,
+        )
+        .await
+        .unwrap();
+    let msol_reserve = test.load_account::<Reserve>(reserves[0].pubkey).await;
+
+    lending_market
+        .refresh_reserve(&mut test, &msol_reserve)
+        .await
+        .unwrap();
+
+    let msol_reserve_post = test.load_account::<Reserve>(reserves[0].pubkey).await;
+    assert_eq!(
+        msol_reserve_post.account,
+        Reserve {
+            last_update: LastUpdate {
+                slot: 1003,
+                stale: false
+            },
+            liquidity: ReserveLiquidity {
+                extra_market_price: None,
+                ..msol_reserve.account.liquidity
+            },
+            ..msol_reserve.account
+        }
+    );
+}

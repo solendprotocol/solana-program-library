@@ -37,3 +37,8 @@ pub mod switchboard_v2_mainnet {
 pub mod switchboard_v2_devnet {
     solana_program::declare_id!("2TfB33aLaneQb5TNVwyDz3jSZXS6jdW2ARw1Dgf84XCG");
 }
+
+/// Mainnet program id for pyth
+pub mod pyth_mainnet {
+    solana_program::declare_id!("FsJ3A3u2vn5cTVofAjvy6y5kwABJAqYWpe4975bi2epH");
+}
