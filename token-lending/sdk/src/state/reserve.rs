@@ -2076,7 +2076,7 @@ mod test {
 
     #[test]
     fn price() {
-        let reserve = Reserve {
+        let mut reserve = Reserve {
             liquidity: ReserveLiquidity {
                 mint_decimals: 9,
                 market_price: Decimal::from(25u64),
@@ -2088,6 +2088,12 @@ mod test {
 
         assert_eq!(reserve.price_upper_bound(), Decimal::from(50u64));
         assert_eq!(reserve.price_lower_bound(), Decimal::from(25u64));
+
+        reserve.liquidity.extra_market_price = Some(Decimal::from(75u64));
+        assert_eq!(reserve.price_upper_bound(), Decimal::from(75u64));
+
+        reserve.liquidity.extra_market_price = Some(Decimal::from(10u64));
+        assert_eq!(reserve.price_lower_bound(), Decimal::from(10u64));
     }
 
     #[test]

@@ -32,7 +32,10 @@ use solana_program::{
         Sysvar,
     },
 };
-use solend_sdk::state::{LendingMarketMetadata, RateLimiter, RateLimiterConfig, ReserveType};
+use solend_sdk::{
+    oracles::validate_pyth_price_account_info,
+    state::{LendingMarketMetadata, RateLimiter, RateLimiterConfig, ReserveType},
+};
 use solend_sdk::{switchboard_v2_devnet, switchboard_v2_mainnet};
 use spl_token::state::Mint;
 use std::{cmp::min, result::Result};
@@ -362,6 +365,26 @@ fn process_init_reserve(
     }
     validate_pyth_keys(&lending_market, pyth_product_info, pyth_price_info)?;
     validate_switchboard_keys(&lending_market, switchboard_feed_info)?;
+
+    if let Some(extra_oracle_pubkey) = config.extra_oracle_pubkey {
+        let extra_oracle_info = next_account_info(account_info_iter)?;
+
+        if extra_oracle_info.key != &extra_oracle_pubkey {
+            msg!("Extra oracle provided does not match the extra oracle pubkey in the config");
+            return Err(LendingError::InvalidOracleConfig.into());
+        }
+
+        if *extra_oracle_info.owner == lending_market.oracle_program_id {
+            validate_pyth_price_account_info(&lending_market, extra_oracle_info)?;
+        } else if *extra_oracle_info.owner == lending_market.switchboard_oracle_program_id
+            || *extra_oracle_info.owner == switchboard_v2_mainnet::id()
+        {
+            validate_switchboard_keys(&lending_market, extra_oracle_info)?;
+        } else {
+            msg!("Extra oracle provided is not owned by pyth or switchboard");
+            return Err(LendingError::InvalidOracleConfig.into());
+        }
+    }
 
     let (market_price, smoothed_market_price) =
         get_price(Some(switchboard_feed_info), pyth_price_info, clock)?;
@@ -2317,6 +2340,26 @@ fn process_update_reserve_config(
             return Err(LendingError::InvalidOracleConfig.into());
         }
 
+        if let Some(extra_oracle_pubkey) = config.extra_oracle_pubkey {
+            let extra_oracle_info = next_account_info(account_info_iter)?;
+
+            if extra_oracle_info.key != &extra_oracle_pubkey {
+                msg!("Extra oracle provided does not match the extra oracle pubkey in the config");
+                return Err(LendingError::InvalidOracleConfig.into());
+            }
+
+            if *extra_oracle_info.owner == lending_market.oracle_program_id {
+                validate_pyth_price_account_info(&lending_market, extra_oracle_info)?;
+            } else if *extra_oracle_info.owner == lending_market.switchboard_oracle_program_id
+                || *extra_oracle_info.owner == switchboard_v2_mainnet::id()
+            {
+                validate_switchboard_keys(&lending_market, extra_oracle_info)?;
+            } else {
+                msg!("Extra oracle provided is not owned by pyth or switchboard");
+                return Err(LendingError::InvalidOracleConfig.into());
+            }
+        }
+
         reserve.config = config;
     } else if signer_info.key == &lending_market.risk_authority {
         // only can disable outflows
@@ -3276,6 +3319,10 @@ fn validate_switchboard_keys(
         msg!("Switchboard account provided is not owned by the switchboard oracle program");
         return Err(LendingError::InvalidOracleConfig.into());
     }
+
+    let data = &switchboard_feed_info.try_borrow_data()?;
+    AggregatorAccountData::new_from_bytes(data)?;
+
     Ok(())
 }
 

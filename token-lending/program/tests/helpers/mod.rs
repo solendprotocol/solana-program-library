@@ -53,7 +53,7 @@ pub fn test_reserve_config() -> ReserveConfig {
         added_borrow_weight_bps: 0,
         reserve_type: ReserveType::Regular,
         scaled_price_offset_bps: 0,
-        extra_oracle_pubkey: None
+        extra_oracle_pubkey: None,
     }
 }
 

@@ -3,6 +3,7 @@ use crate::{
     self as solend_program,
     error::LendingError,
     math::{Decimal, TryDiv, TryMul},
+    state::LendingMarket,
 };
 use pyth_sdk_solana::Price;
 // use pyth_sdk_solana;
@@ -10,6 +11,24 @@ use solana_program::{
     account_info::AccountInfo, msg, program_error::ProgramError, sysvar::clock::Clock,
 };
 use std::{convert::TryInto, result::Result};
+
+pub fn validate_pyth_price_account_info(
+    lending_market: &LendingMarket,
+    pyth_price_info: &AccountInfo,
+) -> Result<(), ProgramError> {
+    if *pyth_price_info.owner != lending_market.oracle_program_id {
+        msg!("pyth price account is not owned by pyth program");
+        return Err(ProgramError::IncorrectProgramId);
+    }
+
+    let data = &pyth_price_info.try_borrow_data()?;
+    pyth_sdk_solana::state::load_price_account(data).map_err(|e| {
+        msg!("Couldn't load price feed from account info: {:?}", e);
+        LendingError::InvalidOracleConfig
+    })?;
+
+    Ok(())
+}
 
 pub fn get_pyth_price(
     pyth_price_info: &AccountInfo,
