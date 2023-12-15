@@ -1,10 +1,10 @@
 #![cfg(feature = "test-bpf")]
 
-use crate::solend_program_test::SwitchboardPriceArgs;
 use crate::solend_program_test::custom_scenario;
 use crate::solend_program_test::Oracle;
 use crate::solend_program_test::PriceArgs;
 use crate::solend_program_test::ReserveArgs;
+use crate::solend_program_test::SwitchboardPriceArgs;
 use solana_sdk::instruction::AccountMeta;
 use solana_sdk::instruction::Instruction;
 use solana_sdk::pubkey::PUBKEY_BYTES;
@@ -467,8 +467,14 @@ async fn test_add_extra_oracle() {
 
     let msol_reserve_post = test.load_account::<Reserve>(msol_reserve.pubkey).await;
     assert_eq!(
-        msol_reserve_post.account.config.extra_oracle_pubkey,
-        Some(wsol_pyth_feed)
+        msol_reserve_post.account,
+        Reserve {
+            config: ReserveConfig {
+                extra_oracle_pubkey: Some(wsol_pyth_feed),
+                ..msol_reserve.account.config
+            },
+            ..msol_reserve.account.clone()
+        }
     );
 
     lending_market
@@ -488,19 +494,19 @@ async fn test_add_extra_oracle() {
 
     let msol_reserve_post = test.load_account::<Reserve>(msol_reserve.pubkey).await;
     assert_eq!(
-        msol_reserve_post.account.config.extra_oracle_pubkey,
-        None
+        msol_reserve_post.account,
+        Reserve {
+            config: ReserveConfig {
+                extra_oracle_pubkey: None,
+                ..msol_reserve.account.config
+            },
+            ..msol_reserve.account.clone()
+        }
     );
 
     let wsol_switchboard_feed = test.init_switchboard_feed(&wsol_mint::id()).await;
-    test.set_switchboard_price(
-        &wsol_mint::id(),
-        SwitchboardPriceArgs {
-            price: 5,
-            expo: 0,
-        },
-    )
-    .await;
+    test.set_switchboard_price(&wsol_mint::id(), SwitchboardPriceArgs { price: 5, expo: 0 })
+        .await;
 
     lending_market
         .update_reserve_config(
@@ -519,7 +525,13 @@ async fn test_add_extra_oracle() {
 
     let msol_reserve_post = test.load_account::<Reserve>(msol_reserve.pubkey).await;
     assert_eq!(
-        msol_reserve_post.account.config.extra_oracle_pubkey,
-        Some(wsol_switchboard_feed)
+        msol_reserve_post.account,
+        Reserve {
+            config: ReserveConfig {
+                extra_oracle_pubkey: Some(wsol_switchboard_feed),
+                ..msol_reserve.account.config
+            },
+            ..msol_reserve.account.clone()
+        }
     );
 }
