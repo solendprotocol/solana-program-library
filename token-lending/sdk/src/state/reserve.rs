@@ -107,18 +107,30 @@ impl Reserve {
 
     /// Upper bound price for reserve mint
     pub fn price_upper_bound(&self) -> Decimal {
-        std::cmp::max(
+        let price = std::cmp::max(
             self.liquidity.market_price,
             self.liquidity.smoothed_market_price,
-        )
+        );
+
+        if let Some(extra_price) = self.liquidity.extra_market_price {
+            std::cmp::max(price, extra_price)
+        } else {
+            price
+        }
     }
 
     /// Lower bound price for reserve mint
     pub fn price_lower_bound(&self) -> Decimal {
-        std::cmp::min(
+        let price = std::cmp::min(
             self.liquidity.market_price,
             self.liquidity.smoothed_market_price,
-        )
+        );
+
+        if let Some(extra_price) = self.liquidity.extra_market_price {
+            std::cmp::min(price, extra_price)
+        } else {
+            price
+        }
     }
 
     /// Convert USD to liquidity tokens.

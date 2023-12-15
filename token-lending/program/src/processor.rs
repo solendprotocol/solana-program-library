@@ -484,12 +484,15 @@ fn process_refresh_reserve(program_id: &Pubkey, accounts: &[AccountInfo]) -> Pro
     if account_info_iter.peek().map(|a| a.key) == Some(&clock::ID) {
         next_account_info(account_info_iter)?;
     }
+
+    let extra_oracle_account_info = next_account_info(account_info_iter).ok();
     _refresh_reserve(
         program_id,
         reserve_info,
         pyth_price_info,
         switchboard_feed_info,
         clock,
+        extra_oracle_account_info,
     )
 }
 
@@ -499,6 +502,7 @@ fn _refresh_reserve<'a>(
     pyth_price_info: &AccountInfo<'a>,
     switchboard_feed_info: Option<&AccountInfo<'a>>,
     clock: &Clock,
+    extra_oracle_account_info: Option<&AccountInfo<'a>>,
 ) -> ProgramResult {
     let mut reserve = Reserve::unpack(&reserve_info.data.borrow())?;
     if reserve_info.owner != program_id {
@@ -527,6 +531,26 @@ fn _refresh_reserve<'a>(
         reserve.liquidity.smoothed_market_price =
             smoothed_market_price.try_mul(reserve.price_scale())?;
     }
+
+    reserve.liquidity.extra_market_price = match reserve.config.extra_oracle_pubkey {
+        None => None,
+
+        Some(extra_oracle_pubkey) => match extra_oracle_account_info {
+            Some(extra_oracle_account_info) => {
+                if extra_oracle_account_info.key != &extra_oracle_pubkey {
+                    msg!("Reserve extra oracle does not match the reserve extra oracle provided");
+                    return Err(LendingError::InvalidAccountInput.into());
+                }
+
+                let (market_price, _) = get_price(None, extra_oracle_account_info, clock)?;
+                Some(market_price.try_mul(reserve.price_scale())?)
+            }
+            None => {
+                msg!("Reserve extra oracle account info missing");
+                return Err(LendingError::InvalidAccountInput.into());
+            }
+        },
+    };
 
     // currently there's no way to support two prices without a pyth oracle. So if a reserve
     // only supports switchboard, reserve.smoothed_market_price == reserve.market_price
