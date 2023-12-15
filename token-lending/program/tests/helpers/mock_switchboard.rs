@@ -114,7 +114,9 @@ pub fn set_switchboard_price(
 }
 
 pub fn init_switchboard(program_id: Pubkey, switchboard_feed: Pubkey) -> Instruction {
-    let data = MockSwitchboardInstruction::InitSwitchboard.try_to_vec().unwrap();
+    let data = MockSwitchboardInstruction::InitSwitchboard
+        .try_to_vec()
+        .unwrap();
     Instruction {
         program_id,
         accounts: vec![AccountMeta::new(switchboard_feed, false)],

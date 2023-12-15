@@ -445,7 +445,7 @@ async fn test_use_price_weight() {
 
 #[tokio::test]
 async fn test_use_extra_oracle() {
-    let (mut test, lending_market, reserves, obligations, users, lending_market_owner) =
+    let (mut test, lending_market, reserves, _obligations, _users, lending_market_owner) =
         custom_scenario(
             &[ReserveArgs {
                 mint: msol_mint::id(),
@@ -610,7 +610,7 @@ async fn test_use_extra_oracle() {
 
 #[tokio::test]
 async fn test_use_extra_oracle_bad_cases() {
-    let (mut test, lending_market, reserves, obligations, users, lending_market_owner) =
+    let (mut test, lending_market, reserves, _obligations, _users, lending_market_owner) =
         custom_scenario(
             &[ReserveArgs {
                 mint: msol_mint::id(),

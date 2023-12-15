@@ -2760,7 +2760,6 @@ mod test {
 
                 result: Err(LendingError::BorrowTooLarge.into()),
             }),
-
             // borrow enough where it would be fine if we were just using the market + ema price but
             // not fine when using market + ema + extra price
             Just(CalculateBorrowTestCase {

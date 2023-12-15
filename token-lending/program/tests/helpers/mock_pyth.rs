@@ -34,7 +34,7 @@ pub enum MockPythInstruction {
         expo: i32,
         ema_price: i64,
         ema_conf: u64,
-    }
+    },
 }
 
 pub fn process_instruction(

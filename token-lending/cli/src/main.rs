@@ -1546,7 +1546,7 @@ fn command_liquidate_obligation(
             *pubkey,
             reserve.liquidity.pyth_oracle_pubkey,
             reserve.liquidity.switchboard_oracle_pubkey,
-            reserve.config.extra_oracle_pubkey
+            reserve.config.extra_oracle_pubkey,
         )
     }));
 

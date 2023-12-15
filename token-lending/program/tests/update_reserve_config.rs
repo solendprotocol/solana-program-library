@@ -417,7 +417,7 @@ pub fn malicious_update_reserve_config(
 
 #[tokio::test]
 async fn test_add_extra_oracle() {
-    let (mut test, lending_market, reserves, obligations, users, lending_market_owner) =
+    let (mut test, lending_market, reserves, _obligations, _users, lending_market_owner) =
         custom_scenario(
             &[ReserveArgs {
                 mint: msol_mint::id(),

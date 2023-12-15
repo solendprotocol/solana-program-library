@@ -26,7 +26,11 @@ pub fn get_oracle_type(extra_oracle_info: &AccountInfo) -> Result<OracleType, Pr
         return Ok(OracleType::Switchboard);
     }
 
-    msg!("Could not find oracle type for {:?} with owner {:?}", extra_oracle_info.key, extra_oracle_info.owner);
+    msg!(
+        "Could not find oracle type for {:?} with owner {:?}",
+        extra_oracle_info.key,
+        extra_oracle_info.owner
+    );
     Err(LendingError::InvalidOracleConfig.into())
 }
 

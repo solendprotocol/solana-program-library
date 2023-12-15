@@ -1,7 +1,7 @@
 #![cfg(feature = "test-bpf")]
 
 use crate::solend_program_test::PriceArgs;
-use crate::solend_program_test::custom_scenario;
+
 use crate::solend_program_test::BalanceChecker;
 use crate::solend_program_test::MintAccount;
 use crate::solend_program_test::MintSupplyChange;

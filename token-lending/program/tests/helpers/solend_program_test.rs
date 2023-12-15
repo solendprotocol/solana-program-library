@@ -414,9 +414,7 @@ impl SolendProgramTest {
     }
 
     pub async fn init_pyth_feed(&mut self, mint: &Pubkey) -> Pubkey {
-        let pyth_price_pubkey = self
-            .create_account(3312, &pyth_mainnet::id(), None)
-            .await;
+        let pyth_price_pubkey = self.create_account(3312, &pyth_mainnet::id(), None).await;
         let pyth_product_pubkey = self
             .create_account(PROD_ACCT_SIZE, &pyth_mainnet::id(), None)
             .await;
@@ -807,7 +805,7 @@ impl Info<LendingMarket> {
                 reserve.pubkey,
                 reserve.account.liquidity.pyth_oracle_pubkey,
                 reserve.account.liquidity.switchboard_oracle_pubkey,
-                reserve.account.config.extra_oracle_pubkey
+                reserve.account.config.extra_oracle_pubkey,
             ),
             redeem_reserve_collateral(
                 solend_program::id(),
@@ -903,7 +901,7 @@ impl Info<LendingMarket> {
                     reserve.pubkey,
                     reserve.account.liquidity.pyth_oracle_pubkey,
                     reserve.account.liquidity.switchboard_oracle_pubkey,
-                    reserve.account.config.extra_oracle_pubkey
+                    reserve.account.config.extra_oracle_pubkey,
                 ),
             ],
             None,
@@ -949,7 +947,7 @@ impl Info<LendingMarket> {
                     reserve.pubkey,
                     reserve.account.liquidity.pyth_oracle_pubkey,
                     reserve.account.liquidity.switchboard_oracle_pubkey,
-                    reserve.account.config.extra_oracle_pubkey
+                    reserve.account.config.extra_oracle_pubkey,
                 )
             })
             .collect();
@@ -1076,7 +1074,7 @@ impl Info<LendingMarket> {
                 reserve.pubkey,
                 reserve.account.liquidity.pyth_oracle_pubkey,
                 reserve.account.liquidity.switchboard_oracle_pubkey,
-                reserve.account.config.extra_oracle_pubkey
+                reserve.account.config.extra_oracle_pubkey,
             ),
             redeem_fees(
                 solend_program::id(),
