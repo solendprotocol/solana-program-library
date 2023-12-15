@@ -947,6 +947,54 @@ mod test {
                 // 10 cSOL * 2(SOL/cSOL) * 0.5(ltv) * $5 = $50, which is exactly what we want.
                 expected_max_withdraw_amount: 10 * LAMPORTS_PER_SOL, // 10 cSOL
             }),
+            // regular case
+            Just(MaxWithdrawAmountTestCase {
+                obligation: Obligation {
+                    deposits: vec![ObligationCollateral {
+                        deposited_amount: 20 * LAMPORTS_PER_SOL,
+                        ..ObligationCollateral::default()
+                    }],
+                    borrows: vec![ObligationLiquidity {
+                        borrowed_amount_wads: Decimal::from(10u64),
+                        ..ObligationLiquidity::default()
+                    }],
+
+                    allowed_borrow_value: Decimal::from(100u64),
+                    borrowed_value_upper_bound: Decimal::from(50u64),
+                    ..Obligation::default()
+                },
+
+                reserve: Reserve {
+                    config: ReserveConfig {
+                        loan_to_value_ratio: 50,
+                        ..ReserveConfig::default()
+                    },
+                    liquidity: ReserveLiquidity {
+                        available_amount: 100 * LAMPORTS_PER_SOL,
+                        borrowed_amount_wads: Decimal::zero(),
+                        market_price: Decimal::from(10u64),
+                        smoothed_market_price: Decimal::from(10u64),
+                        extra_market_price: Some(Decimal::from(5u64)),
+                        mint_decimals: 9,
+                        ..ReserveLiquidity::default()
+                    },
+                    collateral: ReserveCollateral {
+                        mint_total_supply: 50 * LAMPORTS_PER_SOL,
+                        ..ReserveCollateral::default()
+                    },
+                    ..Reserve::default()
+                },
+
+                // deposited 20 cSOL
+                // => allowed borrow value: 20 cSOL * 2(SOL/cSOL) * 0.5(ltv) * $5 = $100
+                // => borrowed value upper bound: $50
+                // => max withdraw value: ($100 - $50) / 0.5 = $100
+                // => max withdraw liquidity amount: $100 / $5 = 20 SOL
+                // => max withdraw collateral amount: 20 SOL / 2(SOL/cSOL) = 10 cSOL
+                // after withdrawing, the new allowed borrow value is:
+                // 10 cSOL * 2(SOL/cSOL) * 0.5(ltv) * $5 = $50, which is exactly what we want.
+                expected_max_withdraw_amount: 10 * LAMPORTS_PER_SOL, // 10 cSOL
+            }),
             // same case as above but this time we didn't deposit that much collateral
             Just(MaxWithdrawAmountTestCase {
                 obligation: Obligation {

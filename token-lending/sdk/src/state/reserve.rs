@@ -162,7 +162,7 @@ impl Reserve {
     }
 
     /// find the current upper bound market value of tokens.
-    /// ie max(market_price, smoothed_market_price) * liquidity_amount
+    /// ie max(market_price, smoothed_market_price, extra_market_price) * liquidity_amount
     pub fn market_value_upper_bound(
         &self,
         liquidity_amount: Decimal,
@@ -177,7 +177,7 @@ impl Reserve {
     }
 
     /// find the current lower bound market value of tokens.
-    /// ie min(market_price, smoothed_market_price) * liquidity_amount
+    /// ie min(market_price, smoothed_market_price, extra_market_price) * liquidity_amount
     pub fn market_value_lower_bound(
         &self,
         liquidity_amount: Decimal,
@@ -2098,7 +2098,7 @@ mod test {
 
     #[test]
     fn market_value() {
-        let reserve = Reserve {
+        let mut reserve = Reserve {
             liquidity: ReserveLiquidity {
                 mint_decimals: 9,
                 market_price: Decimal::from(25u64),
@@ -2131,6 +2131,27 @@ mod test {
                 .market_value_upper_bound(Decimal::from(10 * LAMPORTS_PER_SOL))
                 .unwrap(),
             Decimal::from(500u64)
+        );
+
+        reserve.liquidity.extra_market_price = Some(Decimal::from(100u64));
+        assert_eq!(
+            reserve
+                .market_value_upper_bound(Decimal::from(10 * LAMPORTS_PER_SOL))
+                .unwrap(),
+            Decimal::from(1000u64)
+        );
+
+        reserve.liquidity.extra_market_price = Some(Decimal::from(10u64));
+        assert_eq!(
+            reserve
+                .market_value_lower_bound(Decimal::from(10 * LAMPORTS_PER_SOL))
+                .unwrap(),
+            Decimal::from(100u64)
+        );
+
+        assert_eq!(
+            reserve.market_value(Decimal::from(1u64)).unwrap(),
+            Decimal::from(25u64).try_div(1e9 as u64).unwrap()
         );
     }
 
@@ -2569,6 +2590,8 @@ mod test {
         // reserve state
         market_price: Decimal,
         smoothed_market_price: Decimal,
+        extra_market_price: Option<Decimal>,
+
         decimal: u8,
         added_borrow_weight_bps: u64,
 
@@ -2588,6 +2611,8 @@ mod test {
 
                 market_price: Decimal::from(1u64),
                 smoothed_market_price: Decimal::from(1u64),
+                extra_market_price: None,
+
                 decimal: 9,
                 added_borrow_weight_bps: 0,
 
@@ -2609,6 +2634,8 @@ mod test {
 
                 market_price: Decimal::from(1u64),
                 smoothed_market_price: Decimal::from(1u64),
+                extra_market_price: None,
+
                 decimal: 9,
                 added_borrow_weight_bps: 0,
 
@@ -2630,6 +2657,8 @@ mod test {
 
                 market_price: Decimal::from(1u64),
                 smoothed_market_price: Decimal::from(1u64),
+                extra_market_price: None,
+
                 decimal: 9,
                 added_borrow_weight_bps: 10_000,
 
@@ -2651,6 +2680,8 @@ mod test {
 
                 market_price: Decimal::from(1u64),
                 smoothed_market_price: Decimal::from(1u64),
+                extra_market_price: None,
+
                 decimal: 9,
                 added_borrow_weight_bps: 10_000,
 
@@ -2672,6 +2703,8 @@ mod test {
 
                 market_price: Decimal::from(10u64),
                 smoothed_market_price: Decimal::from(20u64),
+                extra_market_price: None,
+
                 decimal: 9,
                 added_borrow_weight_bps: 0,
 
@@ -2693,6 +2726,8 @@ mod test {
 
                 market_price: Decimal::from(20u64),
                 smoothed_market_price: Decimal::from(10u64),
+                extra_market_price: None,
+
                 decimal: 9,
                 added_borrow_weight_bps: 0,
 
@@ -2715,6 +2750,28 @@ mod test {
 
                 market_price: Decimal::from(10u64),
                 smoothed_market_price: Decimal::from(20u64),
+                extra_market_price: None,
+
+                decimal: 9,
+                added_borrow_weight_bps: 0,
+
+                borrow_fee_wad: 0,
+                host_fee: 0,
+
+                result: Err(LendingError::BorrowTooLarge.into()),
+            }),
+
+            // borrow enough where it would be fine if we were just using the market + ema price but
+            // not fine when using market + ema + extra price
+            Just(CalculateBorrowTestCase {
+                borrow_amount: 7 * LAMPORTS_PER_SOL,
+                remaining_borrow_value: Decimal::from(100u64),
+                remaining_reserve_capacity: Decimal::from(100 * LAMPORTS_PER_SOL),
+
+                market_price: Decimal::from(10u64),
+                smoothed_market_price: Decimal::from(10u64),
+                extra_market_price: Some(Decimal::from(20u64)),
+
                 decimal: 9,
                 added_borrow_weight_bps: 0,
 
@@ -2743,6 +2800,7 @@ mod test {
                     mint_decimals: test_case.decimal,
                     market_price: test_case.market_price,
                     smoothed_market_price: test_case.smoothed_market_price,
+                    extra_market_price: test_case.extra_market_price,
                     available_amount: test_case.remaining_reserve_capacity.to_scaled_val().unwrap() as u64,
                     ..ReserveLiquidity::default()
                 },
