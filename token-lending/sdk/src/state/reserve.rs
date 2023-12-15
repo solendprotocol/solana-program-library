@@ -616,6 +616,8 @@ pub struct ReserveLiquidity {
     pub market_price: Decimal,
     /// Smoothed reserve liquidity market price for the liquidity (eg TWAP, VWAP, EMA)
     pub smoothed_market_price: Decimal,
+    /// Extra price obtained from the optional extra oracle
+    pub extra_market_price: Option<Decimal>,
 }
 
 impl ReserveLiquidity {
@@ -633,6 +635,7 @@ impl ReserveLiquidity {
             accumulated_protocol_fees_wads: Decimal::zero(),
             market_price: params.market_price,
             smoothed_market_price: params.smoothed_market_price,
+            extra_market_price: None,
         }
     }
 
@@ -923,6 +926,8 @@ pub struct ReserveConfig {
     /// scaled price offset in basis points. Exclusively used to calculate a more reliable asset price for
     /// staked assets (mSOL, stETH).
     pub scaled_price_offset_bps: i64,
+    /// Extra oracle. Only used to limit borrows and withdrawals.
+    pub extra_oracle_pubkey: Option<Pubkey>,
 }
 
 /// validates reserve configs
@@ -1209,6 +1214,9 @@ impl Pack for Reserve {
             config_max_liquidation_bonus,
             config_max_liquidation_threshold,
             config_scaled_price_offset_bps,
+            config_extra_oracle_pubkey,
+            liquidity_extra_market_price_flag,
+            liquidity_extra_market_price,
             _padding,
         ) = mut_array_refs![
             output,
@@ -1253,7 +1261,10 @@ impl Pack for Reserve {
             1,
             1,
             8,
-            130
+            32,
+            1,
+            16,
+            81
         ];
 
         // reserve
@@ -1287,6 +1298,16 @@ impl Pack for Reserve {
             self.liquidity.smoothed_market_price,
             liquidity_smoothed_market_price,
         );
+        match self.liquidity.extra_market_price {
+            Some(extra_market_price) => {
+                liquidity_extra_market_price_flag[0] = 1;
+                pack_decimal(extra_market_price, liquidity_extra_market_price);
+            }
+            None => {
+                liquidity_extra_market_price_flag[0] = 0;
+                pack_decimal(Decimal::zero(), liquidity_extra_market_price);
+            }
+        }
 
         // collateral
         collateral_mint_pubkey.copy_from_slice(self.collateral.mint_pubkey.as_ref());
@@ -1313,6 +1334,10 @@ impl Pack for Reserve {
         *config_protocol_take_rate = self.config.protocol_take_rate.to_le_bytes();
         *config_asset_type = (self.config.reserve_type as u8).to_le_bytes();
         *config_scaled_price_offset_bps = self.config.scaled_price_offset_bps.to_le_bytes();
+        match self.config.extra_oracle_pubkey {
+            Some(pubkey) => config_extra_oracle_pubkey.copy_from_slice(pubkey.as_ref()),
+            None => config_extra_oracle_pubkey.copy_from_slice(&[0u8; PUBKEY_BYTES]),
+        };
 
         self.rate_limiter.pack_into_slice(rate_limiter);
 
@@ -1367,6 +1392,9 @@ impl Pack for Reserve {
             config_max_liquidation_bonus,
             config_max_liquidation_threshold,
             config_scaled_price_offset_bps,
+            config_extra_oracle_pubkey,
+            liquidity_extra_market_price_flag,
+            liquidity_extra_market_price,
             _padding,
         ) = array_refs![
             input,
@@ -1411,7 +1439,10 @@ impl Pack for Reserve {
             1,
             1,
             8,
-            130
+            32,
+            1,
+            16,
+            81
         ];
 
         let version = u8::from_le_bytes(*version);
@@ -1458,6 +1489,14 @@ impl Pack for Reserve {
                 ),
                 market_price: unpack_decimal(liquidity_market_price),
                 smoothed_market_price: unpack_decimal(liquidity_smoothed_market_price),
+                extra_market_price: match liquidity_extra_market_price_flag[0] {
+                    0 => None,
+                    1 => Some(unpack_decimal(liquidity_extra_market_price)),
+                    _ => {
+                        msg!("Invalid extra market price flag");
+                        return Err(ProgramError::InvalidAccountData);
+                    }
+                },
             },
             collateral: ReserveCollateral {
                 mint_pubkey: Pubkey::new_from_array(*collateral_mint_pubkey),
@@ -1503,6 +1542,11 @@ impl Pack for Reserve {
                 added_borrow_weight_bps: u64::from_le_bytes(*config_added_borrow_weight_bps),
                 reserve_type: ReserveType::from_u8(config_asset_type[0]).unwrap(),
                 scaled_price_offset_bps: i64::from_le_bytes(*config_scaled_price_offset_bps),
+                extra_oracle_pubkey: if config_extra_oracle_pubkey == &[0; 32] {
+                    None
+                } else {
+                    Some(Pubkey::new_from_array(*config_extra_oracle_pubkey))
+                },
             },
             rate_limiter: RateLimiter::unpack_from_slice(rate_limiter)?,
         })
@@ -1530,6 +1574,16 @@ mod test {
             let optimal_utilization_rate = rng.gen();
             let liquidation_bonus: u8 = rng.gen();
             let liquidation_threshold: u8 = rng.gen();
+            let extra_oracle_pubkey = if rng.gen_bool(0.5) {
+                Some(Pubkey::new_unique())
+            } else {
+                None
+            };
+            let extra_market_price = if extra_oracle_pubkey.is_some() {
+                Some(rand_decimal())
+            } else {
+                None
+            };
 
             let reserve = Reserve {
                 version: PROGRAM_VERSION,
@@ -1550,6 +1604,7 @@ mod test {
                     accumulated_protocol_fees_wads: rand_decimal(),
                     market_price: rand_decimal(),
                     smoothed_market_price: rand_decimal(),
+                    extra_market_price,
                 },
                 collateral: ReserveCollateral {
                     mint_pubkey: Pubkey::new_unique(),
@@ -1581,6 +1636,7 @@ mod test {
                     added_borrow_weight_bps: rng.gen(),
                     reserve_type: ReserveType::from_u8(rng.gen::<u8>() % 2).unwrap(),
                     scaled_price_offset_bps: rng.gen(),
+                    extra_oracle_pubkey,
                 },
                 rate_limiter: rand_rate_limiter(),
             };

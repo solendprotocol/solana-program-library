@@ -562,7 +562,15 @@ impl LendingInstruction {
                 let (asset_type, rest) = Self::unpack_u8(rest)?;
                 let (max_liquidation_bonus, rest) = Self::unpack_u8(rest)?;
                 let (max_liquidation_threshold, rest) = Self::unpack_u8(rest)?;
-                let (scaled_price_offset_bps, _rest) = Self::unpack_i64(rest)?;
+                let (scaled_price_offset_bps, rest) = Self::unpack_i64(rest)?;
+                let (extra_oracle_pubkey, _rest) = match Self::unpack_u8(rest)? {
+                    (0, rest) => (None, rest),
+                    (1, rest) => {
+                        let (pubkey, rest) = Self::unpack_pubkey(rest)?;
+                        (Some(pubkey), rest)
+                    }
+                    _ => return Err(LendingError::InstructionUnpackError.into()),
+                };
                 Self::InitReserve {
                     liquidity_amount,
                     config: ReserveConfig {
@@ -590,6 +598,7 @@ impl LendingInstruction {
                         added_borrow_weight_bps,
                         reserve_type: ReserveType::from_u8(asset_type).unwrap(),
                         scaled_price_offset_bps,
+                        extra_oracle_pubkey,
                     },
                 }
             }
@@ -659,6 +668,14 @@ impl LendingInstruction {
                 let (max_liquidation_bonus, rest) = Self::unpack_u8(rest)?;
                 let (max_liquidation_threshold, rest) = Self::unpack_u8(rest)?;
                 let (scaled_price_offset_bps, rest) = Self::unpack_i64(rest)?;
+                let (extra_oracle_pubkey, rest) = match Self::unpack_u8(rest)? {
+                    (0, rest) => (None, rest),
+                    (1, rest) => {
+                        let (pubkey, rest) = Self::unpack_pubkey(rest)?;
+                        (Some(pubkey), rest)
+                    }
+                    _ => return Err(LendingError::InstructionUnpackError.into()),
+                };
                 let (window_duration, rest) = Self::unpack_u64(rest)?;
                 let (max_outflow, _rest) = Self::unpack_u64(rest)?;
 
@@ -688,6 +705,7 @@ impl LendingInstruction {
                         added_borrow_weight_bps,
                         reserve_type: ReserveType::from_u8(asset_type).unwrap(),
                         scaled_price_offset_bps,
+                        extra_oracle_pubkey,
                     },
                     rate_limiter_config: RateLimiterConfig {
                         window_duration,
@@ -852,6 +870,7 @@ impl LendingInstruction {
                         added_borrow_weight_bps: borrow_weight_bps,
                         reserve_type: asset_type,
                         scaled_price_offset_bps,
+                        extra_oracle_pubkey,
                     },
             } => {
                 buf.push(2);
@@ -878,6 +897,15 @@ impl LendingInstruction {
                 buf.extend_from_slice(&max_liquidation_bonus.to_le_bytes());
                 buf.extend_from_slice(&max_liquidation_threshold.to_le_bytes());
                 buf.extend_from_slice(&scaled_price_offset_bps.to_le_bytes());
+                match extra_oracle_pubkey {
+                    Some(pubkey) => {
+                        buf.push(1);
+                        buf.extend_from_slice(pubkey.as_ref());
+                    }
+                    None => {
+                        buf.push(0);
+                    }
+                };
             }
             Self::RefreshReserve => {
                 buf.push(3);
@@ -955,6 +983,15 @@ impl LendingInstruction {
                 buf.extend_from_slice(&config.max_liquidation_bonus.to_le_bytes());
                 buf.extend_from_slice(&config.max_liquidation_threshold.to_le_bytes());
                 buf.extend_from_slice(&config.scaled_price_offset_bps.to_le_bytes());
+                match config.extra_oracle_pubkey {
+                    Some(pubkey) => {
+                        buf.push(1);
+                        buf.extend_from_slice(pubkey.as_ref());
+                    }
+                    None => {
+                        buf.push(0);
+                    }
+                };
                 buf.extend_from_slice(&rate_limiter_config.window_duration.to_le_bytes());
                 buf.extend_from_slice(&rate_limiter_config.max_outflow.to_le_bytes());
             }
@@ -1779,6 +1816,11 @@ mod test {
                         added_borrow_weight_bps: rng.gen::<u64>(),
                         reserve_type: ReserveType::from_u8(rng.gen::<u8>() % 2).unwrap(),
                         scaled_price_offset_bps: rng.gen(),
+                        extra_oracle_pubkey: if rng.gen_bool(0.5) {
+                            None
+                        } else {
+                            Some(Pubkey::new_unique())
+                        },
                     },
                 };
 
@@ -1940,6 +1982,11 @@ mod test {
                         added_borrow_weight_bps: rng.gen::<u64>(),
                         reserve_type: ReserveType::from_u8(rng.gen::<u8>() % 2).unwrap(),
                         scaled_price_offset_bps: rng.gen(),
+                        extra_oracle_pubkey: if rng.gen_bool(0.5) {
+                            Some(Pubkey::new_unique())
+                        } else {
+                            None
+                        },
                     },
                     rate_limiter_config: RateLimiterConfig {
                         window_duration: rng.gen::<u64>(),
