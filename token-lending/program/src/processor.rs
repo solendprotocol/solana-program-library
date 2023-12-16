@@ -33,7 +33,9 @@ use solana_program::{
     },
 };
 use solend_sdk::{
-    oracles::{get_oracle_type, validate_pyth_price_account_info, OracleType},
+    oracles::{
+        get_oracle_type, get_pyth_price_unchecked, validate_pyth_price_account_info, OracleType,
+    },
     state::{LendingMarketMetadata, RateLimiter, RateLimiterConfig, ReserveType},
 };
 use solend_sdk::{switchboard_v2_devnet, switchboard_v2_mainnet};
@@ -578,10 +580,12 @@ fn _refresh_reserve<'a>(
                 }
 
                 match get_oracle_type(extra_oracle_account_info)? {
-                    OracleType::Pyth => Some(get_pyth_price(extra_oracle_account_info, clock)?.0),
-                    OracleType::Switchboard => {
-                        Some(get_switchboard_price_v2(extra_oracle_account_info, clock)?)
-                    }
+                    OracleType::Pyth => Some(get_pyth_price_unchecked(extra_oracle_account_info)?),
+                    OracleType::Switchboard => Some(get_switchboard_price_v2(
+                        extra_oracle_account_info,
+                        clock,
+                        false,
+                    )?),
                 }
             }
             None => {
@@ -3074,7 +3078,7 @@ fn get_switchboard_price(
     if switchboard_feed_info.owner == &switchboard_v2_mainnet::id()
         || switchboard_feed_info.owner == &switchboard_v2_devnet::id()
     {
-        return get_switchboard_price_v2(switchboard_feed_info, clock);
+        return get_switchboard_price_v2(switchboard_feed_info, clock, true);
     }
 
     let account_buf = switchboard_feed_info.try_borrow_data()?;
@@ -3113,6 +3117,7 @@ fn get_switchboard_price(
 fn get_switchboard_price_v2(
     switchboard_feed_info: &AccountInfo,
     clock: &Clock,
+    check_staleness: bool,
 ) -> Result<Decimal, ProgramError> {
     const STALE_AFTER_SLOTS_ELAPSED: u64 = 240;
     let data = &switchboard_feed_info.try_borrow_data()?;
@@ -3122,7 +3127,7 @@ fn get_switchboard_price_v2(
         .slot
         .checked_sub(feed.latest_confirmed_round.round_open_slot)
         .ok_or(LendingError::MathOverflow)?;
-    if slots_elapsed >= STALE_AFTER_SLOTS_ELAPSED {
+    if check_staleness && slots_elapsed >= STALE_AFTER_SLOTS_ELAPSED {
         msg!("Switchboard oracle price is stale");
         return Err(LendingError::InvalidOracleConfig.into());
     }

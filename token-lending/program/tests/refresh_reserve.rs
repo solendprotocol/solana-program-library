@@ -293,6 +293,20 @@ async fn test_success_pyth_price_stale_switchboard_valid() {
         wsol_reserve_post.account.liquidity.smoothed_market_price,
         Decimal::from(11u64)
     );
+
+    test.advance_clock_by_slots(241).await;
+    let err = lending_market
+        .refresh_reserve(&mut test, &wsol_reserve)
+        .await
+        .unwrap_err()
+        .unwrap();
+    assert_eq!(
+        err,
+        TransactionError::InstructionError(
+            1,
+            InstructionError::Custom(LendingError::InvalidOracleConfig as u32)
+        )
+    );
 }
 
 #[tokio::test]
@@ -676,19 +690,11 @@ async fn test_use_extra_oracle_bad_cases() {
 
     let mut msol_reserve = test.load_account::<Reserve>(reserves[0].pubkey).await;
 
-    // this should fail because the extra oracle is stale
-    let err = lending_market
+    // this no longer fails because the extra oracle is not checked for staleness/variance
+    lending_market
         .refresh_reserve(&mut test, &msol_reserve)
         .await
-        .unwrap_err()
         .unwrap();
-    assert_eq!(
-        err,
-        TransactionError::InstructionError(
-            1,
-            InstructionError::Custom(LendingError::InvalidOracleConfig as u32)
-        )
-    );
 
     msol_reserve.account.config.extra_oracle_pubkey =
         Some(msol_reserve.account.liquidity.pyth_oracle_pubkey);

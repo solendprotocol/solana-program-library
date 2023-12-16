@@ -52,6 +52,23 @@ pub fn validate_pyth_price_account_info(
     Ok(())
 }
 
+/// get pyth price without caring about staleness or variance. only used
+pub fn get_pyth_price_unchecked(pyth_price_info: &AccountInfo) -> Result<Decimal, ProgramError> {
+    if *pyth_price_info.key == solend_program::NULL_PUBKEY {
+        return Err(LendingError::NullOracleConfig.into());
+    }
+
+    let data = &pyth_price_info.try_borrow_data()?;
+    let price_account = pyth_sdk_solana::state::load_price_account(data).map_err(|e| {
+        msg!("Couldn't load price feed from account info: {:?}", e);
+        LendingError::InvalidOracleConfig
+    })?;
+
+    let price_feed = price_account.to_price_feed(pyth_price_info.key);
+    let price = price_feed.get_price_unchecked();
+    pyth_price_to_decimal(&price)
+}
+
 pub fn get_pyth_price(
     pyth_price_info: &AccountInfo,
     clock: &Clock,
@@ -452,5 +469,48 @@ mod test {
                 test_case.expected_result
             );
         }
+    }
+
+    #[test]
+    fn pyth_price_unchecked_test_cases() {
+        let mut price_account = PriceAccount {
+            magic: MAGIC,
+            ver: VERSION_2,
+            atype: AccountType::Price as u32,
+            ptype: PriceType::Price,
+            expo: 1,
+            timestamp: 1,
+            ema_price: Rational {
+                val: 11,
+                numer: 110,
+                denom: 10,
+            },
+            agg: PriceInfo {
+                price: 200,
+                conf: 40,
+                status: PriceStatus::Trading,
+                corp_act: CorpAction::NoCorpAct,
+                pub_slot: 0,
+            },
+            ..PriceAccount::default()
+        };
+
+        let mut lamports = 20;
+        let pubkey = Pubkey::new_unique();
+        let account_info = AccountInfo::new(
+            &pubkey,
+            false,
+            false,
+            &mut lamports,
+            bytes_of_mut(&mut price_account),
+            &pubkey,
+            false,
+            0,
+        );
+
+        assert_eq!(
+            get_pyth_price_unchecked(&account_info),
+            Ok(Decimal::from(2000_u64))
+        );
     }
 }
