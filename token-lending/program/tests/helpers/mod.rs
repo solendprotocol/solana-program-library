@@ -27,6 +27,36 @@ pub const QUOTE_CURRENCY: [u8; 32] =
 pub const LAMPORTS_TO_SOL: u64 = 1_000_000_000;
 pub const FRACTIONAL_TO_USDC: u64 = 1_000_000;
 
+pub fn reserve_config_no_fees() -> ReserveConfig {
+    ReserveConfig {
+        optimal_utilization_rate: 80,
+        max_utilization_rate: 80,
+        loan_to_value_ratio: 50,
+        liquidation_bonus: 0,
+        max_liquidation_bonus: 0,
+        liquidation_threshold: 55,
+        max_liquidation_threshold: 65,
+        min_borrow_rate: 0,
+        optimal_borrow_rate: 0,
+        max_borrow_rate: 0,
+        super_max_borrow_rate: 0,
+        fees: ReserveFees {
+            borrow_fee_wad: 0,
+            flash_loan_fee_wad: 0,
+            host_fee_percentage: 0,
+        },
+        deposit_limit: u64::MAX,
+        borrow_limit: u64::MAX,
+        fee_receiver: Keypair::new().pubkey(),
+        protocol_liquidation_fee: 0,
+        protocol_take_rate: 0,
+        added_borrow_weight_bps: 0,
+        reserve_type: ReserveType::Regular,
+        attributed_borrow_limit_open: u64::MAX,
+        attributed_borrow_limit_close: u64::MAX,
+    }
+}
+
 pub fn test_reserve_config() -> ReserveConfig {
     ReserveConfig {
         optimal_utilization_rate: 80,
@@ -52,7 +82,8 @@ pub fn test_reserve_config() -> ReserveConfig {
         protocol_take_rate: 0,
         added_borrow_weight_bps: 0,
         reserve_type: ReserveType::Regular,
-        attributed_borrow_limit: u64::MAX,
+        attributed_borrow_limit_open: u64::MAX,
+        attributed_borrow_limit_close: u64::MAX,
     }
 }
 

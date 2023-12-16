@@ -507,6 +507,19 @@ pub enum LendingInstruction {
     /// 1. `[signer]` fee payer.
     /// 2. '[]' System Program
     ResizeReserve,
+
+    // 24
+    /// MarkObligationAsClosable
+    ///
+    /// Accounts expected by this instruction
+    /// 0. `[writable]` Obligation account - refreshed.
+    /// 1. `[]` Lending market account.
+    /// 2. `[]` Reserve account - refreshed.
+    /// 3. `[signer]` risk authority of lending market or lending market owner
+    SetObligationCloseabilityStatus {
+        /// Obligation is closable
+        closeable: bool,
+    },
 }
 
 impl LendingInstruction {
@@ -571,7 +584,8 @@ impl LendingInstruction {
                 let (asset_type, rest) = Self::unpack_u8(rest)?;
                 let (max_liquidation_bonus, rest) = Self::unpack_u8(rest)?;
                 let (max_liquidation_threshold, rest) = Self::unpack_u8(rest)?;
-                let (attributed_borrow_limit, _rest) = Self::unpack_u64(rest)?;
+                let (attributed_borrow_limit_open, rest) = Self::unpack_u64(rest)?;
+                let (attributed_borrow_limit_close, _rest) = Self::unpack_u64(rest)?;
                 Self::InitReserve {
                     liquidity_amount,
                     config: ReserveConfig {
@@ -598,7 +612,8 @@ impl LendingInstruction {
                         protocol_take_rate,
                         added_borrow_weight_bps,
                         reserve_type: ReserveType::from_u8(asset_type).unwrap(),
-                        attributed_borrow_limit,
+                        attributed_borrow_limit_open,
+                        attributed_borrow_limit_close,
                     },
                 }
             }
@@ -667,7 +682,8 @@ impl LendingInstruction {
                 let (asset_type, rest) = Self::unpack_u8(rest)?;
                 let (max_liquidation_bonus, rest) = Self::unpack_u8(rest)?;
                 let (max_liquidation_threshold, rest) = Self::unpack_u8(rest)?;
-                let (attributed_borrow_limit, rest) = Self::unpack_u64(rest)?;
+                let (attributed_borrow_limit_open, rest) = Self::unpack_u64(rest)?;
+                let (attributed_borrow_limit_close, rest) = Self::unpack_u64(rest)?;
                 let (window_duration, rest) = Self::unpack_u64(rest)?;
                 let (max_outflow, _rest) = Self::unpack_u64(rest)?;
 
@@ -696,7 +712,8 @@ impl LendingInstruction {
                         protocol_take_rate,
                         added_borrow_weight_bps,
                         reserve_type: ReserveType::from_u8(asset_type).unwrap(),
-                        attributed_borrow_limit,
+                        attributed_borrow_limit_open,
+                        attributed_borrow_limit_close,
                     },
                     rate_limiter_config: RateLimiterConfig {
                         window_duration,
@@ -727,6 +744,15 @@ impl LendingInstruction {
             }
             22 => Self::UpdateMarketMetadata,
             23 => Self::ResizeReserve,
+            24 => {
+                let (closeable, _rest) = match Self::unpack_u8(rest)? {
+                    (0, rest) => (false, rest),
+                    (1, rest) => (true, rest),
+                    _ => return Err(LendingError::InstructionUnpackError.into()),
+                };
+
+                Self::SetObligationCloseabilityStatus { closeable }
+            }
             _ => {
                 msg!("Instruction cannot be unpacked {:?} {:?}", tag, rest);
                 return Err(LendingError::InstructionUnpackError.into());
@@ -847,7 +873,8 @@ impl LendingInstruction {
                         protocol_take_rate,
                         added_borrow_weight_bps: borrow_weight_bps,
                         reserve_type: asset_type,
-                        attributed_borrow_limit,
+                        attributed_borrow_limit_open,
+                        attributed_borrow_limit_close,
                     },
             } => {
                 buf.push(2);
@@ -873,7 +900,8 @@ impl LendingInstruction {
                 buf.extend_from_slice(&(asset_type as u8).to_le_bytes());
                 buf.extend_from_slice(&max_liquidation_bonus.to_le_bytes());
                 buf.extend_from_slice(&max_liquidation_threshold.to_le_bytes());
-                buf.extend_from_slice(&attributed_borrow_limit.to_le_bytes());
+                buf.extend_from_slice(&attributed_borrow_limit_open.to_le_bytes());
+                buf.extend_from_slice(&attributed_borrow_limit_close.to_le_bytes());
             }
             Self::RefreshReserve => {
                 buf.push(3);
@@ -950,7 +978,8 @@ impl LendingInstruction {
                 buf.extend_from_slice(&(config.reserve_type as u8).to_le_bytes());
                 buf.extend_from_slice(&config.max_liquidation_bonus.to_le_bytes());
                 buf.extend_from_slice(&config.max_liquidation_threshold.to_le_bytes());
-                buf.extend_from_slice(&config.attributed_borrow_limit.to_le_bytes());
+                buf.extend_from_slice(&config.attributed_borrow_limit_open.to_le_bytes());
+                buf.extend_from_slice(&config.attributed_borrow_limit_close.to_le_bytes());
                 buf.extend_from_slice(&rate_limiter_config.window_duration.to_le_bytes());
                 buf.extend_from_slice(&rate_limiter_config.max_outflow.to_le_bytes());
             }
@@ -981,6 +1010,10 @@ impl LendingInstruction {
             Self::UpdateMarketMetadata => {}
             Self::ResizeReserve => {
                 buf.push(23);
+            }
+            Self::SetObligationCloseabilityStatus { closeable } => {
+                buf.push(24);
+                buf.extend_from_slice(&(closeable as u8).to_le_bytes());
             }
         }
         buf
@@ -1746,6 +1779,27 @@ pub fn resize_reserve(program_id: Pubkey, reserve_pubkey: Pubkey, signer: Pubkey
     }
 }
 
+/// Creates a `MarkObligationAsClosable` instruction
+pub fn set_obligation_closeability_status(
+    program_id: Pubkey,
+    obligation_pubkey: Pubkey,
+    reserve_pubkey: Pubkey,
+    lending_market_pubkey: Pubkey,
+    risk_authority: Pubkey,
+    closeable: bool,
+) -> Instruction {
+    Instruction {
+        program_id,
+        accounts: vec![
+            AccountMeta::new(obligation_pubkey, false),
+            AccountMeta::new_readonly(lending_market_pubkey, false),
+            AccountMeta::new_readonly(reserve_pubkey, false),
+            AccountMeta::new_readonly(risk_authority, true),
+        ],
+        data: LendingInstruction::SetObligationCloseabilityStatus { closeable }.pack(),
+    }
+}
+
 #[cfg(test)]
 mod test {
     use super::*;
@@ -1815,7 +1869,8 @@ mod test {
                         protocol_take_rate: rng.gen::<u8>(),
                         added_borrow_weight_bps: rng.gen::<u64>(),
                         reserve_type: ReserveType::from_u8(rng.gen::<u8>() % 2).unwrap(),
-                        attributed_borrow_limit: rng.gen(),
+                        attributed_borrow_limit_open: rng.gen(),
+                        attributed_borrow_limit_close: rng.gen(),
                     },
                 };
 
@@ -1976,7 +2031,8 @@ mod test {
                         protocol_take_rate: rng.gen::<u8>(),
                         added_borrow_weight_bps: rng.gen::<u64>(),
                         reserve_type: ReserveType::from_u8(rng.gen::<u8>() % 2).unwrap(),
-                        attributed_borrow_limit: rng.gen(),
+                        attributed_borrow_limit_open: rng.gen(),
+                        attributed_borrow_limit_close: rng.gen(),
                     },
                     rate_limiter_config: RateLimiterConfig {
                         window_duration: rng.gen::<u64>(),
@@ -2037,6 +2093,26 @@ mod test {
             {
                 let instruction = LendingInstruction::ForgiveDebt {
                     liquidity_amount: rng.gen::<u64>(),
+                };
+
+                let packed = instruction.pack();
+                let unpacked = LendingInstruction::unpack(&packed).unwrap();
+                assert_eq!(instruction, unpacked);
+            }
+
+            // resize reserve
+            {
+                let instruction = LendingInstruction::ResizeReserve {};
+
+                let packed = instruction.pack();
+                let unpacked = LendingInstruction::unpack(&packed).unwrap();
+                assert_eq!(instruction, unpacked);
+            }
+
+            // MarkObligationAsClosable
+            {
+                let instruction = LendingInstruction::SetObligationCloseabilityStatus {
+                    closeable: rng.gen(),
                 };
 
                 let packed = instruction.pack();

@@ -206,6 +206,9 @@ pub enum LendingError {
     /// Borrow Attribution Limit Exceeded
     #[error("Borrow Attribution Limit Exceeded")]
     BorrowAttributionLimitExceeded,
+    /// Borrow Attribution Limit Not Exceeded
+    #[error("Borrow Attribution Limit Not Exceeded")]
+    BorrowAttributionLimitNotExceeded,
 }
 
 impl From<LendingError> for ProgramError {

@@ -61,8 +61,8 @@ pub struct Obligation {
     pub super_unhealthy_borrow_value: Decimal,
     /// True if the obligation is currently borrowing an isolated tier asset
     pub borrowing_isolated_asset: bool,
-    /// Updated borrow attribution after upgrade. initially false when upgrading to v2.0.3
-    pub updated_borrow_attribution_after_upgrade: bool,
+    /// Obligation can be marked as closeable
+    pub closeable: bool,
 }
 
 impl Obligation {
@@ -439,7 +439,7 @@ impl Pack for Obligation {
             borrowing_isolated_asset,
             super_unhealthy_borrow_value,
             unweighted_borrowed_value,
-            updated_borrow_attribution_after_upgrade,
+            closeable,
             _padding,
             deposits_len,
             borrows_len,
@@ -483,10 +483,7 @@ impl Pack for Obligation {
             super_unhealthy_borrow_value,
         );
         pack_decimal(self.unweighted_borrowed_value, unweighted_borrowed_value);
-        pack_bool(
-            self.updated_borrow_attribution_after_upgrade,
-            updated_borrow_attribution_after_upgrade,
-        );
+        pack_bool(self.closeable, closeable);
 
         *deposits_len = u8::try_from(self.deposits.len()).unwrap().to_le_bytes();
         *borrows_len = u8::try_from(self.borrows.len()).unwrap().to_le_bytes();
@@ -551,7 +548,7 @@ impl Pack for Obligation {
             borrowing_isolated_asset,
             super_unhealthy_borrow_value,
             unweighted_borrowed_value,
-            updated_borrow_attribution_after_upgrade,
+            closeable,
             _padding,
             deposits_len,
             borrows_len,
@@ -645,9 +642,7 @@ impl Pack for Obligation {
             unhealthy_borrow_value: unpack_decimal(unhealthy_borrow_value),
             super_unhealthy_borrow_value: unpack_decimal(super_unhealthy_borrow_value),
             borrowing_isolated_asset: unpack_bool(borrowing_isolated_asset)?,
-            updated_borrow_attribution_after_upgrade: unpack_bool(
-                updated_borrow_attribution_after_upgrade,
-            )?,
+            closeable: unpack_bool(closeable)?,
         })
     }
 }
@@ -698,7 +693,7 @@ mod test {
                 unhealthy_borrow_value: rand_decimal(),
                 super_unhealthy_borrow_value: rand_decimal(),
                 borrowing_isolated_asset: rng.gen(),
-                updated_borrow_attribution_after_upgrade: rng.gen(),
+                closeable: rng.gen(),
             };
 
             let mut packed = [0u8; OBLIGATION_LEN];
