@@ -1,4 +1,5 @@
 use bytemuck::checked::from_bytes;
+
 use solend_sdk::instruction::*;
 use solend_sdk::pyth_mainnet;
 use solend_sdk::state::*;
@@ -695,6 +696,32 @@ pub struct SwitchboardPriceArgs {
 }
 
 impl Info<LendingMarket> {
+    pub async fn set_obligation_closeability_status(
+        &self,
+        test: &mut SolendProgramTest,
+        obligation: &Info<Obligation>,
+        reserve: &Info<Reserve>,
+        risk_authority: &User,
+        closeable: bool,
+    ) -> Result<(), BanksClientError> {
+        let refresh_ixs = self
+            .build_refresh_instructions(test, obligation, None)
+            .await;
+        test.process_transaction(&refresh_ixs, None).await.unwrap();
+
+        let ix = vec![set_obligation_closeability_status(
+            solend_program::id(),
+            obligation.pubkey,
+            reserve.pubkey,
+            self.pubkey,
+            risk_authority.keypair.pubkey(),
+            closeable,
+        )];
+
+        test.process_transaction(&ix, Some(&[&risk_authority.keypair]))
+            .await
+    }
+
     pub async fn deposit(
         &self,
         test: &mut SolendProgramTest,

@@ -1,5 +1,6 @@
 //! Program state processor
 
+use crate::state::Bonus;
 use crate::{
     self as solend_program,
     error::LendingError,
@@ -15,6 +16,7 @@ use crate::{
 };
 use bytemuck::bytes_of;
 use pyth_sdk_solana::{self, state::ProductAccount};
+
 use solana_program::{
     account_info::{next_account_info, AccountInfo},
     entrypoint::ProgramResult,
@@ -198,6 +200,10 @@ pub fn process_instruction(
             msg!("Instruction: Update Metadata");
             let metadata = LendingMarketMetadata::new_from_bytes(input)?;
             process_update_market_metadata(program_id, metadata, accounts)
+        }
+        LendingInstruction::SetObligationCloseabilityStatus { closeable } => {
+            msg!("Instruction: Mark Obligation As Closable");
+            process_set_obligation_closeability_status(program_id, closeable, accounts)
         }
     }
 }
@@ -1148,7 +1154,10 @@ fn process_refresh_obligation(program_id: &Pubkey, accounts: &[AccountInfo]) -> 
 
     obligation.last_update.update_slot(clock.slot);
 
-    update_borrow_attribution_values(&mut obligation, &accounts[1..], false)?;
+    let (_, close_exceeded) = update_borrow_attribution_values(&mut obligation, &accounts[1..])?;
+    if close_exceeded.is_none() {
+        obligation.closeable = false;
+    }
 
     // move the ObligationLiquidity with the max borrow weight to the front
     if let Some((_, max_borrow_weight_index)) = max_borrow_weight {
@@ -1180,9 +1189,11 @@ fn process_refresh_obligation(program_id: &Pubkey, accounts: &[AccountInfo]) -> 
 fn update_borrow_attribution_values(
     obligation: &mut Obligation,
     deposit_reserve_infos: &[AccountInfo],
-    error_if_limit_exceeded: bool,
-) -> ProgramResult {
+) -> Result<(Option<Pubkey>, Option<Pubkey>), ProgramError> {
     let deposit_infos = &mut deposit_reserve_infos.iter();
+
+    let mut open_exceeded = None;
+    let mut close_exceeded = None;
 
     for collateral in obligation.deposits.iter_mut() {
         let deposit_reserve_info = next_account_info(deposit_infos)?;
@@ -1194,11 +1205,9 @@ fn update_borrow_attribution_values(
             return Err(LendingError::InvalidAccountInput.into());
         }
 
-        if obligation.updated_borrow_attribution_after_upgrade {
-            deposit_reserve.attributed_borrow_value = deposit_reserve
-                .attributed_borrow_value
-                .saturating_sub(collateral.attributed_borrow_value);
-        }
+        deposit_reserve.attributed_borrow_value = deposit_reserve
+            .attributed_borrow_value
+            .saturating_sub(collateral.attributed_borrow_value);
 
         if obligation.deposited_value > Decimal::zero() {
             collateral.attributed_borrow_value = collateral
@@ -1213,24 +1222,21 @@ fn update_borrow_attribution_values(
             .attributed_borrow_value
             .try_add(collateral.attributed_borrow_value)?;
 
-        if error_if_limit_exceeded
-            && deposit_reserve.attributed_borrow_value
-                > Decimal::from(deposit_reserve.config.attributed_borrow_limit)
+        if deposit_reserve.attributed_borrow_value
+            > Decimal::from(deposit_reserve.config.attributed_borrow_limit_open)
         {
-            msg!(
-                "Attributed borrow value is over the limit for reserve {} and mint {}",
-                deposit_reserve_info.key,
-                deposit_reserve.liquidity.mint_pubkey
-            );
-            return Err(LendingError::BorrowAttributionLimitExceeded.into());
+            open_exceeded = Some(*deposit_reserve_info.key);
+        }
+        if deposit_reserve.attributed_borrow_value
+            > Decimal::from(deposit_reserve.config.attributed_borrow_limit_close)
+        {
+            close_exceeded = Some(*deposit_reserve_info.key);
         }
 
         Reserve::pack(deposit_reserve, &mut deposit_reserve_info.data.borrow_mut())?;
     }
 
-    obligation.updated_borrow_attribution_after_upgrade = true;
-
-    Ok(())
+    Ok((open_exceeded, close_exceeded))
 }
 
 #[inline(never)] // avoid stack frame limit
@@ -1617,7 +1623,15 @@ fn _withdraw_obligation_collateral<'a>(
         .market_value
         .saturating_sub(withdraw_value);
 
-    update_borrow_attribution_values(&mut obligation, deposit_reserve_infos, true)?;
+    let (open_exceeded, _) =
+        update_borrow_attribution_values(&mut obligation, deposit_reserve_infos)?;
+    if let Some(reserve_pubkey) = open_exceeded {
+        msg!(
+            "Open borrow attribution limit exceeded for reserve {:?}",
+            reserve_pubkey
+        );
+        return Err(LendingError::BorrowAttributionLimitExceeded.into());
+    }
 
     // obligation.withdraw must be called after updating borrow attribution values, since we can
     // lose information if an entire deposit is removed, making the former calculation incorrect
@@ -1872,8 +1886,16 @@ fn process_borrow_obligation_liquidity(
     obligation_liquidity.borrow(borrow_amount)?;
     obligation.last_update.mark_stale();
 
-    update_borrow_attribution_values(&mut obligation, &accounts[9..], true)?;
-    // HACK: fast forward through the used account info's
+    let (open_exceeded, _) = update_borrow_attribution_values(&mut obligation, &accounts[9..])?;
+    if let Some(reserve_pubkey) = open_exceeded {
+        msg!(
+            "Open borrow attribution limit exceeded for reserve {:?}",
+            reserve_pubkey
+        );
+        return Err(LendingError::BorrowAttributionLimitExceeded.into());
+    }
+
+    // HACK: fast forward through the deposit reserve infos
     for _ in 0..obligation.deposits.len() {
         next_account_info(account_info_iter)?;
     }
@@ -2042,7 +2064,7 @@ fn _liquidate_obligation<'a>(
     user_transfer_authority_info: &AccountInfo<'a>,
     clock: &Clock,
     token_program_id: &AccountInfo<'a>,
-) -> Result<(u64, Decimal), ProgramError> {
+) -> Result<(u64, Bonus), ProgramError> {
     let lending_market = LendingMarket::unpack(&lending_market_info.data.borrow())?;
     if lending_market_info.owner != program_id {
         msg!("Lending market provided is not owned by the lending program");
@@ -2128,8 +2150,9 @@ fn _liquidate_obligation<'a>(
         msg!("Obligation borrowed value is zero");
         return Err(LendingError::ObligationBorrowsZero.into());
     }
-    if obligation.borrowed_value < obligation.unhealthy_borrow_value {
-        msg!("Obligation is healthy and cannot be liquidated");
+
+    if obligation.borrowed_value < obligation.unhealthy_borrow_value && !obligation.closeable {
+        msg!("Obligation must be unhealthy or marked as closeable to be liquidated");
         return Err(LendingError::ObligationHealthy.into());
     }
 
@@ -2171,16 +2194,17 @@ fn _liquidate_obligation<'a>(
         return Err(LendingError::InvalidMarketAuthority.into());
     }
 
+    let bonus = withdraw_reserve.calculate_bonus(&obligation)?;
     let CalculateLiquidationResult {
         settle_amount,
         repay_amount,
         withdraw_amount,
-        bonus_rate,
     } = withdraw_reserve.calculate_liquidation(
         liquidity_amount,
         &obligation,
         liquidity,
         collateral,
+        &bonus,
     )?;
 
     if repay_amount == 0 {
@@ -2234,7 +2258,7 @@ fn _liquidate_obligation<'a>(
         token_program: token_program_id.clone(),
     })?;
 
-    Ok((withdraw_amount, bonus_rate))
+    Ok((withdraw_amount, bonus))
 }
 
 #[inline(never)] // avoid stack frame limit
@@ -2266,7 +2290,7 @@ fn process_liquidate_obligation_and_redeem_reserve_collateral(
     let token_program_id = next_account_info(account_info_iter)?;
     let clock = &Clock::get()?;
 
-    let (withdrawn_collateral_amount, bonus_rate) = _liquidate_obligation(
+    let (withdrawn_collateral_amount, bonus) = _liquidate_obligation(
         program_id,
         liquidity_amount,
         source_liquidity_info,
@@ -2313,7 +2337,7 @@ fn process_liquidate_obligation_and_redeem_reserve_collateral(
             return Err(LendingError::InvalidAccountInput.into());
         }
         let protocol_fee = withdraw_reserve
-            .calculate_protocol_liquidation_fee(withdraw_liquidity_amount, bonus_rate)?;
+            .calculate_protocol_liquidation_fee(withdraw_liquidity_amount, &bonus)?;
 
         spl_token_transfer(TokenTransferParams {
             source: destination_liquidity_info.clone(),
@@ -3129,6 +3153,86 @@ fn process_update_market_metadata(
 
     let mut metadata_account_data = metadata_info.try_borrow_mut_data()?;
     metadata_account_data.copy_from_slice(bytes_of(metadata));
+
+    Ok(())
+}
+
+/// process mark obligation as closable
+pub fn process_set_obligation_closeability_status(
+    program_id: &Pubkey,
+    closeable: bool,
+    accounts: &[AccountInfo],
+) -> ProgramResult {
+    let account_info_iter = &mut accounts.iter();
+    let obligation_info = next_account_info(account_info_iter)?;
+    let lending_market_info = next_account_info(account_info_iter)?;
+    let reserve_info = next_account_info(account_info_iter)?;
+    let signer_info = next_account_info(account_info_iter)?;
+    let clock = Clock::get()?;
+
+    let lending_market = LendingMarket::unpack(&lending_market_info.data.borrow())?;
+    if lending_market_info.owner != program_id {
+        msg!("Lending market provided is not owned by the lending program");
+        return Err(LendingError::InvalidAccountOwner.into());
+    }
+
+    let reserve = Reserve::unpack(&reserve_info.data.borrow())?;
+    if reserve_info.owner != program_id {
+        msg!("Reserve provided is not owned by the lending program");
+        return Err(LendingError::InvalidAccountOwner.into());
+    }
+    if &reserve.lending_market != lending_market_info.key {
+        msg!("Reserve lending market does not match the lending market provided");
+        return Err(LendingError::InvalidAccountInput.into());
+    }
+
+    if reserve.attributed_borrow_value < Decimal::from(reserve.config.attributed_borrow_limit_close)
+    {
+        msg!("Reserve attributed borrow value is below the attributed borrow limit");
+        return Err(LendingError::BorrowAttributionLimitNotExceeded.into());
+    }
+
+    let mut obligation = Obligation::unpack(&obligation_info.data.borrow())?;
+    if obligation_info.owner != program_id {
+        msg!("Obligation provided is not owned by the lending program");
+        return Err(LendingError::InvalidAccountOwner.into());
+    }
+
+    if &obligation.lending_market != lending_market_info.key {
+        msg!("Obligation lending market does not match the lending market provided");
+        return Err(LendingError::InvalidAccountInput.into());
+    }
+    if obligation.last_update.is_stale(clock.slot)? {
+        msg!("Obligation is stale and must be refreshed");
+        return Err(LendingError::ObligationStale.into());
+    }
+
+    if &lending_market.risk_authority != signer_info.key && &lending_market.owner != signer_info.key
+    {
+        msg!("Signer must be risk authority or lending market owner");
+        return Err(LendingError::InvalidAccountInput.into());
+    }
+
+    if !signer_info.is_signer {
+        msg!("Risk authority or lending market owner must be a signer");
+        return Err(LendingError::InvalidSigner.into());
+    }
+
+    if obligation.borrowed_value == Decimal::zero() {
+        msg!("Obligation borrowed value is zero");
+        return Err(LendingError::ObligationBorrowsZero.into());
+    }
+
+    obligation
+        .find_collateral_in_deposits(*reserve_info.key)
+        .map_err(|_| {
+            msg!("Obligation does not have a deposit for the reserve provided");
+            LendingError::ObligationCollateralEmpty
+        })?;
+
+    obligation.closeable = closeable;
+
+    Obligation::pack(obligation, &mut obligation_info.data.borrow_mut())?;
 
     Ok(())
 }
