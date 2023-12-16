@@ -514,7 +514,7 @@ async fn test_use_extra_oracle() {
             liquidity: ReserveLiquidity {
                 market_price: Decimal::from(12u64),
                 smoothed_market_price: Decimal::from(12u64),
-                extra_market_price: Some(Decimal::from(6u64)),
+                extra_market_price: Some(Decimal::from(5u64)),
                 ..msol_reserve.account.liquidity
             },
             ..msol_reserve.account
@@ -559,7 +559,7 @@ async fn test_use_extra_oracle() {
                 stale: false
             },
             liquidity: ReserveLiquidity {
-                extra_market_price: Some(Decimal::from_percent(240)),
+                extra_market_price: Some(Decimal::from(2u64)),
                 ..msol_reserve.account.liquidity
             },
             ..msol_reserve.account

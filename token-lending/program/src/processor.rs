@@ -577,14 +577,12 @@ fn _refresh_reserve<'a>(
                     return Err(LendingError::InvalidAccountInput.into());
                 }
 
-                let market_price = match get_oracle_type(extra_oracle_account_info)? {
-                    OracleType::Pyth => get_pyth_price(extra_oracle_account_info, clock)?.0,
+                match get_oracle_type(extra_oracle_account_info)? {
+                    OracleType::Pyth => Some(get_pyth_price(extra_oracle_account_info, clock)?.0),
                     OracleType::Switchboard => {
-                        get_switchboard_price_v2(extra_oracle_account_info, clock)?
+                        Some(get_switchboard_price_v2(extra_oracle_account_info, clock)?)
                     }
-                };
-
-                Some(market_price.try_mul(reserve.price_scale())?)
+                }
             }
             None => {
                 msg!("Reserve extra oracle account info missing");

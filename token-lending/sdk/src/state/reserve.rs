@@ -936,7 +936,7 @@ pub struct ReserveConfig {
     /// Type of the reserve (Regular, Isolated)
     pub reserve_type: ReserveType,
     /// scaled price offset in basis points. Exclusively used to calculate a more reliable asset price for
-    /// staked assets (mSOL, stETH).
+    /// staked assets (mSOL, stETH). Not used on extra oracle
     pub scaled_price_offset_bps: i64,
     /// Extra oracle. Only used to limit borrows and withdrawals.
     pub extra_oracle_pubkey: Option<Pubkey>,
