@@ -1,6 +1,10 @@
 #![cfg(feature = "test-bpf")]
 
+use crate::solend_program_test::custom_scenario;
 use crate::solend_program_test::Oracle;
+use crate::solend_program_test::PriceArgs;
+use crate::solend_program_test::ReserveArgs;
+use crate::solend_program_test::SwitchboardPriceArgs;
 use solana_sdk::instruction::AccountMeta;
 use solana_sdk::instruction::Instruction;
 use solana_sdk::pubkey::PUBKEY_BYTES;
@@ -409,4 +413,125 @@ pub fn malicious_update_reserve_config(
         }
         .pack(),
     }
+}
+
+#[tokio::test]
+async fn test_add_extra_oracle() {
+    let (mut test, lending_market, reserves, _obligations, _users, lending_market_owner) =
+        custom_scenario(
+            &[ReserveArgs {
+                mint: msol_mint::id(),
+                config: test_reserve_config(),
+                liquidity_amount: 1000,
+                price: PriceArgs {
+                    price: 10,
+                    conf: 0,
+                    expo: 0,
+                    ema_price: 10,
+                    ema_conf: 0,
+                },
+            }],
+            &[],
+        )
+        .await;
+
+    let msol_reserve = &reserves[0];
+
+    let wsol_pyth_feed = test.init_pyth_feed(&wsol_mint::id()).await;
+    test.set_price(
+        &wsol_mint::id(),
+        &PriceArgs {
+            price: 5,
+            conf: 0,
+            expo: 0,
+            ema_price: 5,
+            ema_conf: 0,
+        },
+    )
+    .await;
+
+    lending_market
+        .update_reserve_config(
+            &mut test,
+            &lending_market_owner,
+            msol_reserve,
+            ReserveConfig {
+                extra_oracle_pubkey: Some(wsol_pyth_feed),
+                ..msol_reserve.account.config
+            },
+            msol_reserve.account.rate_limiter.config,
+            None,
+        )
+        .await
+        .unwrap();
+
+    let msol_reserve_post = test.load_account::<Reserve>(msol_reserve.pubkey).await;
+    assert_eq!(
+        msol_reserve_post.account,
+        Reserve {
+            config: ReserveConfig {
+                extra_oracle_pubkey: Some(wsol_pyth_feed),
+                ..msol_reserve.account.config
+            },
+            ..msol_reserve.account.clone()
+        }
+    );
+
+    lending_market
+        .update_reserve_config(
+            &mut test,
+            &lending_market_owner,
+            msol_reserve,
+            ReserveConfig {
+                extra_oracle_pubkey: None,
+                ..msol_reserve.account.config
+            },
+            msol_reserve.account.rate_limiter.config,
+            None,
+        )
+        .await
+        .unwrap();
+
+    let msol_reserve_post = test.load_account::<Reserve>(msol_reserve.pubkey).await;
+    assert_eq!(
+        msol_reserve_post.account,
+        Reserve {
+            config: ReserveConfig {
+                extra_oracle_pubkey: None,
+                ..msol_reserve.account.config
+            },
+            ..msol_reserve.account.clone()
+        }
+    );
+
+    let wsol_switchboard_feed = test.init_switchboard_feed(&wsol_mint::id()).await;
+    test.set_switchboard_price(&wsol_mint::id(), SwitchboardPriceArgs { price: 5, expo: 0 })
+        .await;
+
+    lending_market
+        .update_reserve_config(
+            &mut test,
+            &lending_market_owner,
+            msol_reserve,
+            ReserveConfig {
+                extra_oracle_pubkey: Some(wsol_switchboard_feed),
+                ..msol_reserve.account.config
+            },
+            msol_reserve.account.rate_limiter.config,
+            None,
+        )
+        .await
+        .unwrap();
+
+    let msol_reserve_post = test.load_account::<Reserve>(msol_reserve.pubkey).await;
+    assert_eq!(
+        msol_reserve_post.account,
+        Reserve {
+            config: ReserveConfig {
+                extra_oracle_pubkey: Some(wsol_switchboard_feed),
+                ..msol_reserve.account.config
+            },
+            ..msol_reserve.account.clone()
+        }
+    );
 }

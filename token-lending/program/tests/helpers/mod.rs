@@ -4,6 +4,7 @@ pub mod flash_loan_proxy;
 pub mod flash_loan_receiver;
 pub mod genesis;
 pub mod mock_pyth;
+pub mod mock_switchboard;
 pub mod solend_program_test;
 
 use bytemuck::{cast_slice_mut, from_bytes_mut, try_cast_slice_mut, Pod, PodCastError};
@@ -53,6 +54,7 @@ pub fn test_reserve_config() -> ReserveConfig {
         added_borrow_weight_bps: 0,
         reserve_type: ReserveType::Regular,
         scaled_price_offset_bps: 0,
+        extra_oracle_pubkey: None,
     }
 }
 
@@ -67,6 +69,11 @@ pub mod usdt_mint {
 pub mod wsol_mint {
     // fake mint, not the real wsol bc i can't mint wsol programmatically
     solana_program::declare_id!("So1m5eppzgokXLBt9Cg8KCMPWhHfTzVaGh26Y415MRG");
+}
+
+pub mod msol_mint {
+    // fake mint, not the real wsol bc i can't mint wsol programmatically
+    solana_program::declare_id!("mSoLzYCxHdYgdzU16g5QSh3i5K3z3KZK7ytfqcJm7So");
 }
 
 pub mod bonk_mint {

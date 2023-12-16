@@ -32,7 +32,12 @@ use solana_program::{
         Sysvar,
     },
 };
-use solend_sdk::state::{LendingMarketMetadata, RateLimiter, RateLimiterConfig, ReserveType};
+use solend_sdk::{
+    oracles::{
+        get_oracle_type, get_pyth_price_unchecked, validate_pyth_price_account_info, OracleType,
+    },
+    state::{LendingMarketMetadata, RateLimiter, RateLimiterConfig, ReserveType},
+};
 use solend_sdk::{switchboard_v2_devnet, switchboard_v2_mainnet};
 use spl_token::state::Mint;
 use std::{cmp::min, result::Result};
@@ -363,6 +368,11 @@ fn process_init_reserve(
     validate_pyth_keys(&lending_market, pyth_product_info, pyth_price_info)?;
     validate_switchboard_keys(&lending_market, switchboard_feed_info)?;
 
+    if let Some(extra_oracle_pubkey) = config.extra_oracle_pubkey {
+        let extra_oracle_info = next_account_info(account_info_iter)?;
+        validate_extra_oracle(&lending_market, extra_oracle_pubkey, extra_oracle_info)?;
+    }
+
     let (market_price, smoothed_market_price) =
         get_price(Some(switchboard_feed_info), pyth_price_info, clock)?;
 
@@ -469,6 +479,33 @@ fn process_init_reserve(
     Ok(())
 }
 
+fn validate_extra_oracle(
+    lending_market: &LendingMarket,
+    extra_oracle_pubkey: Pubkey,
+    extra_oracle_info: &AccountInfo<'_>,
+) -> Result<(), ProgramError> {
+    if extra_oracle_pubkey == solend_program::NULL_PUBKEY {
+        msg!("Extra oracle cannot equal the null pubkey");
+        return Err(LendingError::InvalidOracleConfig.into());
+    }
+
+    if extra_oracle_info.key != &extra_oracle_pubkey {
+        msg!("Extra oracle provided does not match the extra oracle pubkey in the config");
+        return Err(LendingError::InvalidOracleConfig.into());
+    }
+
+    match get_oracle_type(extra_oracle_info)? {
+        OracleType::Pyth => {
+            validate_pyth_price_account_info(lending_market, extra_oracle_info)?;
+        }
+        OracleType::Switchboard => {
+            validate_switchboard_keys(lending_market, extra_oracle_info)?;
+        }
+    }
+
+    Ok(())
+}
+
 fn process_refresh_reserve(program_id: &Pubkey, accounts: &[AccountInfo]) -> ProgramResult {
     let account_info_iter = &mut accounts.iter().peekable();
     let reserve_info = next_account_info(account_info_iter)?;
@@ -484,12 +521,15 @@ fn process_refresh_reserve(program_id: &Pubkey, accounts: &[AccountInfo]) -> Pro
     if account_info_iter.peek().map(|a| a.key) == Some(&clock::ID) {
         next_account_info(account_info_iter)?;
     }
+
+    let extra_oracle_account_info = next_account_info(account_info_iter).ok();
     _refresh_reserve(
         program_id,
         reserve_info,
         pyth_price_info,
         switchboard_feed_info,
         clock,
+        extra_oracle_account_info,
     )
 }
 
@@ -499,8 +539,9 @@ fn _refresh_reserve<'a>(
     pyth_price_info: &AccountInfo<'a>,
     switchboard_feed_info: Option<&AccountInfo<'a>>,
     clock: &Clock,
+    extra_oracle_account_info: Option<&AccountInfo<'a>>,
 ) -> ProgramResult {
-    let mut reserve = Reserve::unpack(&reserve_info.data.borrow())?;
+    let mut reserve = Box::new(Reserve::unpack(&reserve_info.data.borrow())?);
     if reserve_info.owner != program_id {
         msg!("Reserve provided is not owned by the lending program");
         return Err(LendingError::InvalidAccountOwner.into());
@@ -528,13 +569,39 @@ fn _refresh_reserve<'a>(
             smoothed_market_price.try_mul(reserve.price_scale())?;
     }
 
+    reserve.liquidity.extra_market_price = match reserve.config.extra_oracle_pubkey {
+        None => None,
+
+        Some(extra_oracle_pubkey) => match extra_oracle_account_info {
+            Some(extra_oracle_account_info) => {
+                if extra_oracle_account_info.key != &extra_oracle_pubkey {
+                    msg!("Reserve extra oracle does not match the reserve extra oracle provided");
+                    return Err(LendingError::InvalidAccountInput.into());
+                }
+
+                match get_oracle_type(extra_oracle_account_info)? {
+                    OracleType::Pyth => Some(get_pyth_price_unchecked(extra_oracle_account_info)?),
+                    OracleType::Switchboard => Some(get_switchboard_price_v2(
+                        extra_oracle_account_info,
+                        clock,
+                        false,
+                    )?),
+                }
+            }
+            None => {
+                msg!("Reserve extra oracle account info missing");
+                return Err(LendingError::InvalidAccountInput.into());
+            }
+        },
+    };
+
     // currently there's no way to support two prices without a pyth oracle. So if a reserve
     // only supports switchboard, reserve.smoothed_market_price == reserve.market_price
     if reserve.liquidity.pyth_oracle_pubkey == solend_program::NULL_PUBKEY {
         reserve.liquidity.smoothed_market_price = market_price;
     }
 
-    Reserve::pack(reserve, &mut reserve_info.data.borrow_mut())?;
+    Reserve::pack(*reserve, &mut reserve_info.data.borrow_mut())?;
 
     _refresh_reserve_interest(program_id, reserve_info, clock)
 }
@@ -546,7 +613,7 @@ fn _refresh_reserve_interest<'a>(
     reserve_info: &AccountInfo<'a>,
     clock: &Clock,
 ) -> ProgramResult {
-    let mut reserve = Reserve::unpack(&reserve_info.data.borrow())?;
+    let mut reserve = Box::new(Reserve::unpack(&reserve_info.data.borrow())?);
     if reserve_info.owner != program_id {
         msg!("Reserve provided is not owned by the lending program");
         return Err(LendingError::InvalidAccountOwner.into());
@@ -554,7 +621,7 @@ fn _refresh_reserve_interest<'a>(
 
     reserve.accrue_interest(clock.slot)?;
     reserve.last_update.update_slot(clock.slot);
-    Reserve::pack(reserve, &mut reserve_info.data.borrow_mut())?;
+    Reserve::pack(*reserve, &mut reserve_info.data.borrow_mut())?;
 
     Ok(())
 }
@@ -627,7 +694,7 @@ fn _deposit_reserve_liquidity<'a>(
         msg!("Lending market token program does not match the token program provided");
         return Err(LendingError::InvalidTokenProgram.into());
     }
-    let mut reserve = Reserve::unpack(&reserve_info.data.borrow())?;
+    let mut reserve = Box::new(Reserve::unpack(&reserve_info.data.borrow())?);
     if reserve_info.owner != program_id {
         msg!("Reserve provided is not owned by the lending program");
         return Err(LendingError::InvalidAccountOwner.into());
@@ -682,7 +749,7 @@ fn _deposit_reserve_liquidity<'a>(
 
     let collateral_amount = reserve.deposit_liquidity(liquidity_amount)?;
     reserve.last_update.mark_stale();
-    Reserve::pack(reserve, &mut reserve_info.data.borrow_mut())?;
+    Reserve::pack(*reserve, &mut reserve_info.data.borrow_mut())?;
 
     spl_token_transfer(TokenTransferParams {
         source: source_liquidity_info.clone(),
@@ -745,9 +812,9 @@ fn process_redeem_reserve_collateral(
         token_program_id,
         true,
     )?;
-    let mut reserve = Reserve::unpack(&reserve_info.data.borrow())?;
+    let mut reserve = Box::new(Reserve::unpack(&reserve_info.data.borrow())?);
     reserve.last_update.mark_stale();
-    Reserve::pack(reserve, &mut reserve_info.data.borrow_mut())?;
+    Reserve::pack(*reserve, &mut reserve_info.data.borrow_mut())?;
 
     Ok(())
 }
@@ -778,7 +845,7 @@ fn _redeem_reserve_collateral<'a>(
         return Err(LendingError::InvalidTokenProgram.into());
     }
 
-    let mut reserve = Reserve::unpack(&reserve_info.data.borrow())?;
+    let mut reserve = Box::new(Reserve::unpack(&reserve_info.data.borrow())?);
     if reserve_info.owner != program_id {
         msg!("Reserve provided is not owned by the lending program");
         return Err(LendingError::InvalidAccountOwner.into());
@@ -845,7 +912,7 @@ fn _redeem_reserve_collateral<'a>(
     }
 
     reserve.last_update.mark_stale();
-    Reserve::pack(reserve, &mut reserve_info.data.borrow_mut())?;
+    Reserve::pack(*reserve, &mut reserve_info.data.borrow_mut())?;
     LendingMarket::pack(lending_market, &mut lending_market_info.data.borrow_mut())?;
 
     spl_token_burn(TokenBurnParams {
@@ -954,7 +1021,7 @@ fn process_refresh_obligation(program_id: &Pubkey, accounts: &[AccountInfo]) -> 
             return Err(LendingError::InvalidAccountInput.into());
         }
 
-        let deposit_reserve = Reserve::unpack(&deposit_reserve_info.data.borrow())?;
+        let deposit_reserve = Box::new(Reserve::unpack(&deposit_reserve_info.data.borrow())?);
         if deposit_reserve.last_update.is_stale(clock.slot)? {
             msg!(
                 "Deposit reserve provided for collateral {} is stale and must be refreshed in the current slot",
@@ -1006,7 +1073,7 @@ fn process_refresh_obligation(program_id: &Pubkey, accounts: &[AccountInfo]) -> 
             return Err(LendingError::InvalidAccountInput.into());
         }
 
-        let borrow_reserve = Reserve::unpack(&borrow_reserve_info.data.borrow())?;
+        let borrow_reserve = Box::new(Reserve::unpack(&borrow_reserve_info.data.borrow())?);
         if borrow_reserve.last_update.is_stale(clock.slot)? {
             msg!(
                 "Borrow reserve provided for liquidity {} is stale and must be refreshed in the current slot",
@@ -1131,9 +1198,9 @@ fn process_deposit_obligation_collateral(
         clock,
         token_program_id,
     )?;
-    let mut reserve = Reserve::unpack(&deposit_reserve_info.data.borrow())?;
+    let mut reserve = Box::new(Reserve::unpack(&deposit_reserve_info.data.borrow())?);
     reserve.last_update.mark_stale();
-    Reserve::pack(reserve, &mut deposit_reserve_info.data.borrow_mut())?;
+    Reserve::pack(*reserve, &mut deposit_reserve_info.data.borrow_mut())?;
     Ok(())
 }
 
@@ -1161,7 +1228,7 @@ fn _deposit_obligation_collateral<'a>(
         return Err(LendingError::InvalidTokenProgram.into());
     }
 
-    let deposit_reserve = Reserve::unpack(&deposit_reserve_info.data.borrow())?;
+    let deposit_reserve = Box::new(Reserve::unpack(&deposit_reserve_info.data.borrow())?);
     if deposit_reserve_info.owner != program_id {
         msg!("Deposit reserve provided is not owned by the lending program");
         return Err(LendingError::InvalidAccountOwner.into());
@@ -1280,9 +1347,9 @@ fn process_deposit_reserve_liquidity_and_obligation_collateral(
         token_program_id,
     )?;
     // mark the reserve as stale to make sure no weird bugs happen
-    let mut reserve = Reserve::unpack(&reserve_info.data.borrow())?;
+    let mut reserve = Box::new(Reserve::unpack(&reserve_info.data.borrow())?);
     reserve.last_update.mark_stale();
-    Reserve::pack(reserve, &mut reserve_info.data.borrow_mut())?;
+    Reserve::pack(*reserve, &mut reserve_info.data.borrow_mut())?;
 
     Ok(())
 }
@@ -1353,7 +1420,7 @@ fn _withdraw_obligation_collateral<'a>(
         return Err(LendingError::InvalidTokenProgram.into());
     }
 
-    let withdraw_reserve = Reserve::unpack(&withdraw_reserve_info.data.borrow())?;
+    let withdraw_reserve = Box::new(Reserve::unpack(&withdraw_reserve_info.data.borrow())?);
     if withdraw_reserve_info.owner != program_id {
         msg!("Withdraw reserve provided is not owned by the lending program");
         return Err(LendingError::InvalidAccountOwner.into());
@@ -1514,7 +1581,7 @@ fn process_borrow_obligation_liquidity(
         return Err(LendingError::InvalidTokenProgram.into());
     }
 
-    let mut borrow_reserve = Reserve::unpack(&borrow_reserve_info.data.borrow())?;
+    let mut borrow_reserve = Box::new(Reserve::unpack(&borrow_reserve_info.data.borrow())?);
     if borrow_reserve_info.owner != program_id {
         msg!("Borrow reserve provided is not owned by the lending program");
         return Err(LendingError::InvalidAccountOwner.into());
@@ -1692,7 +1759,7 @@ fn process_borrow_obligation_liquidity(
 
     borrow_reserve.liquidity.borrow(borrow_amount)?;
     borrow_reserve.last_update.mark_stale();
-    Reserve::pack(borrow_reserve, &mut borrow_reserve_info.data.borrow_mut())?;
+    Reserve::pack(*borrow_reserve, &mut borrow_reserve_info.data.borrow_mut())?;
 
     let obligation_liquidity = obligation
         .find_or_add_liquidity_to_borrows(*borrow_reserve_info.key, cumulative_borrow_rate_wads)?;
@@ -1775,7 +1842,7 @@ fn process_repay_obligation_liquidity(
     }
 
     _refresh_reserve_interest(program_id, repay_reserve_info, clock)?;
-    let mut repay_reserve = Reserve::unpack(&repay_reserve_info.data.borrow())?;
+    let mut repay_reserve = Box::new(Reserve::unpack(&repay_reserve_info.data.borrow())?);
     if repay_reserve_info.owner != program_id {
         msg!("Repay reserve provided is not owned by the lending program");
         return Err(LendingError::InvalidAccountOwner.into());
@@ -1829,7 +1896,7 @@ fn process_repay_obligation_liquidity(
 
     repay_reserve.liquidity.repay(repay_amount, settle_amount)?;
     repay_reserve.last_update.mark_stale();
-    Reserve::pack(repay_reserve, &mut repay_reserve_info.data.borrow_mut())?;
+    Reserve::pack(*repay_reserve, &mut repay_reserve_info.data.borrow_mut())?;
 
     obligation.repay(settle_amount, liquidity_index)?;
     obligation.last_update.mark_stale();
@@ -1874,7 +1941,7 @@ fn _liquidate_obligation<'a>(
         return Err(LendingError::InvalidTokenProgram.into());
     }
 
-    let mut repay_reserve = Reserve::unpack(&repay_reserve_info.data.borrow())?;
+    let mut repay_reserve = Box::new(Reserve::unpack(&repay_reserve_info.data.borrow())?);
     if repay_reserve_info.owner != program_id {
         msg!("Repay reserve provided is not owned by the lending program");
         return Err(LendingError::InvalidAccountOwner.into());
@@ -1902,7 +1969,7 @@ fn _liquidate_obligation<'a>(
         return Err(LendingError::ReserveStale.into());
     }
 
-    let withdraw_reserve = Reserve::unpack(&withdraw_reserve_info.data.borrow())?;
+    let withdraw_reserve = Box::new(Reserve::unpack(&withdraw_reserve_info.data.borrow())?);
     if withdraw_reserve_info.owner != program_id {
         msg!("Withdraw reserve provided is not owned by the lending program");
         return Err(LendingError::InvalidAccountOwner.into());
@@ -2015,7 +2082,7 @@ fn _liquidate_obligation<'a>(
 
     repay_reserve.liquidity.repay(repay_amount, settle_amount)?;
     repay_reserve.last_update.mark_stale();
-    Reserve::pack(repay_reserve, &mut repay_reserve_info.data.borrow_mut())?;
+    Reserve::pack(*repay_reserve, &mut repay_reserve_info.data.borrow_mut())?;
 
     obligation.repay(settle_amount, liquidity_index)?;
     obligation.withdraw(withdraw_amount, collateral_index)?;
@@ -2090,7 +2157,7 @@ fn process_liquidate_obligation_and_redeem_reserve_collateral(
     )?;
 
     _refresh_reserve_interest(program_id, withdraw_reserve_info, clock)?;
-    let withdraw_reserve = Reserve::unpack(&withdraw_reserve_info.data.borrow())?;
+    let withdraw_reserve = Box::new(Reserve::unpack(&withdraw_reserve_info.data.borrow())?);
     let collateral_exchange_rate = withdraw_reserve.collateral_exchange_rate()?;
     let max_redeemable_collateral = collateral_exchange_rate
         .liquidity_to_collateral(withdraw_reserve.liquidity.available_amount)?;
@@ -2112,7 +2179,7 @@ fn process_liquidate_obligation_and_redeem_reserve_collateral(
             token_program_id,
             false,
         )?;
-        let withdraw_reserve = Reserve::unpack(&withdraw_reserve_info.data.borrow())?;
+        let withdraw_reserve = Box::new(Reserve::unpack(&withdraw_reserve_info.data.borrow())?);
         if &withdraw_reserve.config.fee_receiver != withdraw_reserve_liquidity_fee_receiver_info.key
         {
             msg!("Withdraw reserve liquidity fee receiver does not match the reserve liquidity fee receiver provided");
@@ -2208,7 +2275,7 @@ fn process_update_reserve_config(
     let pyth_price_info = next_account_info(account_info_iter)?;
     let switchboard_feed_info = next_account_info(account_info_iter)?;
 
-    let mut reserve = Reserve::unpack(&reserve_info.data.borrow())?;
+    let mut reserve = Box::new(Reserve::unpack(&reserve_info.data.borrow())?);
     if reserve_info.owner != program_id {
         msg!(
             "Reserve provided is not owned by the lending program {} != {}",
@@ -2293,6 +2360,11 @@ fn process_update_reserve_config(
             return Err(LendingError::InvalidOracleConfig.into());
         }
 
+        if let Some(extra_oracle_pubkey) = config.extra_oracle_pubkey {
+            let extra_oracle_info = next_account_info(account_info_iter)?;
+            validate_extra_oracle(&lending_market, extra_oracle_pubkey, extra_oracle_info)?;
+        }
+
         reserve.config = config;
     } else if signer_info.key == &lending_market.risk_authority {
         // only can disable outflows
@@ -2323,7 +2395,7 @@ fn process_update_reserve_config(
     }
 
     reserve.last_update.mark_stale();
-    Reserve::pack(reserve, &mut reserve_info.data.borrow_mut())?;
+    Reserve::pack(*reserve, &mut reserve_info.data.borrow_mut())?;
     Ok(())
 }
 
@@ -2338,7 +2410,7 @@ fn process_redeem_fees(program_id: &Pubkey, accounts: &[AccountInfo]) -> Program
     let token_program_id = next_account_info(account_info_iter)?;
     let clock = &Clock::get()?;
 
-    let mut reserve = Reserve::unpack(&reserve_info.data.borrow())?;
+    let mut reserve = Box::new(Reserve::unpack(&reserve_info.data.borrow())?);
     if reserve_info.owner != program_id {
         msg!(
             "Reserve provided is not owned by the lending program {} != {}",
@@ -2394,7 +2466,7 @@ fn process_redeem_fees(program_id: &Pubkey, accounts: &[AccountInfo]) -> Program
 
     reserve.liquidity.redeem_fees(withdraw_amount)?;
     reserve.last_update.mark_stale();
-    Reserve::pack(reserve, &mut reserve_info.data.borrow_mut())?;
+    Reserve::pack(*reserve, &mut reserve_info.data.borrow_mut())?;
 
     spl_token_transfer(TokenTransferParams {
         source: reserve_supply_liquidity_info.clone(),
@@ -2459,7 +2531,7 @@ fn _flash_borrow_reserve_liquidity<'a>(
         msg!("Lending market token program does not match the token program provided");
         return Err(LendingError::InvalidTokenProgram.into());
     }
-    let mut reserve = Reserve::unpack(&reserve_info.data.borrow())?;
+    let mut reserve = Box::new(Reserve::unpack(&reserve_info.data.borrow())?);
     if reserve_info.owner != program_id {
         msg!("Reserve provided is not owned by the lending program");
         return Err(LendingError::InvalidAccountOwner.into());
@@ -2572,7 +2644,7 @@ fn _flash_borrow_reserve_liquidity<'a>(
 
     reserve.liquidity.borrow(Decimal::from(liquidity_amount))?;
     reserve.last_update.mark_stale();
-    Reserve::pack(reserve, &mut reserve_info.data.borrow_mut())?;
+    Reserve::pack(*reserve, &mut reserve_info.data.borrow_mut())?;
 
     spl_token_transfer(TokenTransferParams {
         source: source_liquidity_info.clone(),
@@ -2644,7 +2716,7 @@ fn _flash_repay_reserve_liquidity<'a>(
         msg!("Lending market token program does not match the token program provided");
         return Err(LendingError::InvalidTokenProgram.into());
     }
-    let mut reserve = Reserve::unpack(&reserve_info.data.borrow())?;
+    let mut reserve = Box::new(Reserve::unpack(&reserve_info.data.borrow())?);
     if reserve_info.owner != program_id {
         msg!("Reserve provided is not owned by the lending program");
         return Err(LendingError::InvalidAccountOwner.into());
@@ -2727,7 +2799,7 @@ fn _flash_repay_reserve_liquidity<'a>(
         .liquidity
         .repay(flash_loan_amount, flash_loan_amount_decimal)?;
     reserve.last_update.mark_stale();
-    Reserve::pack(reserve, &mut reserve_info.data.borrow_mut())?;
+    Reserve::pack(*reserve, &mut reserve_info.data.borrow_mut())?;
 
     spl_token_transfer(TokenTransferParams {
         source: source_liquidity_info.clone(),
@@ -2792,7 +2864,7 @@ fn process_forgive_debt(
         return Err(LendingError::InvalidSigner.into());
     }
 
-    let mut reserve = Reserve::unpack(&reserve_info.data.borrow())?;
+    let mut reserve = Box::new(Reserve::unpack(&reserve_info.data.borrow())?);
     if reserve_info.owner != program_id {
         msg!("Reserve provided is not owned by the lending program");
         return Err(LendingError::InvalidAccountOwner.into());
@@ -2845,7 +2917,7 @@ fn process_forgive_debt(
 
     reserve.liquidity.forgive_debt(forgive_amount)?;
     reserve.last_update.mark_stale();
-    Reserve::pack(reserve, &mut reserve_info.data.borrow_mut())?;
+    Reserve::pack(*reserve, &mut reserve_info.data.borrow_mut())?;
 
     obligation.repay(forgive_amount, liquidity_index)?;
     obligation.last_update.mark_stale();
@@ -3006,7 +3078,7 @@ fn get_switchboard_price(
     if switchboard_feed_info.owner == &switchboard_v2_mainnet::id()
         || switchboard_feed_info.owner == &switchboard_v2_devnet::id()
     {
-        return get_switchboard_price_v2(switchboard_feed_info, clock);
+        return get_switchboard_price_v2(switchboard_feed_info, clock, true);
     }
 
     let account_buf = switchboard_feed_info.try_borrow_data()?;
@@ -3045,6 +3117,7 @@ fn get_switchboard_price(
 fn get_switchboard_price_v2(
     switchboard_feed_info: &AccountInfo,
     clock: &Clock,
+    check_staleness: bool,
 ) -> Result<Decimal, ProgramError> {
     const STALE_AFTER_SLOTS_ELAPSED: u64 = 240;
     let data = &switchboard_feed_info.try_borrow_data()?;
@@ -3054,7 +3127,7 @@ fn get_switchboard_price_v2(
         .slot
         .checked_sub(feed.latest_confirmed_round.round_open_slot)
         .ok_or(LendingError::MathOverflow)?;
-    if slots_elapsed >= STALE_AFTER_SLOTS_ELAPSED {
+    if check_staleness && slots_elapsed >= STALE_AFTER_SLOTS_ELAPSED {
         msg!("Switchboard oracle price is stale");
         return Err(LendingError::InvalidOracleConfig.into());
     }
@@ -3252,6 +3325,10 @@ fn validate_switchboard_keys(
         msg!("Switchboard account provided is not owned by the switchboard oracle program");
         return Err(LendingError::InvalidOracleConfig.into());
     }
+
+    let data = &switchboard_feed_info.try_borrow_data()?;
+    AggregatorAccountData::new_from_bytes(data)?;
+
     Ok(())
 }
 

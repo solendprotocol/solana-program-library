@@ -562,7 +562,15 @@ impl LendingInstruction {
                 let (asset_type, rest) = Self::unpack_u8(rest)?;
                 let (max_liquidation_bonus, rest) = Self::unpack_u8(rest)?;
                 let (max_liquidation_threshold, rest) = Self::unpack_u8(rest)?;
-                let (scaled_price_offset_bps, _rest) = Self::unpack_i64(rest)?;
+                let (scaled_price_offset_bps, rest) = Self::unpack_i64(rest)?;
+                let (extra_oracle_pubkey, _rest) = match Self::unpack_u8(rest)? {
+                    (0, rest) => (None, rest),
+                    (1, rest) => {
+                        let (pubkey, rest) = Self::unpack_pubkey(rest)?;
+                        (Some(pubkey), rest)
+                    }
+                    _ => return Err(LendingError::InstructionUnpackError.into()),
+                };
                 Self::InitReserve {
                     liquidity_amount,
                     config: ReserveConfig {
@@ -590,6 +598,7 @@ impl LendingInstruction {
                         added_borrow_weight_bps,
                         reserve_type: ReserveType::from_u8(asset_type).unwrap(),
                         scaled_price_offset_bps,
+                        extra_oracle_pubkey,
                     },
                 }
             }
@@ -659,6 +668,14 @@ impl LendingInstruction {
                 let (max_liquidation_bonus, rest) = Self::unpack_u8(rest)?;
                 let (max_liquidation_threshold, rest) = Self::unpack_u8(rest)?;
                 let (scaled_price_offset_bps, rest) = Self::unpack_i64(rest)?;
+                let (extra_oracle_pubkey, rest) = match Self::unpack_u8(rest)? {
+                    (0, rest) => (None, rest),
+                    (1, rest) => {
+                        let (pubkey, rest) = Self::unpack_pubkey(rest)?;
+                        (Some(pubkey), rest)
+                    }
+                    _ => return Err(LendingError::InstructionUnpackError.into()),
+                };
                 let (window_duration, rest) = Self::unpack_u64(rest)?;
                 let (max_outflow, _rest) = Self::unpack_u64(rest)?;
 
@@ -688,6 +705,7 @@ impl LendingInstruction {
                         added_borrow_weight_bps,
                         reserve_type: ReserveType::from_u8(asset_type).unwrap(),
                         scaled_price_offset_bps,
+                        extra_oracle_pubkey,
                     },
                     rate_limiter_config: RateLimiterConfig {
                         window_duration,
@@ -852,6 +870,7 @@ impl LendingInstruction {
                         added_borrow_weight_bps: borrow_weight_bps,
                         reserve_type: asset_type,
                         scaled_price_offset_bps,
+                        extra_oracle_pubkey,
                     },
             } => {
                 buf.push(2);
@@ -878,6 +897,15 @@ impl LendingInstruction {
                 buf.extend_from_slice(&max_liquidation_bonus.to_le_bytes());
                 buf.extend_from_slice(&max_liquidation_threshold.to_le_bytes());
                 buf.extend_from_slice(&scaled_price_offset_bps.to_le_bytes());
+                match extra_oracle_pubkey {
+                    Some(pubkey) => {
+                        buf.push(1);
+                        buf.extend_from_slice(pubkey.as_ref());
+                    }
+                    None => {
+                        buf.push(0);
+                    }
+                };
             }
             Self::RefreshReserve => {
                 buf.push(3);
@@ -955,6 +983,15 @@ impl LendingInstruction {
                 buf.extend_from_slice(&config.max_liquidation_bonus.to_le_bytes());
                 buf.extend_from_slice(&config.max_liquidation_threshold.to_le_bytes());
                 buf.extend_from_slice(&config.scaled_price_offset_bps.to_le_bytes());
+                match config.extra_oracle_pubkey {
+                    Some(pubkey) => {
+                        buf.push(1);
+                        buf.extend_from_slice(pubkey.as_ref());
+                    }
+                    None => {
+                        buf.push(0);
+                    }
+                };
                 buf.extend_from_slice(&rate_limiter_config.window_duration.to_le_bytes());
                 buf.extend_from_slice(&rate_limiter_config.max_outflow.to_le_bytes());
             }
@@ -1064,7 +1101,7 @@ pub fn init_reserve(
         &[&lending_market_pubkey.to_bytes()[..PUBKEY_BYTES]],
         &program_id,
     );
-    let accounts = vec![
+    let mut accounts = vec![
         AccountMeta::new(source_liquidity_pubkey, false),
         AccountMeta::new(destination_collateral_pubkey, false),
         AccountMeta::new(reserve_pubkey, false),
@@ -1083,6 +1120,11 @@ pub fn init_reserve(
         AccountMeta::new_readonly(sysvar::rent::id(), false),
         AccountMeta::new_readonly(spl_token::id(), false),
     ];
+
+    if let Some(extra_oracle_pubkey) = config.extra_oracle_pubkey {
+        accounts.push(AccountMeta::new_readonly(extra_oracle_pubkey, false));
+    }
+
     Instruction {
         program_id,
         accounts,
@@ -1100,12 +1142,18 @@ pub fn refresh_reserve(
     reserve_pubkey: Pubkey,
     reserve_liquidity_pyth_oracle_pubkey: Pubkey,
     reserve_liquidity_switchboard_oracle_pubkey: Pubkey,
+    extra_oracle_pubkey: Option<Pubkey>,
 ) -> Instruction {
-    let accounts = vec![
+    let mut accounts = vec![
         AccountMeta::new(reserve_pubkey, false),
         AccountMeta::new_readonly(reserve_liquidity_pyth_oracle_pubkey, false),
         AccountMeta::new_readonly(reserve_liquidity_switchboard_oracle_pubkey, false),
     ];
+
+    if let Some(extra_oracle_pubkey) = extra_oracle_pubkey {
+        accounts.push(AccountMeta::new_readonly(extra_oracle_pubkey, false));
+    }
+
     Instruction {
         program_id,
         accounts,
@@ -1494,7 +1542,7 @@ pub fn update_reserve_config(
         &[&lending_market_pubkey.to_bytes()[..PUBKEY_BYTES]],
         &program_id,
     );
-    let accounts = vec![
+    let mut accounts = vec![
         AccountMeta::new(reserve_pubkey, false),
         AccountMeta::new_readonly(lending_market_pubkey, false),
         AccountMeta::new_readonly(lending_market_authority_pubkey, false),
@@ -1503,6 +1551,11 @@ pub fn update_reserve_config(
         AccountMeta::new_readonly(pyth_price_pubkey, false),
         AccountMeta::new_readonly(switchboard_feed_pubkey, false),
     ];
+
+    if let Some(extra_oracle_pubkey) = config.extra_oracle_pubkey {
+        accounts.push(AccountMeta::new_readonly(extra_oracle_pubkey, false));
+    }
+
     Instruction {
         program_id,
         accounts,
@@ -1779,6 +1832,11 @@ mod test {
                         added_borrow_weight_bps: rng.gen::<u64>(),
                         reserve_type: ReserveType::from_u8(rng.gen::<u8>() % 2).unwrap(),
                         scaled_price_offset_bps: rng.gen(),
+                        extra_oracle_pubkey: if rng.gen_bool(0.5) {
+                            None
+                        } else {
+                            Some(Pubkey::new_unique())
+                        },
                     },
                 };
 
@@ -1940,6 +1998,11 @@ mod test {
                         added_borrow_weight_bps: rng.gen::<u64>(),
                         reserve_type: ReserveType::from_u8(rng.gen::<u8>() % 2).unwrap(),
                         scaled_price_offset_bps: rng.gen(),
+                        extra_oracle_pubkey: if rng.gen_bool(0.5) {
+                            Some(Pubkey::new_unique())
+                        } else {
+                            None
+                        },
                     },
                     rate_limiter_config: RateLimiterConfig {
                         window_duration: rng.gen::<u64>(),

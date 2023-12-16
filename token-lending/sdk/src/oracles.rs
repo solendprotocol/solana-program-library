@@ -3,6 +3,9 @@ use crate::{
     self as solend_program,
     error::LendingError,
     math::{Decimal, TryDiv, TryMul},
+    pyth_mainnet,
+    state::LendingMarket,
+    switchboard_v2_mainnet,
 };
 use pyth_sdk_solana::Price;
 // use pyth_sdk_solana;
@@ -10,6 +13,61 @@ use solana_program::{
     account_info::AccountInfo, msg, program_error::ProgramError, sysvar::clock::Clock,
 };
 use std::{convert::TryInto, result::Result};
+
+pub enum OracleType {
+    Pyth,
+    Switchboard,
+}
+
+pub fn get_oracle_type(extra_oracle_info: &AccountInfo) -> Result<OracleType, ProgramError> {
+    if *extra_oracle_info.owner == pyth_mainnet::id() {
+        return Ok(OracleType::Pyth);
+    } else if *extra_oracle_info.owner == switchboard_v2_mainnet::id() {
+        return Ok(OracleType::Switchboard);
+    }
+
+    msg!(
+        "Could not find oracle type for {:?} with owner {:?}",
+        extra_oracle_info.key,
+        extra_oracle_info.owner
+    );
+    Err(LendingError::InvalidOracleConfig.into())
+}
+
+pub fn validate_pyth_price_account_info(
+    lending_market: &LendingMarket,
+    pyth_price_info: &AccountInfo,
+) -> Result<(), ProgramError> {
+    if *pyth_price_info.owner != lending_market.oracle_program_id {
+        msg!("pyth price account is not owned by pyth program");
+        return Err(ProgramError::IncorrectProgramId);
+    }
+
+    let data = &pyth_price_info.try_borrow_data()?;
+    pyth_sdk_solana::state::load_price_account(data).map_err(|e| {
+        msg!("Couldn't load price feed from account info: {:?}", e);
+        LendingError::InvalidOracleConfig
+    })?;
+
+    Ok(())
+}
+
+/// get pyth price without caring about staleness or variance. only used
+pub fn get_pyth_price_unchecked(pyth_price_info: &AccountInfo) -> Result<Decimal, ProgramError> {
+    if *pyth_price_info.key == solend_program::NULL_PUBKEY {
+        return Err(LendingError::NullOracleConfig.into());
+    }
+
+    let data = &pyth_price_info.try_borrow_data()?;
+    let price_account = pyth_sdk_solana::state::load_price_account(data).map_err(|e| {
+        msg!("Couldn't load price feed from account info: {:?}", e);
+        LendingError::InvalidOracleConfig
+    })?;
+
+    let price_feed = price_account.to_price_feed(pyth_price_info.key);
+    let price = price_feed.get_price_unchecked();
+    pyth_price_to_decimal(&price)
+}
 
 pub fn get_pyth_price(
     pyth_price_info: &AccountInfo,
@@ -411,5 +469,48 @@ mod test {
                 test_case.expected_result
             );
         }
+    }
+
+    #[test]
+    fn pyth_price_unchecked_test_cases() {
+        let mut price_account = PriceAccount {
+            magic: MAGIC,
+            ver: VERSION_2,
+            atype: AccountType::Price as u32,
+            ptype: PriceType::Price,
+            expo: 1,
+            timestamp: 1,
+            ema_price: Rational {
+                val: 11,
+                numer: 110,
+                denom: 10,
+            },
+            agg: PriceInfo {
+                price: 200,
+                conf: 40,
+                status: PriceStatus::Trading,
+                corp_act: CorpAction::NoCorpAct,
+                pub_slot: 0,
+            },
+            ..PriceAccount::default()
+        };
+
+        let mut lamports = 20;
+        let pubkey = Pubkey::new_unique();
+        let account_info = AccountInfo::new(
+            &pubkey,
+            false,
+            false,
+            &mut lamports,
+            bytes_of_mut(&mut price_account),
+            &pubkey,
+            false,
+            0,
+        );
+
+        assert_eq!(
+            get_pyth_price_unchecked(&account_info),
+            Ok(Decimal::from(2000_u64))
+        );
     }
 }

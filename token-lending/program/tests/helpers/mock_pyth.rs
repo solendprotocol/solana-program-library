@@ -12,18 +12,12 @@ use solana_program::{
     pubkey::Pubkey,
     sysvar::Sysvar,
 };
-use std::cell::RefMut;
-use switchboard_v2::{AggregatorAccountData, SwitchboardDecimal};
 
 use borsh::{BorshDeserialize, BorshSerialize};
 use spl_token::solana_program::{account_info::next_account_info, program_error::ProgramError};
 use thiserror::Error;
 
 use super::{load_mut, QUOTE_CURRENCY};
-
-pub mod mock_pyth_program {
-    solana_program::declare_id!("SW1TCH7qEPTdLsDHRgPuMQjbQxKdH2aBStViMFnt64f");
-}
 
 #[derive(BorshSerialize, BorshDeserialize)]
 pub enum MockPythInstruction {
@@ -41,14 +35,6 @@ pub enum MockPythInstruction {
         ema_price: i64,
         ema_conf: u64,
     },
-
-    /// Accounts:
-    /// 0: AggregatorAccount
-    InitSwitchboard,
-
-    /// Accounts:
-    /// 0: AggregatorAccount
-    SetSwitchboardPrice { price: i64, expo: i32 },
 }
 
 pub fn process_instruction(
@@ -152,37 +138,6 @@ impl Processor {
 
                 Ok(())
             }
-            MockPythInstruction::InitSwitchboard => {
-                msg!("Mock Pyth: Init Switchboard");
-                let switchboard_feed = next_account_info(account_info_iter)?;
-                let mut data = switchboard_feed.try_borrow_mut_data()?;
-
-                let discriminator = [217, 230, 65, 101, 201, 162, 27, 125];
-                data[0..8].copy_from_slice(&discriminator);
-                Ok(())
-            }
-            MockPythInstruction::SetSwitchboardPrice { price, expo } => {
-                msg!("Mock Pyth: Set Switchboard price");
-                let switchboard_feed = next_account_info(account_info_iter)?;
-                let data = switchboard_feed.try_borrow_mut_data()?;
-
-                let mut aggregator_account: RefMut<AggregatorAccountData> =
-                    RefMut::map(data, |data| {
-                        bytemuck::from_bytes_mut(
-                            &mut data[8..std::mem::size_of::<AggregatorAccountData>() + 8],
-                        )
-                    });
-
-                aggregator_account.min_oracle_results = 1;
-                aggregator_account.latest_confirmed_round.num_success = 1;
-                aggregator_account.latest_confirmed_round.result = SwitchboardDecimal {
-                    mantissa: price as i128,
-                    scale: expo as u32,
-                };
-                aggregator_account.latest_confirmed_round.round_open_slot = Clock::get()?.slot;
-
-                Ok(())
-            }
         }
     }
 }
@@ -241,31 +196,6 @@ pub fn set_price(
     Instruction {
         program_id,
         accounts: vec![AccountMeta::new(price_account_pubkey, false)],
-        data,
-    }
-}
-
-pub fn set_switchboard_price(
-    program_id: Pubkey,
-    switchboard_feed: Pubkey,
-    price: i64,
-    expo: i32,
-) -> Instruction {
-    let data = MockPythInstruction::SetSwitchboardPrice { price, expo }
-        .try_to_vec()
-        .unwrap();
-    Instruction {
-        program_id,
-        accounts: vec![AccountMeta::new(switchboard_feed, false)],
-        data,
-    }
-}
-
-pub fn init_switchboard(program_id: Pubkey, switchboard_feed: Pubkey) -> Instruction {
-    let data = MockPythInstruction::InitSwitchboard.try_to_vec().unwrap();
-    Instruction {
-        program_id,
-        accounts: vec![AccountMeta::new(switchboard_feed, false)],
         data,
     }
 }

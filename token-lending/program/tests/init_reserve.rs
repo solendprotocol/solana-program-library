@@ -1,5 +1,7 @@
 #![cfg(feature = "test-bpf")]
 
+use crate::solend_program_test::PriceArgs;
+
 use crate::solend_program_test::BalanceChecker;
 use crate::solend_program_test::MintAccount;
 use crate::solend_program_test::MintSupplyChange;
@@ -170,6 +172,7 @@ async fn test_success() {
                 accumulated_protocol_fees_wads: Decimal::zero(),
                 market_price: Decimal::from(10u64),
                 smoothed_market_price: Decimal::from(10u64),
+                extra_market_price: None
             },
             collateral: ReserveCollateral {
                 mint_pubkey: reserve_collateral_mint_pubkey,
@@ -298,4 +301,44 @@ async fn test_invalid_fees() {
             )
         );
     }
+}
+
+#[tokio::test]
+async fn test_extra_oracle() {
+    let (mut test, lending_market, lending_market_owner) = setup().await;
+
+    let usdc_pyth_feed = test.init_pyth_feed(&usdc_mint::id()).await;
+    test.set_price(
+        &usdc_mint::id(),
+        &PriceArgs {
+            price: 5,
+            conf: 0,
+            expo: 0,
+            ema_price: 5,
+            ema_conf: 0,
+        },
+    )
+    .await;
+
+    let keypair = Keypair::new();
+    test.init_reserve(
+        &lending_market,
+        &lending_market_owner,
+        &wsol_mint::id(),
+        &ReserveConfig {
+            extra_oracle_pubkey: Some(usdc_pyth_feed),
+            ..test_reserve_config()
+        },
+        &keypair,
+        1000,
+        None,
+    )
+    .await
+    .unwrap();
+
+    let reserve = test.load_account::<Reserve>(keypair.pubkey()).await;
+    assert_eq!(
+        reserve.account.config.extra_oracle_pubkey,
+        Some(usdc_pyth_feed)
+    );
 }

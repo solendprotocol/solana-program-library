@@ -105,6 +105,34 @@ impl Reserve {
         Rate::from_percent(self.config.loan_to_value_ratio)
     }
 
+    /// Upper bound price for reserve mint
+    pub fn price_upper_bound(&self) -> Decimal {
+        let price = std::cmp::max(
+            self.liquidity.market_price,
+            self.liquidity.smoothed_market_price,
+        );
+
+        if let Some(extra_price) = self.liquidity.extra_market_price {
+            std::cmp::max(price, extra_price)
+        } else {
+            price
+        }
+    }
+
+    /// Lower bound price for reserve mint
+    pub fn price_lower_bound(&self) -> Decimal {
+        let price = std::cmp::min(
+            self.liquidity.market_price,
+            self.liquidity.smoothed_market_price,
+        );
+
+        if let Some(extra_price) = self.liquidity.extra_market_price {
+            std::cmp::min(price, extra_price)
+        } else {
+            price
+        }
+    }
+
     /// Convert USD to liquidity tokens.
     /// eg how much SOL can you get for 100USD?
     pub fn usd_to_liquidity_amount_lower_bound(
@@ -118,10 +146,7 @@ impl Reserve {
                     .checked_pow(self.liquidity.mint_decimals as u32)
                     .ok_or(LendingError::MathOverflow)?,
             ))?
-            .try_div(max(
-                self.liquidity.smoothed_market_price,
-                self.liquidity.market_price,
-            ))
+            .try_div(self.price_upper_bound())
     }
 
     /// find current market value of tokens
@@ -137,17 +162,12 @@ impl Reserve {
     }
 
     /// find the current upper bound market value of tokens.
-    /// ie max(market_price, smoothed_market_price) * liquidity_amount
+    /// ie max(market_price, smoothed_market_price, extra_market_price) * liquidity_amount
     pub fn market_value_upper_bound(
         &self,
         liquidity_amount: Decimal,
     ) -> Result<Decimal, ProgramError> {
-        let price_upper_bound = std::cmp::max(
-            self.liquidity.market_price,
-            self.liquidity.smoothed_market_price,
-        );
-
-        price_upper_bound
+        self.price_upper_bound()
             .try_mul(liquidity_amount)?
             .try_div(Decimal::from(
                 (10u128)
@@ -157,17 +177,12 @@ impl Reserve {
     }
 
     /// find the current lower bound market value of tokens.
-    /// ie min(market_price, smoothed_market_price) * liquidity_amount
+    /// ie min(market_price, smoothed_market_price, extra_market_price) * liquidity_amount
     pub fn market_value_lower_bound(
         &self,
         liquidity_amount: Decimal,
     ) -> Result<Decimal, ProgramError> {
-        let price_lower_bound = std::cmp::min(
-            self.liquidity.market_price,
-            self.liquidity.smoothed_market_price,
-        );
-
-        price_lower_bound
+        self.price_lower_bound()
             .try_mul(liquidity_amount)?
             .try_div(Decimal::from(
                 (10u128)
@@ -286,10 +301,7 @@ impl Reserve {
         if amount_to_borrow == u64::MAX {
             let borrow_amount = max_borrow_value
                 .try_mul(decimals)?
-                .try_div(max(
-                    self.liquidity.market_price,
-                    self.liquidity.smoothed_market_price,
-                ))?
+                .try_div(self.price_upper_bound())?
                 .try_div(self.borrow_weight())?
                 .min(remaining_reserve_borrow)
                 .min(self.liquidity.available_amount.into());
@@ -616,6 +628,8 @@ pub struct ReserveLiquidity {
     pub market_price: Decimal,
     /// Smoothed reserve liquidity market price for the liquidity (eg TWAP, VWAP, EMA)
     pub smoothed_market_price: Decimal,
+    /// Extra price obtained from the optional extra oracle
+    pub extra_market_price: Option<Decimal>,
 }
 
 impl ReserveLiquidity {
@@ -633,6 +647,7 @@ impl ReserveLiquidity {
             accumulated_protocol_fees_wads: Decimal::zero(),
             market_price: params.market_price,
             smoothed_market_price: params.smoothed_market_price,
+            extra_market_price: None,
         }
     }
 
@@ -921,8 +936,10 @@ pub struct ReserveConfig {
     /// Type of the reserve (Regular, Isolated)
     pub reserve_type: ReserveType,
     /// scaled price offset in basis points. Exclusively used to calculate a more reliable asset price for
-    /// staked assets (mSOL, stETH).
+    /// staked assets (mSOL, stETH). Not used on extra oracle
     pub scaled_price_offset_bps: i64,
+    /// Extra oracle. Only used to limit borrows and withdrawals.
+    pub extra_oracle_pubkey: Option<Pubkey>,
 }
 
 /// validates reserve configs
@@ -1209,6 +1226,9 @@ impl Pack for Reserve {
             config_max_liquidation_bonus,
             config_max_liquidation_threshold,
             config_scaled_price_offset_bps,
+            config_extra_oracle_pubkey,
+            liquidity_extra_market_price_flag,
+            liquidity_extra_market_price,
             _padding,
         ) = mut_array_refs![
             output,
@@ -1253,7 +1273,10 @@ impl Pack for Reserve {
             1,
             1,
             8,
-            130
+            32,
+            1,
+            16,
+            81
         ];
 
         // reserve
@@ -1287,6 +1310,16 @@ impl Pack for Reserve {
             self.liquidity.smoothed_market_price,
             liquidity_smoothed_market_price,
         );
+        match self.liquidity.extra_market_price {
+            Some(extra_market_price) => {
+                liquidity_extra_market_price_flag[0] = 1;
+                pack_decimal(extra_market_price, liquidity_extra_market_price);
+            }
+            None => {
+                liquidity_extra_market_price_flag[0] = 0;
+                pack_decimal(Decimal::zero(), liquidity_extra_market_price);
+            }
+        }
 
         // collateral
         collateral_mint_pubkey.copy_from_slice(self.collateral.mint_pubkey.as_ref());
@@ -1313,6 +1346,10 @@ impl Pack for Reserve {
         *config_protocol_take_rate = self.config.protocol_take_rate.to_le_bytes();
         *config_asset_type = (self.config.reserve_type as u8).to_le_bytes();
         *config_scaled_price_offset_bps = self.config.scaled_price_offset_bps.to_le_bytes();
+        match self.config.extra_oracle_pubkey {
+            Some(pubkey) => config_extra_oracle_pubkey.copy_from_slice(pubkey.as_ref()),
+            None => config_extra_oracle_pubkey.copy_from_slice(&[0u8; PUBKEY_BYTES]),
+        };
 
         self.rate_limiter.pack_into_slice(rate_limiter);
 
@@ -1367,6 +1404,9 @@ impl Pack for Reserve {
             config_max_liquidation_bonus,
             config_max_liquidation_threshold,
             config_scaled_price_offset_bps,
+            config_extra_oracle_pubkey,
+            liquidity_extra_market_price_flag,
+            liquidity_extra_market_price,
             _padding,
         ) = array_refs![
             input,
@@ -1411,7 +1451,10 @@ impl Pack for Reserve {
             1,
             1,
             8,
-            130
+            32,
+            1,
+            16,
+            81
         ];
 
         let version = u8::from_le_bytes(*version);
@@ -1458,6 +1501,14 @@ impl Pack for Reserve {
                 ),
                 market_price: unpack_decimal(liquidity_market_price),
                 smoothed_market_price: unpack_decimal(liquidity_smoothed_market_price),
+                extra_market_price: match liquidity_extra_market_price_flag[0] {
+                    0 => None,
+                    1 => Some(unpack_decimal(liquidity_extra_market_price)),
+                    _ => {
+                        msg!("Invalid extra market price flag");
+                        return Err(ProgramError::InvalidAccountData);
+                    }
+                },
             },
             collateral: ReserveCollateral {
                 mint_pubkey: Pubkey::new_from_array(*collateral_mint_pubkey),
@@ -1503,6 +1554,11 @@ impl Pack for Reserve {
                 added_borrow_weight_bps: u64::from_le_bytes(*config_added_borrow_weight_bps),
                 reserve_type: ReserveType::from_u8(config_asset_type[0]).unwrap(),
                 scaled_price_offset_bps: i64::from_le_bytes(*config_scaled_price_offset_bps),
+                extra_oracle_pubkey: if config_extra_oracle_pubkey == &[0; 32] {
+                    None
+                } else {
+                    Some(Pubkey::new_from_array(*config_extra_oracle_pubkey))
+                },
             },
             rate_limiter: RateLimiter::unpack_from_slice(rate_limiter)?,
         })
@@ -1530,6 +1586,16 @@ mod test {
             let optimal_utilization_rate = rng.gen();
             let liquidation_bonus: u8 = rng.gen();
             let liquidation_threshold: u8 = rng.gen();
+            let extra_oracle_pubkey = if rng.gen_bool(0.5) {
+                Some(Pubkey::new_unique())
+            } else {
+                None
+            };
+            let extra_market_price = if extra_oracle_pubkey.is_some() {
+                Some(rand_decimal())
+            } else {
+                None
+            };
 
             let reserve = Reserve {
                 version: PROGRAM_VERSION,
@@ -1550,6 +1616,7 @@ mod test {
                     accumulated_protocol_fees_wads: rand_decimal(),
                     market_price: rand_decimal(),
                     smoothed_market_price: rand_decimal(),
+                    extra_market_price,
                 },
                 collateral: ReserveCollateral {
                     mint_pubkey: Pubkey::new_unique(),
@@ -1581,6 +1648,7 @@ mod test {
                     added_borrow_weight_bps: rng.gen(),
                     reserve_type: ReserveType::from_u8(rng.gen::<u8>() % 2).unwrap(),
                     scaled_price_offset_bps: rng.gen(),
+                    extra_oracle_pubkey,
                 },
                 rate_limiter: rand_rate_limiter(),
             };
@@ -2007,8 +2075,30 @@ mod test {
     }
 
     #[test]
+    fn price() {
+        let mut reserve = Reserve {
+            liquidity: ReserveLiquidity {
+                mint_decimals: 9,
+                market_price: Decimal::from(25u64),
+                smoothed_market_price: Decimal::from(50u64),
+                ..ReserveLiquidity::default()
+            },
+            ..Reserve::default()
+        };
+
+        assert_eq!(reserve.price_upper_bound(), Decimal::from(50u64));
+        assert_eq!(reserve.price_lower_bound(), Decimal::from(25u64));
+
+        reserve.liquidity.extra_market_price = Some(Decimal::from(75u64));
+        assert_eq!(reserve.price_upper_bound(), Decimal::from(75u64));
+
+        reserve.liquidity.extra_market_price = Some(Decimal::from(10u64));
+        assert_eq!(reserve.price_lower_bound(), Decimal::from(10u64));
+    }
+
+    #[test]
     fn market_value() {
-        let reserve = Reserve {
+        let mut reserve = Reserve {
             liquidity: ReserveLiquidity {
                 mint_decimals: 9,
                 market_price: Decimal::from(25u64),
@@ -2041,6 +2131,27 @@ mod test {
                 .market_value_upper_bound(Decimal::from(10 * LAMPORTS_PER_SOL))
                 .unwrap(),
             Decimal::from(500u64)
+        );
+
+        reserve.liquidity.extra_market_price = Some(Decimal::from(100u64));
+        assert_eq!(
+            reserve
+                .market_value_upper_bound(Decimal::from(10 * LAMPORTS_PER_SOL))
+                .unwrap(),
+            Decimal::from(1000u64)
+        );
+
+        reserve.liquidity.extra_market_price = Some(Decimal::from(10u64));
+        assert_eq!(
+            reserve
+                .market_value_lower_bound(Decimal::from(10 * LAMPORTS_PER_SOL))
+                .unwrap(),
+            Decimal::from(100u64)
+        );
+
+        assert_eq!(
+            reserve.market_value(Decimal::from(1u64)).unwrap(),
+            Decimal::from(25u64).try_div(1e9 as u64).unwrap()
         );
     }
 
@@ -2479,6 +2590,8 @@ mod test {
         // reserve state
         market_price: Decimal,
         smoothed_market_price: Decimal,
+        extra_market_price: Option<Decimal>,
+
         decimal: u8,
         added_borrow_weight_bps: u64,
 
@@ -2498,6 +2611,8 @@ mod test {
 
                 market_price: Decimal::from(1u64),
                 smoothed_market_price: Decimal::from(1u64),
+                extra_market_price: None,
+
                 decimal: 9,
                 added_borrow_weight_bps: 0,
 
@@ -2519,6 +2634,8 @@ mod test {
 
                 market_price: Decimal::from(1u64),
                 smoothed_market_price: Decimal::from(1u64),
+                extra_market_price: None,
+
                 decimal: 9,
                 added_borrow_weight_bps: 0,
 
@@ -2540,6 +2657,8 @@ mod test {
 
                 market_price: Decimal::from(1u64),
                 smoothed_market_price: Decimal::from(1u64),
+                extra_market_price: None,
+
                 decimal: 9,
                 added_borrow_weight_bps: 10_000,
 
@@ -2561,6 +2680,8 @@ mod test {
 
                 market_price: Decimal::from(1u64),
                 smoothed_market_price: Decimal::from(1u64),
+                extra_market_price: None,
+
                 decimal: 9,
                 added_borrow_weight_bps: 10_000,
 
@@ -2582,6 +2703,8 @@ mod test {
 
                 market_price: Decimal::from(10u64),
                 smoothed_market_price: Decimal::from(20u64),
+                extra_market_price: None,
+
                 decimal: 9,
                 added_borrow_weight_bps: 0,
 
@@ -2603,6 +2726,8 @@ mod test {
 
                 market_price: Decimal::from(20u64),
                 smoothed_market_price: Decimal::from(10u64),
+                extra_market_price: None,
+
                 decimal: 9,
                 added_borrow_weight_bps: 0,
 
@@ -2625,6 +2750,27 @@ mod test {
 
                 market_price: Decimal::from(10u64),
                 smoothed_market_price: Decimal::from(20u64),
+                extra_market_price: None,
+
+                decimal: 9,
+                added_borrow_weight_bps: 0,
+
+                borrow_fee_wad: 0,
+                host_fee: 0,
+
+                result: Err(LendingError::BorrowTooLarge.into()),
+            }),
+            // borrow enough where it would be fine if we were just using the market + ema price but
+            // not fine when using market + ema + extra price
+            Just(CalculateBorrowTestCase {
+                borrow_amount: 7 * LAMPORTS_PER_SOL,
+                remaining_borrow_value: Decimal::from(100u64),
+                remaining_reserve_capacity: Decimal::from(100 * LAMPORTS_PER_SOL),
+
+                market_price: Decimal::from(10u64),
+                smoothed_market_price: Decimal::from(10u64),
+                extra_market_price: Some(Decimal::from(20u64)),
+
                 decimal: 9,
                 added_borrow_weight_bps: 0,
 
@@ -2653,6 +2799,7 @@ mod test {
                     mint_decimals: test_case.decimal,
                     market_price: test_case.market_price,
                     smoothed_market_price: test_case.smoothed_market_price,
+                    extra_market_price: test_case.extra_market_price,
                     available_amount: test_case.remaining_reserve_capacity.to_scaled_val().unwrap() as u64,
                     ..ReserveLiquidity::default()
                 },

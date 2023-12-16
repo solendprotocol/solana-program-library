@@ -1142,6 +1142,7 @@ fn main() {
             let added_borrow_weight_bps = value_of(arg_matches, "added_borrow_weight_bps").unwrap();
             let reserve_type = value_of(arg_matches, "reserve_type").unwrap();
             let scaled_price_offset_bps = value_of(arg_matches, "scaled_price_offset_bps").unwrap();
+            let extra_oracle_pubkey = pubkey_of(arg_matches, "extra_oracle_pubkey").unwrap();
 
             let borrow_fee_wad = (borrow_fee * WAD as f64) as u64;
             let flash_loan_fee_wad = (flash_loan_fee * WAD as f64) as u64;
@@ -1196,6 +1197,7 @@ fn main() {
                     added_borrow_weight_bps,
                     reserve_type,
                     scaled_price_offset_bps,
+                    extra_oracle_pubkey: Some(extra_oracle_pubkey),
                 },
                 source_liquidity_pubkey,
                 source_liquidity_owner_keypair,
@@ -1544,6 +1546,7 @@ fn command_liquidate_obligation(
             *pubkey,
             reserve.liquidity.pyth_oracle_pubkey,
             reserve.liquidity.switchboard_oracle_pubkey,
+            reserve.config.extra_oracle_pubkey,
         )
     }));
 

@@ -4,7 +4,6 @@ mod helpers;
 
 use helpers::solend_program_test::{SolendProgramTest, User};
 use helpers::*;
-use mock_pyth::mock_pyth_program;
 use solana_program::instruction::InstructionError;
 use solana_program_test::*;
 use solana_sdk::signature::Keypair;
@@ -13,6 +12,7 @@ use solana_sdk::transaction::TransactionError;
 use solend_program::error::LendingError;
 use solend_program::instruction::init_lending_market;
 use solend_program::state::{LendingMarket, RateLimiter, PROGRAM_VERSION};
+use solend_sdk::{pyth_mainnet, switchboard_v2_mainnet};
 
 #[tokio::test]
 async fn test_success() {
@@ -33,8 +33,8 @@ async fn test_success() {
             owner: lending_market_owner.keypair.pubkey(),
             quote_currency: QUOTE_CURRENCY,
             token_program_id: spl_token::id(),
-            oracle_program_id: mock_pyth_program::id(),
-            switchboard_oracle_program_id: mock_pyth_program::id(),
+            oracle_program_id: pyth_mainnet::id(),
+            switchboard_oracle_program_id: switchboard_v2_mainnet::id(),
             rate_limiter: RateLimiter::default(),
             whitelisted_liquidator: None,
             risk_authority: lending_market_owner.keypair.pubkey(),
@@ -63,8 +63,8 @@ async fn test_already_initialized() {
                 lending_market_owner.keypair.pubkey(),
                 QUOTE_CURRENCY,
                 keypair.pubkey(),
-                mock_pyth_program::id(),
-                mock_pyth_program::id(),
+                pyth_mainnet::id(),
+                switchboard_v2_mainnet::id(),
             )],
             None,
         )
