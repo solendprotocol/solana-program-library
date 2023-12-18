@@ -165,6 +165,12 @@ impl TrySub for Decimal {
     }
 }
 
+impl SaturatingSub for Decimal {
+    fn saturating_sub(self, rhs: Self) -> Self {
+        Self(self.0.saturating_sub(rhs.0))
+    }
+}
+
 impl TryDiv<u64> for Decimal {
     fn try_div(self, rhs: u64) -> Result<Self, ProgramError> {
         Ok(Self(
@@ -305,6 +311,18 @@ mod test {
         assert_eq!(
             Decimal::from_scaled_val(1u128).to_string(),
             "0.000000000000000001"
+        );
+    }
+
+    #[test]
+    fn test_saturating_sub() {
+        assert_eq!(
+            Decimal::from(1u64).saturating_sub(Decimal::from(2u64)),
+            Decimal::zero()
+        );
+        assert_eq!(
+            Decimal::from(2u64).saturating_sub(Decimal::from(1u64)),
+            Decimal::one()
         );
     }
 }

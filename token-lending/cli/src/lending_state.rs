@@ -129,6 +129,11 @@ impl SolendState {
             self.obligation_pubkey,
             withdraw_reserve.lending_market,
             self.obligation.owner,
+            self.obligation
+                .deposits
+                .iter()
+                .map(|d| d.deposit_reserve)
+                .collect(),
         ));
 
         instructions

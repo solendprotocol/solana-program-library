@@ -19,6 +19,12 @@ pub trait TrySub: Sized {
     fn try_sub(self, rhs: Self) -> Result<Self, ProgramError>;
 }
 
+/// Subtract and set to zero on underflow
+pub trait SaturatingSub: Sized {
+    /// Subtract
+    fn saturating_sub(self, rhs: Self) -> Self;
+}
+
 /// Try to subtract, return an error on overflow
 pub trait TryAdd: Sized {
     /// Add

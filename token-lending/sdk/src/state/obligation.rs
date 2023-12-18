@@ -40,6 +40,8 @@ pub struct Obligation {
     /// Risk-adjusted market value of borrows.
     /// ie sum(b.borrowed_amount * b.current_spot_price * b.borrow_weight for b in borrows)
     pub borrowed_value: Decimal,
+    /// True borrow value. Ie, not risk adjusted like "borrowed_value"
+    pub unweighted_borrowed_value: Decimal,
     /// Risk-adjusted upper bound market value of borrows.
     /// ie sum(b.borrowed_amount * max(b.current_spot_price, b.smoothed_price) * b.borrow_weight for b in borrows)
     pub borrowed_value_upper_bound: Decimal,
@@ -59,6 +61,8 @@ pub struct Obligation {
     pub super_unhealthy_borrow_value: Decimal,
     /// True if the obligation is currently borrowing an isolated tier asset
     pub borrowing_isolated_asset: bool,
+    /// Obligation can be marked as closeable
+    pub closeable: bool,
 }
 
 impl Obligation {
@@ -314,6 +318,8 @@ pub struct ObligationCollateral {
     pub deposited_amount: u64,
     /// Collateral market value in quote currency
     pub market_value: Decimal,
+    /// How much borrow is attributed to this collateral (USD)
+    pub attributed_borrow_value: Decimal,
 }
 
 impl ObligationCollateral {
@@ -323,6 +329,7 @@ impl ObligationCollateral {
             deposit_reserve,
             deposited_amount: 0,
             market_value: Decimal::zero(),
+            attributed_borrow_value: Decimal::zero(),
         }
     }
 
@@ -428,6 +435,8 @@ impl Pack for Obligation {
             borrowed_value_upper_bound,
             borrowing_isolated_asset,
             super_unhealthy_borrow_value,
+            unweighted_borrowed_value,
+            closeable,
             _padding,
             deposits_len,
             borrows_len,
@@ -446,7 +455,9 @@ impl Pack for Obligation {
             16,
             1,
             16,
-            31,
+            16,
+            1,
+            14,
             1,
             1,
             OBLIGATION_COLLATERAL_LEN + (OBLIGATION_LIQUIDITY_LEN * (MAX_OBLIGATION_RESERVES - 1))
@@ -468,6 +479,8 @@ impl Pack for Obligation {
             self.super_unhealthy_borrow_value,
             super_unhealthy_borrow_value,
         );
+        pack_decimal(self.unweighted_borrowed_value, unweighted_borrowed_value);
+        pack_bool(self.closeable, closeable);
 
         *deposits_len = u8::try_from(self.deposits.len()).unwrap().to_le_bytes();
         *borrows_len = u8::try_from(self.borrows.len()).unwrap().to_le_bytes();
@@ -478,11 +491,17 @@ impl Pack for Obligation {
         for collateral in &self.deposits {
             let deposits_flat = array_mut_ref![data_flat, offset, OBLIGATION_COLLATERAL_LEN];
             #[allow(clippy::ptr_offset_with_cast)]
-            let (deposit_reserve, deposited_amount, market_value, _padding_deposit) =
-                mut_array_refs![deposits_flat, PUBKEY_BYTES, 8, 16, 32];
+            let (
+                deposit_reserve,
+                deposited_amount,
+                market_value,
+                attributed_borrow_value,
+                _padding_deposit,
+            ) = mut_array_refs![deposits_flat, PUBKEY_BYTES, 8, 16, 16, 16];
             deposit_reserve.copy_from_slice(collateral.deposit_reserve.as_ref());
             *deposited_amount = collateral.deposited_amount.to_le_bytes();
             pack_decimal(collateral.market_value, market_value);
+            pack_decimal(collateral.attributed_borrow_value, attributed_borrow_value);
             offset += OBLIGATION_COLLATERAL_LEN;
         }
 
@@ -525,6 +544,8 @@ impl Pack for Obligation {
             borrowed_value_upper_bound,
             borrowing_isolated_asset,
             super_unhealthy_borrow_value,
+            unweighted_borrowed_value,
+            closeable,
             _padding,
             deposits_len,
             borrows_len,
@@ -543,7 +564,9 @@ impl Pack for Obligation {
             16,
             1,
             16,
-            31,
+            16,
+            1,
+            14,
             1,
             1,
             OBLIGATION_COLLATERAL_LEN + (OBLIGATION_LIQUIDITY_LEN * (MAX_OBLIGATION_RESERVES - 1))
@@ -564,12 +587,18 @@ impl Pack for Obligation {
         for _ in 0..deposits_len {
             let deposits_flat = array_ref![data_flat, offset, OBLIGATION_COLLATERAL_LEN];
             #[allow(clippy::ptr_offset_with_cast)]
-            let (deposit_reserve, deposited_amount, market_value, _padding_deposit) =
-                array_refs![deposits_flat, PUBKEY_BYTES, 8, 16, 32];
+            let (
+                deposit_reserve,
+                deposited_amount,
+                market_value,
+                attributed_borrow_value,
+                _padding_deposit,
+            ) = array_refs![deposits_flat, PUBKEY_BYTES, 8, 16, 16, 16];
             deposits.push(ObligationCollateral {
                 deposit_reserve: Pubkey::new(deposit_reserve),
                 deposited_amount: u64::from_le_bytes(*deposited_amount),
                 market_value: unpack_decimal(market_value),
+                attributed_borrow_value: unpack_decimal(attributed_borrow_value),
             });
             offset += OBLIGATION_COLLATERAL_LEN;
         }
@@ -604,11 +633,13 @@ impl Pack for Obligation {
             borrows,
             deposited_value: unpack_decimal(deposited_value),
             borrowed_value: unpack_decimal(borrowed_value),
+            unweighted_borrowed_value: unpack_decimal(unweighted_borrowed_value),
             borrowed_value_upper_bound: unpack_decimal(borrowed_value_upper_bound),
             allowed_borrow_value: unpack_decimal(allowed_borrow_value),
             unhealthy_borrow_value: unpack_decimal(unhealthy_borrow_value),
             super_unhealthy_borrow_value: unpack_decimal(super_unhealthy_borrow_value),
             borrowing_isolated_asset: unpack_bool(borrowing_isolated_asset)?,
+            closeable: unpack_bool(closeable)?,
         })
     }
 }
@@ -643,6 +674,7 @@ mod test {
                     deposit_reserve: Pubkey::new_unique(),
                     deposited_amount: rng.gen(),
                     market_value: rand_decimal(),
+                    attributed_borrow_value: rand_decimal(),
                 }],
                 borrows: vec![ObligationLiquidity {
                     borrow_reserve: Pubkey::new_unique(),
@@ -652,11 +684,13 @@ mod test {
                 }],
                 deposited_value: rand_decimal(),
                 borrowed_value: rand_decimal(),
+                unweighted_borrowed_value: rand_decimal(),
                 borrowed_value_upper_bound: rand_decimal(),
                 allowed_borrow_value: rand_decimal(),
                 unhealthy_borrow_value: rand_decimal(),
                 super_unhealthy_borrow_value: rand_decimal(),
                 borrowing_isolated_asset: rng.gen(),
+                closeable: rng.gen(),
             };
 
             let mut packed = [0u8; OBLIGATION_LEN];

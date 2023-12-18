@@ -130,7 +130,8 @@ async fn test_success() {
             deposits: [ObligationCollateral {
                 deposit_reserve: usdc_reserve.pubkey,
                 deposited_amount: 1_000_000,
-                market_value: Decimal::zero()
+                market_value: Decimal::zero(),
+                attributed_borrow_value: Decimal::zero()
             }]
             .to_vec(),
             ..obligation.account

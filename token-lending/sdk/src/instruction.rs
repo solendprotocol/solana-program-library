@@ -168,7 +168,7 @@ pub enum LendingInstruction {
     ///
     ///   0. `[writable]` Obligation account.
     ///   1. `[]` Clock sysvar (optional, will be removed soon).
-    ///   .. `[]` Collateral deposit reserve accounts - refreshed, all, in order.
+    ///   .. `[writable]` Collateral deposit reserve accounts - refreshed, all, in order.
     ///   .. `[]` Liquidity borrow reserve accounts - refreshed, all, in order.
     RefreshObligation,
 
@@ -498,6 +498,19 @@ pub enum LendingInstruction {
     /// Must be a pda with seeds [lending_market, "MetaData"]
     /// 3. `[]` System program
     UpdateMarketMetadata,
+
+    // 23
+    /// MarkObligationAsClosable
+    ///
+    /// Accounts expected by this instruction
+    /// 0. `[writable]` Obligation account - refreshed.
+    /// 1. `[]` Lending market account.
+    /// 2. `[]` Reserve account - refreshed.
+    /// 3. `[signer]` risk authority of lending market or lending market owner
+    SetObligationCloseabilityStatus {
+        /// Obligation is closable
+        closeable: bool,
+    },
 }
 
 impl LendingInstruction {
@@ -563,7 +576,7 @@ impl LendingInstruction {
                 let (max_liquidation_bonus, rest) = Self::unpack_u8(rest)?;
                 let (max_liquidation_threshold, rest) = Self::unpack_u8(rest)?;
                 let (scaled_price_offset_bps, rest) = Self::unpack_i64(rest)?;
-                let (extra_oracle_pubkey, _rest) = match Self::unpack_u8(rest)? {
+                let (extra_oracle_pubkey, rest) = match Self::unpack_u8(rest)? {
                     (0, rest) => (None, rest),
                     (1, rest) => {
                         let (pubkey, rest) = Self::unpack_pubkey(rest)?;
@@ -571,6 +584,8 @@ impl LendingInstruction {
                     }
                     _ => return Err(LendingError::InstructionUnpackError.into()),
                 };
+                let (attributed_borrow_limit_open, rest) = Self::unpack_u64(rest)?;
+                let (attributed_borrow_limit_close, _rest) = Self::unpack_u64(rest)?;
                 Self::InitReserve {
                     liquidity_amount,
                     config: ReserveConfig {
@@ -599,6 +614,8 @@ impl LendingInstruction {
                         reserve_type: ReserveType::from_u8(asset_type).unwrap(),
                         scaled_price_offset_bps,
                         extra_oracle_pubkey,
+                        attributed_borrow_limit_open,
+                        attributed_borrow_limit_close,
                     },
                 }
             }
@@ -676,6 +693,8 @@ impl LendingInstruction {
                     }
                     _ => return Err(LendingError::InstructionUnpackError.into()),
                 };
+                let (attributed_borrow_limit_open, rest) = Self::unpack_u64(rest)?;
+                let (attributed_borrow_limit_close, rest) = Self::unpack_u64(rest)?;
                 let (window_duration, rest) = Self::unpack_u64(rest)?;
                 let (max_outflow, _rest) = Self::unpack_u64(rest)?;
 
@@ -706,6 +725,8 @@ impl LendingInstruction {
                         reserve_type: ReserveType::from_u8(asset_type).unwrap(),
                         scaled_price_offset_bps,
                         extra_oracle_pubkey,
+                        attributed_borrow_limit_open,
+                        attributed_borrow_limit_close,
                     },
                     rate_limiter_config: RateLimiterConfig {
                         window_duration,
@@ -735,6 +756,15 @@ impl LendingInstruction {
                 Self::ForgiveDebt { liquidity_amount }
             }
             22 => Self::UpdateMarketMetadata,
+            23 => {
+                let (closeable, _rest) = match Self::unpack_u8(rest)? {
+                    (0, rest) => (false, rest),
+                    (1, rest) => (true, rest),
+                    _ => return Err(LendingError::InstructionUnpackError.into()),
+                };
+
+                Self::SetObligationCloseabilityStatus { closeable }
+            }
             _ => {
                 msg!("Instruction cannot be unpacked");
                 return Err(LendingError::InstructionUnpackError.into());
@@ -871,6 +901,8 @@ impl LendingInstruction {
                         reserve_type: asset_type,
                         scaled_price_offset_bps,
                         extra_oracle_pubkey,
+                        attributed_borrow_limit_open,
+                        attributed_borrow_limit_close,
                     },
             } => {
                 buf.push(2);
@@ -906,6 +938,8 @@ impl LendingInstruction {
                         buf.push(0);
                     }
                 };
+                buf.extend_from_slice(&attributed_borrow_limit_open.to_le_bytes());
+                buf.extend_from_slice(&attributed_borrow_limit_close.to_le_bytes());
             }
             Self::RefreshReserve => {
                 buf.push(3);
@@ -992,6 +1026,8 @@ impl LendingInstruction {
                         buf.push(0);
                     }
                 };
+                buf.extend_from_slice(&config.attributed_borrow_limit_open.to_le_bytes());
+                buf.extend_from_slice(&config.attributed_borrow_limit_close.to_le_bytes());
                 buf.extend_from_slice(&rate_limiter_config.window_duration.to_le_bytes());
                 buf.extend_from_slice(&rate_limiter_config.max_outflow.to_le_bytes());
             }
@@ -1020,6 +1056,10 @@ impl LendingInstruction {
             }
             // special handling for this instruction, bc the instruction is too big to deserialize
             Self::UpdateMarketMetadata => {}
+            Self::SetObligationCloseabilityStatus { closeable } => {
+                buf.push(23);
+                buf.extend_from_slice(&(closeable as u8).to_le_bytes());
+            }
         }
         buf
     }
@@ -1261,7 +1301,7 @@ pub fn refresh_obligation(
     accounts.extend(
         reserve_pubkeys
             .into_iter()
-            .map(|pubkey| AccountMeta::new_readonly(pubkey, false)),
+            .map(|pubkey| AccountMeta::new(pubkey, false)),
     );
     Instruction {
         program_id,
@@ -1361,27 +1401,37 @@ pub fn withdraw_obligation_collateral_and_redeem_reserve_collateral(
     reserve_liquidity_supply_pubkey: Pubkey,
     obligation_owner_pubkey: Pubkey,
     user_transfer_authority_pubkey: Pubkey,
+    collateral_reserves: Vec<Pubkey>,
 ) -> Instruction {
     let (lending_market_authority_pubkey, _bump_seed) = Pubkey::find_program_address(
         &[&lending_market_pubkey.to_bytes()[..PUBKEY_BYTES]],
         &program_id,
     );
+
+    let mut accounts = vec![
+        AccountMeta::new(source_collateral_pubkey, false),
+        AccountMeta::new(destination_collateral_pubkey, false),
+        AccountMeta::new(withdraw_reserve_pubkey, false),
+        AccountMeta::new(obligation_pubkey, false),
+        AccountMeta::new(lending_market_pubkey, false),
+        AccountMeta::new_readonly(lending_market_authority_pubkey, false),
+        AccountMeta::new(destination_liquidity_pubkey, false),
+        AccountMeta::new(reserve_collateral_mint_pubkey, false),
+        AccountMeta::new(reserve_liquidity_supply_pubkey, false),
+        AccountMeta::new_readonly(obligation_owner_pubkey, true),
+        AccountMeta::new_readonly(user_transfer_authority_pubkey, true),
+        AccountMeta::new_readonly(spl_token::id(), false),
+    ];
+
+    accounts.extend(
+        collateral_reserves
+            .into_iter()
+            .map(|pubkey| AccountMeta::new(pubkey, false)),
+    );
+
     Instruction {
         program_id,
-        accounts: vec![
-            AccountMeta::new(source_collateral_pubkey, false),
-            AccountMeta::new(destination_collateral_pubkey, false),
-            AccountMeta::new(withdraw_reserve_pubkey, false),
-            AccountMeta::new(obligation_pubkey, false),
-            AccountMeta::new(lending_market_pubkey, false),
-            AccountMeta::new_readonly(lending_market_authority_pubkey, false),
-            AccountMeta::new(destination_liquidity_pubkey, false),
-            AccountMeta::new(reserve_collateral_mint_pubkey, false),
-            AccountMeta::new(reserve_liquidity_supply_pubkey, false),
-            AccountMeta::new_readonly(obligation_owner_pubkey, true),
-            AccountMeta::new_readonly(user_transfer_authority_pubkey, true),
-            AccountMeta::new_readonly(spl_token::id(), false),
-        ],
+        accounts,
         data: LendingInstruction::WithdrawObligationCollateralAndRedeemReserveCollateral {
             collateral_amount,
         }
@@ -1400,23 +1450,33 @@ pub fn withdraw_obligation_collateral(
     obligation_pubkey: Pubkey,
     lending_market_pubkey: Pubkey,
     obligation_owner_pubkey: Pubkey,
+    collateral_reserves: Vec<Pubkey>,
 ) -> Instruction {
     let (lending_market_authority_pubkey, _bump_seed) = Pubkey::find_program_address(
         &[&lending_market_pubkey.to_bytes()[..PUBKEY_BYTES]],
         &program_id,
     );
+
+    let mut accounts = vec![
+        AccountMeta::new(source_collateral_pubkey, false),
+        AccountMeta::new(destination_collateral_pubkey, false),
+        AccountMeta::new_readonly(withdraw_reserve_pubkey, false),
+        AccountMeta::new(obligation_pubkey, false),
+        AccountMeta::new_readonly(lending_market_pubkey, false),
+        AccountMeta::new_readonly(lending_market_authority_pubkey, false),
+        AccountMeta::new_readonly(obligation_owner_pubkey, true),
+        AccountMeta::new_readonly(spl_token::id(), false),
+    ];
+
+    accounts.extend(
+        collateral_reserves
+            .into_iter()
+            .map(|pubkey| AccountMeta::new(pubkey, false)),
+    );
+
     Instruction {
         program_id,
-        accounts: vec![
-            AccountMeta::new(source_collateral_pubkey, false),
-            AccountMeta::new(destination_collateral_pubkey, false),
-            AccountMeta::new_readonly(withdraw_reserve_pubkey, false),
-            AccountMeta::new(obligation_pubkey, false),
-            AccountMeta::new_readonly(lending_market_pubkey, false),
-            AccountMeta::new_readonly(lending_market_authority_pubkey, false),
-            AccountMeta::new_readonly(obligation_owner_pubkey, true),
-            AccountMeta::new_readonly(spl_token::id(), false),
-        ],
+        accounts,
         data: LendingInstruction::WithdrawObligationCollateral { collateral_amount }.pack(),
     }
 }
@@ -1433,6 +1493,7 @@ pub fn borrow_obligation_liquidity(
     obligation_pubkey: Pubkey,
     lending_market_pubkey: Pubkey,
     obligation_owner_pubkey: Pubkey,
+    collateral_reserves: Vec<Pubkey>,
     host_fee_receiver_pubkey: Option<Pubkey>,
 ) -> Instruction {
     let (lending_market_authority_pubkey, _bump_seed) = Pubkey::find_program_address(
@@ -1450,6 +1511,10 @@ pub fn borrow_obligation_liquidity(
         AccountMeta::new_readonly(obligation_owner_pubkey, true),
         AccountMeta::new_readonly(spl_token::id(), false),
     ];
+    for collateral_reserve in collateral_reserves {
+        accounts.push(AccountMeta::new(collateral_reserve, false));
+    }
+
     if let Some(host_fee_receiver_pubkey) = host_fee_receiver_pubkey {
         accounts.push(AccountMeta::new(host_fee_receiver_pubkey, false));
     }
@@ -1762,6 +1827,27 @@ pub fn update_market_metadata(
     }
 }
 
+/// Creates a `MarkObligationAsClosable` instruction
+pub fn set_obligation_closeability_status(
+    program_id: Pubkey,
+    obligation_pubkey: Pubkey,
+    reserve_pubkey: Pubkey,
+    lending_market_pubkey: Pubkey,
+    risk_authority: Pubkey,
+    closeable: bool,
+) -> Instruction {
+    Instruction {
+        program_id,
+        accounts: vec![
+            AccountMeta::new(obligation_pubkey, false),
+            AccountMeta::new_readonly(lending_market_pubkey, false),
+            AccountMeta::new_readonly(reserve_pubkey, false),
+            AccountMeta::new_readonly(risk_authority, true),
+        ],
+        data: LendingInstruction::SetObligationCloseabilityStatus { closeable }.pack(),
+    }
+}
+
 #[cfg(test)]
 mod test {
     use super::*;
@@ -1837,6 +1923,8 @@ mod test {
                         } else {
                             Some(Pubkey::new_unique())
                         },
+                        attributed_borrow_limit_open: rng.gen(),
+                        attributed_borrow_limit_close: rng.gen(),
                     },
                 };
 
@@ -2003,6 +2091,8 @@ mod test {
                         } else {
                             None
                         },
+                        attributed_borrow_limit_open: rng.gen(),
+                        attributed_borrow_limit_close: rng.gen(),
                     },
                     rate_limiter_config: RateLimiterConfig {
                         window_duration: rng.gen::<u64>(),
@@ -2063,6 +2153,17 @@ mod test {
             {
                 let instruction = LendingInstruction::ForgiveDebt {
                     liquidity_amount: rng.gen::<u64>(),
+                };
+
+                let packed = instruction.pack();
+                let unpacked = LendingInstruction::unpack(&packed).unwrap();
+                assert_eq!(instruction, unpacked);
+            }
+
+            // MarkObligationAsClosable
+            {
+                let instruction = LendingInstruction::SetObligationCloseabilityStatus {
+                    closeable: rng.gen(),
                 };
 
                 let packed = instruction.pack();

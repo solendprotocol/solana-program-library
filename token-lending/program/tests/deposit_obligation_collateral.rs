@@ -91,7 +91,8 @@ async fn test_success() {
             deposits: vec![ObligationCollateral {
                 deposit_reserve: usdc_reserve.pubkey,
                 deposited_amount: 1_000_000,
-                market_value: Decimal::zero() // this field only gets updated on a refresh
+                market_value: Decimal::zero(), // this field only gets updated on a refresh
+                attributed_borrow_value: Decimal::zero()
             }],
             ..obligation.account
         }

@@ -192,6 +192,23 @@ async fn test_success() {
         .await;
     assert_eq!(lending_market_post, lending_market);
 
+    // 1 + 0.3/SLOTS_PER_YEAR
+    let new_cumulative_borrow_rate = Decimal::one()
+        .try_add(
+            Decimal::from_percent(wsol_reserve.account.config.max_borrow_rate)
+                .try_div(Decimal::from(SLOTS_PER_YEAR))
+                .unwrap(),
+        )
+        .unwrap();
+    let new_borrowed_amount_wads = new_cumulative_borrow_rate
+        .try_mul(Decimal::from(6 * LAMPORTS_PER_SOL))
+        .unwrap();
+    let new_borrow_value = new_borrowed_amount_wads
+        .try_mul(Decimal::from(10u64))
+        .unwrap()
+        .try_div(Decimal::from(LAMPORTS_PER_SOL))
+        .unwrap();
+
     let usdc_reserve_post = test.load_account::<Reserve>(usdc_reserve.pubkey).await;
     assert_eq!(
         usdc_reserve_post.account,
@@ -204,23 +221,12 @@ async fn test_success() {
                 smoothed_market_price: Decimal::from_percent(90),
                 ..usdc_reserve.account.liquidity
             },
+            attributed_borrow_value: new_borrow_value,
             ..usdc_reserve.account
         }
     );
 
     let wsol_reserve_post = test.load_account::<Reserve>(wsol_reserve.pubkey).await;
-
-    // 1 + 0.3/SLOTS_PER_YEAR
-    let new_cumulative_borrow_rate = Decimal::one()
-        .try_add(
-            Decimal::from_percent(wsol_reserve.account.config.max_borrow_rate)
-                .try_div(Decimal::from(SLOTS_PER_YEAR))
-                .unwrap(),
-        )
-        .unwrap();
-    let new_borrowed_amount_wads = new_cumulative_borrow_rate
-        .try_mul(Decimal::from(6 * LAMPORTS_PER_SOL))
-        .unwrap();
 
     assert_eq!(
         wsol_reserve_post.account,
@@ -241,11 +247,6 @@ async fn test_success() {
     );
 
     let obligation_post = test.load_account::<Obligation>(obligation.pubkey).await;
-    let new_borrow_value = new_borrowed_amount_wads
-        .try_mul(Decimal::from(10u64))
-        .unwrap()
-        .try_div(Decimal::from(LAMPORTS_PER_SOL))
-        .unwrap();
 
     assert_eq!(
         obligation_post.account,
@@ -254,6 +255,11 @@ async fn test_success() {
                 slot: 1001,
                 stale: false
             },
+            deposits: [ObligationCollateral {
+                attributed_borrow_value: new_borrow_value,
+                ..obligation.account.deposits[0]
+            }]
+            .to_vec(),
             borrows: [ObligationLiquidity {
                 borrow_reserve: wsol_reserve.pubkey,
                 cumulative_borrow_rate_wads: new_cumulative_borrow_rate,
@@ -263,6 +269,12 @@ async fn test_success() {
             .to_vec(),
 
             borrowed_value: new_borrowed_amount_wads
+                .try_mul(Decimal::from(10u64))
+                .unwrap()
+                .try_div(Decimal::from(LAMPORTS_PER_SOL))
+                .unwrap(),
+
+            unweighted_borrowed_value: new_borrowed_amount_wads
                 .try_mul(Decimal::from(10u64))
                 .unwrap()
                 .try_div(Decimal::from(LAMPORTS_PER_SOL))
