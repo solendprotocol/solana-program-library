@@ -28,11 +28,7 @@ use solana_program::{
     pubkey::Pubkey,
     system_instruction::create_account,
     sysvar::instructions::{load_current_index_checked, load_instruction_at_checked},
-    sysvar::{
-        clock::{self, Clock},
-        rent::Rent,
-        Sysvar,
-    },
+    sysvar::{clock::Clock, rent::Rent, Sysvar},
 };
 
 use solend_sdk::{
@@ -303,7 +299,7 @@ fn process_init_reserve(
         return Err(LendingError::InvalidAmount.into());
     }
     validate_reserve_config(config)?;
-    let account_info_iter = &mut accounts.iter().peekable();
+    let account_info_iter = &mut accounts.iter();
     let source_liquidity_info = next_account_info(account_info_iter)?;
     let destination_collateral_info = next_account_info(account_info_iter)?;
     let reserve_info = next_account_info(account_info_iter)?;
@@ -321,9 +317,6 @@ fn process_init_reserve(
     let user_transfer_authority_info = next_account_info(account_info_iter)?;
 
     let clock = &Clock::get()?;
-    if account_info_iter.peek().map(|a| a.key) == Some(&clock::ID) {
-        next_account_info(account_info_iter)?;
-    }
 
     let rent_info = next_account_info(account_info_iter)?;
     let rent = &Rent::from_account_info(rent_info)?;
@@ -518,24 +511,15 @@ fn process_refresh_reserve(program_id: &Pubkey, accounts: &[AccountInfo]) -> Pro
     let account_info_iter = &mut accounts.iter().peekable();
     let reserve_info = next_account_info(account_info_iter)?;
     let pyth_price_info = next_account_info(account_info_iter)?;
-    // set switchboard to a placeholder account info
-    let mut switchboard_feed_info = None;
-    // if the next account info exists and is not the clock set it to be switchboard
-    let switchboard_peek = account_info_iter.peek().map(|a| a.key);
-    if switchboard_peek.is_some() && switchboard_peek != Some(&clock::ID) {
-        switchboard_feed_info = Some(next_account_info(account_info_iter)?);
-    }
+    let switchboard_feed_info = next_account_info(account_info_iter)?;
     let clock = &Clock::get()?;
-    if account_info_iter.peek().map(|a| a.key) == Some(&clock::ID) {
-        next_account_info(account_info_iter)?;
-    }
 
     let extra_oracle_account_info = next_account_info(account_info_iter).ok();
     _refresh_reserve(
         program_id,
         reserve_info,
         pyth_price_info,
-        switchboard_feed_info,
+        Some(switchboard_feed_info),
         clock,
         extra_oracle_account_info,
     )
@@ -644,7 +628,7 @@ fn process_deposit_reserve_liquidity(
         return Err(LendingError::InvalidAmount.into());
     }
 
-    let account_info_iter = &mut accounts.iter().peekable();
+    let account_info_iter = &mut accounts.iter();
     let source_liquidity_info = next_account_info(account_info_iter)?;
     let destination_collateral_info = next_account_info(account_info_iter)?;
     let reserve_info = next_account_info(account_info_iter)?;
@@ -654,9 +638,6 @@ fn process_deposit_reserve_liquidity(
     let lending_market_authority_info = next_account_info(account_info_iter)?;
     let user_transfer_authority_info = next_account_info(account_info_iter)?;
     let clock = &Clock::get()?;
-    if account_info_iter.peek().map(|a| a.key) == Some(&clock::ID) {
-        next_account_info(account_info_iter)?;
-    }
     let token_program_id = next_account_info(account_info_iter)?;
 
     _refresh_reserve_interest(program_id, reserve_info, clock)?;
@@ -790,7 +771,7 @@ fn process_redeem_reserve_collateral(
         return Err(LendingError::InvalidAmount.into());
     }
 
-    let account_info_iter = &mut accounts.iter().peekable();
+    let account_info_iter = &mut accounts.iter();
     let source_collateral_info = next_account_info(account_info_iter)?;
     let destination_liquidity_info = next_account_info(account_info_iter)?;
     let reserve_info = next_account_info(account_info_iter)?;
@@ -800,9 +781,6 @@ fn process_redeem_reserve_collateral(
     let lending_market_authority_info = next_account_info(account_info_iter)?;
     let user_transfer_authority_info = next_account_info(account_info_iter)?;
     let clock = &Clock::get()?;
-    if account_info_iter.peek().map(|a| a.key) == Some(&clock::ID) {
-        next_account_info(account_info_iter)?;
-    }
     let token_program_id = next_account_info(account_info_iter)?;
 
     _redeem_reserve_collateral(
@@ -946,14 +924,11 @@ fn _redeem_reserve_collateral<'a>(
 
 #[inline(never)] // avoid stack frame limit
 fn process_init_obligation(program_id: &Pubkey, accounts: &[AccountInfo]) -> ProgramResult {
-    let account_info_iter = &mut accounts.iter().peekable();
+    let account_info_iter = &mut accounts.iter();
     let obligation_info = next_account_info(account_info_iter)?;
     let lending_market_info = next_account_info(account_info_iter)?;
     let obligation_owner_info = next_account_info(account_info_iter)?;
     let clock = &Clock::get()?;
-    if account_info_iter.peek().map(|a| a.key) == Some(&clock::ID) {
-        next_account_info(account_info_iter)?;
-    }
     let rent = &Rent::from_account_info(next_account_info(account_info_iter)?)?;
     let token_program_id = next_account_info(account_info_iter)?;
 
@@ -993,12 +968,9 @@ fn process_init_obligation(program_id: &Pubkey, accounts: &[AccountInfo]) -> Pro
 
 #[inline(never)] // avoid stack frame limit
 fn process_refresh_obligation(program_id: &Pubkey, accounts: &[AccountInfo]) -> ProgramResult {
-    let account_info_iter = &mut accounts.iter().peekable();
+    let account_info_iter = &mut accounts.iter();
     let obligation_info = next_account_info(account_info_iter)?;
     let clock = &Clock::get()?;
-    if account_info_iter.peek().map(|a| a.key) == Some(&clock::ID) {
-        next_account_info(account_info_iter)?;
-    }
 
     let mut obligation = Obligation::unpack(&obligation_info.data.borrow())?;
     if obligation_info.owner != program_id {
@@ -1133,7 +1105,7 @@ fn process_refresh_obligation(program_id: &Pubkey, accounts: &[AccountInfo]) -> 
         unweighted_borrowed_value = unweighted_borrowed_value.try_add(market_value)?;
     }
 
-    if account_info_iter.peek().is_some() {
+    if account_info_iter.next().is_some() {
         msg!("Too many obligation deposit or borrow reserves provided");
         return Err(LendingError::InvalidAccountInput.into());
     }
@@ -1250,7 +1222,7 @@ fn process_deposit_obligation_collateral(
         return Err(LendingError::InvalidAmount.into());
     }
 
-    let account_info_iter = &mut accounts.iter().peekable();
+    let account_info_iter = &mut accounts.iter();
     let source_collateral_info = next_account_info(account_info_iter)?;
     let destination_collateral_info = next_account_info(account_info_iter)?;
     let deposit_reserve_info = next_account_info(account_info_iter)?;
@@ -1259,9 +1231,6 @@ fn process_deposit_obligation_collateral(
     let obligation_owner_info = next_account_info(account_info_iter)?;
     let user_transfer_authority_info = next_account_info(account_info_iter)?;
     let clock = &Clock::get()?;
-    if account_info_iter.peek().map(|a| a.key) == Some(&clock::ID) {
-        next_account_info(account_info_iter)?;
-    }
     let token_program_id = next_account_info(account_info_iter)?;
     _refresh_reserve_interest(program_id, deposit_reserve_info, clock)?;
     _deposit_obligation_collateral(
@@ -1376,7 +1345,7 @@ fn process_deposit_reserve_liquidity_and_obligation_collateral(
         return Err(LendingError::InvalidAmount.into());
     }
 
-    let account_info_iter = &mut accounts.iter().peekable();
+    let account_info_iter = &mut accounts.iter();
     let source_liquidity_info = next_account_info(account_info_iter)?;
     let user_collateral_info = next_account_info(account_info_iter)?;
     let reserve_info = next_account_info(account_info_iter)?;
@@ -1391,9 +1360,6 @@ fn process_deposit_reserve_liquidity_and_obligation_collateral(
     let _switchboard_feed_info = next_account_info(account_info_iter)?;
     let user_transfer_authority_info = next_account_info(account_info_iter)?;
     let clock = &Clock::get()?;
-    if account_info_iter.peek().map(|a| a.key) == Some(&clock::ID) {
-        next_account_info(account_info_iter)?;
-    }
     let token_program_id = next_account_info(account_info_iter)?;
 
     _refresh_reserve_interest(program_id, reserve_info, clock)?;
@@ -1444,7 +1410,7 @@ fn process_withdraw_obligation_collateral(
         return Err(LendingError::InvalidAmount.into());
     }
 
-    let account_info_iter = &mut accounts.iter().peekable();
+    let account_info_iter = &mut accounts.iter();
     let source_collateral_info = next_account_info(account_info_iter)?;
     let destination_collateral_info = next_account_info(account_info_iter)?;
     let withdraw_reserve_info = next_account_info(account_info_iter)?;
@@ -1453,9 +1419,6 @@ fn process_withdraw_obligation_collateral(
     let lending_market_authority_info = next_account_info(account_info_iter)?;
     let obligation_owner_info = next_account_info(account_info_iter)?;
     let clock = &Clock::get()?;
-    if account_info_iter.peek().map(|a| a.key) == Some(&clock::ID) {
-        next_account_info(account_info_iter)?;
-    }
     let token_program_id = next_account_info(account_info_iter)?;
     _withdraw_obligation_collateral(
         program_id,
@@ -1663,7 +1626,7 @@ fn process_borrow_obligation_liquidity(
         return Err(LendingError::InvalidAmount.into());
     }
 
-    let account_info_iter = &mut accounts.iter().peekable();
+    let account_info_iter = &mut accounts.iter();
     let source_liquidity_info = next_account_info(account_info_iter)?;
     let destination_liquidity_info = next_account_info(account_info_iter)?;
     let borrow_reserve_info = next_account_info(account_info_iter)?;
@@ -1673,9 +1636,6 @@ fn process_borrow_obligation_liquidity(
     let lending_market_authority_info = next_account_info(account_info_iter)?;
     let obligation_owner_info = next_account_info(account_info_iter)?;
     let clock = &Clock::get()?;
-    if account_info_iter.peek().map(|a| a.key) == Some(&clock::ID) {
-        next_account_info(account_info_iter)?;
-    }
     let token_program_id = next_account_info(account_info_iter)?;
 
     let mut lending_market = LendingMarket::unpack(&lending_market_info.data.borrow())?;
@@ -1952,7 +1912,7 @@ fn process_repay_obligation_liquidity(
         msg!("Liquidity amount provided cannot be zero");
         return Err(LendingError::InvalidAmount.into());
     }
-    let account_info_iter = &mut accounts.iter().peekable();
+    let account_info_iter = &mut accounts.iter();
     let source_liquidity_info = next_account_info(account_info_iter)?;
     let destination_liquidity_info = next_account_info(account_info_iter)?;
     let repay_reserve_info = next_account_info(account_info_iter)?;
@@ -1960,9 +1920,6 @@ fn process_repay_obligation_liquidity(
     let lending_market_info = next_account_info(account_info_iter)?;
     let user_transfer_authority_info = next_account_info(account_info_iter)?;
     let clock = &Clock::get()?;
-    if account_info_iter.peek().map(|a| a.key) == Some(&clock::ID) {
-        next_account_info(account_info_iter)?;
-    }
     let token_program_id = next_account_info(account_info_iter)?;
 
     let lending_market = LendingMarket::unpack(&lending_market_info.data.borrow())?;
@@ -2358,7 +2315,7 @@ fn process_withdraw_obligation_collateral_and_redeem_reserve_liquidity(
     collateral_amount: u64,
     accounts: &[AccountInfo],
 ) -> ProgramResult {
-    let account_info_iter = &mut accounts.iter().peekable();
+    let account_info_iter = &mut accounts.iter();
     let reserve_collateral_info = next_account_info(account_info_iter)?;
     let user_collateral_info = next_account_info(account_info_iter)?;
     let reserve_info = next_account_info(account_info_iter)?;
@@ -2371,9 +2328,6 @@ fn process_withdraw_obligation_collateral_and_redeem_reserve_liquidity(
     let obligation_owner_info = next_account_info(account_info_iter)?;
     let user_transfer_authority_info = next_account_info(account_info_iter)?;
     let clock = &Clock::get()?;
-    if account_info_iter.peek().map(|a| a.key) == Some(&clock::ID) {
-        next_account_info(account_info_iter)?;
-    }
     let token_program_id = next_account_info(account_info_iter)?;
 
     let liquidity_amount = _withdraw_obligation_collateral(
@@ -2553,7 +2507,7 @@ fn process_update_reserve_config(
 
 #[inline(never)] // avoid stack frame limit
 fn process_redeem_fees(program_id: &Pubkey, accounts: &[AccountInfo]) -> ProgramResult {
-    let account_info_iter = &mut accounts.iter().peekable();
+    let account_info_iter = &mut accounts.iter();
     let reserve_info = next_account_info(account_info_iter)?;
     let reserve_liquidity_fee_receiver_info = next_account_info(account_info_iter)?;
     let reserve_supply_liquidity_info = next_account_info(account_info_iter)?;
