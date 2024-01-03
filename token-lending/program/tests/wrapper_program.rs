@@ -4,6 +4,7 @@ use crate::solend_program_test::TokenBalanceChange;
 use solana_sdk::instruction::InstructionError;
 use solana_sdk::transaction::TransactionError;
 use std::collections::HashSet;
+use wrapper::processor::max_repay;
 
 use crate::solend_program_test::custom_scenario;
 use crate::solend_program_test::find_reserve;
@@ -285,4 +286,57 @@ async fn test_liquidate_fail() {
     );
     let (balance_changes, _) = balance_checker.find_balance_changes(&mut test).await;
     assert!(balance_changes.is_empty());
+}
+
+#[tokio::test]
+async fn test_repay() {
+    let (mut test, lending_market, reserves, obligations, users, _lending_market_owner) =
+        custom_scenario(
+            &[
+                ReserveArgs {
+                    mint: usdc_mint::id(),
+                    config: reserve_config_no_fees(),
+                    liquidity_amount: 10 * FRACTIONAL_TO_USDC,
+                    price: PriceArgs {
+                        price: 10,
+                        conf: 0,
+                        expo: -1,
+                        ema_price: 10,
+                        ema_conf: 0,
+                    },
+                },
+                ReserveArgs {
+                    mint: wsol_mint::id(),
+                    config: reserve_config_no_fees(),
+                    liquidity_amount: 100 * LAMPORTS_PER_SOL,
+                    price: PriceArgs {
+                        price: 10,
+                        conf: 0,
+                        expo: 0,
+                        ema_price: 10,
+                        ema_conf: 0,
+                    },
+                },
+            ],
+            &[ObligationArgs {
+                deposits: vec![(usdc_mint::id(), 100 * FRACTIONAL_TO_USDC)],
+                borrows: vec![(wsol_mint::id(), LAMPORTS_PER_SOL)],
+            }],
+        )
+        .await;
+
+    let instruction = max_repay(
+        wrapper::id(),
+        solend_program::id(),
+        users[0].get_account(&wsol_mint::id()).unwrap(),
+        reserves[1].account.liquidity.supply_pubkey,
+        reserves[1].pubkey,
+        obligations[0].pubkey,
+        lending_market.pubkey,
+        users[0].keypair.pubkey(),
+    );
+
+    test.process_transaction(&[instruction], Some(&[&users[0].keypair]))
+        .await
+        .unwrap();
 }

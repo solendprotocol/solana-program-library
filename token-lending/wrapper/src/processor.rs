@@ -14,7 +14,9 @@ use solana_program::{
     program_pack::Pack,
     pubkey::Pubkey,
 };
-use solend_sdk::instruction::liquidate_obligation_and_redeem_reserve_collateral;
+use solend_sdk::instruction::{
+    liquidate_obligation_and_redeem_reserve_collateral, repay_obligation_liquidity,
+};
 use thiserror::Error;
 
 /// Instruction types
@@ -27,6 +29,8 @@ pub enum WrapperInstruction {
         /// amount to liquidate
         liquidity_amount: u64,
     },
+    /// Repay obligation liquidity with max amount in token account
+    RepayMax,
 }
 
 /// Processes an instruction
@@ -111,9 +115,55 @@ pub fn process_instruction(
                 msg!("We received ctokens, aborting");
                 return Err(WrapperError::ReceivedCTokens.into());
             }
+
+            Ok(())
+        }
+        WrapperInstruction::RepayMax => {
+            msg!("Instruction: RepayMax");
+            let account_info_iter = &mut accounts.iter();
+            let solend_program_id = next_account_info(account_info_iter)?;
+            let source_liquidity_info = next_account_info(account_info_iter)?;
+            let destination_liquidity_info = next_account_info(account_info_iter)?;
+            let repay_reserve_info = next_account_info(account_info_iter)?;
+            let obligation_info = next_account_info(account_info_iter)?;
+            let lending_market_info = next_account_info(account_info_iter)?;
+            let user_transfer_authority_info = next_account_info(account_info_iter)?;
+            let token_program_id = next_account_info(account_info_iter)?;
+
+            let source_liquidity_balance = spl_token::state::Account::unpack_from_slice(
+                &source_liquidity_info.try_borrow_data()?,
+            )?
+            .amount;
+            msg!("source_liquidity_balance: {}", source_liquidity_balance);
+
+            let instruction = repay_obligation_liquidity(
+                *solend_program_id.key,
+                source_liquidity_balance,
+                *source_liquidity_info.key,
+                *destination_liquidity_info.key,
+                *repay_reserve_info.key,
+                *obligation_info.key,
+                *lending_market_info.key,
+                *user_transfer_authority_info.key,
+            );
+
+            invoke(
+                &instruction,
+                &[
+                    solend_program_id.clone(),
+                    source_liquidity_info.clone(),
+                    destination_liquidity_info.clone(),
+                    repay_reserve_info.clone(),
+                    obligation_info.clone(),
+                    lending_market_info.clone(),
+                    user_transfer_authority_info.clone(),
+                    token_program_id.clone(),
+                ],
+            )?;
+
+            Ok(())
         }
     }
-    Ok(())
 }
 
 /// Errors that may be returned by the TokenLending program.
@@ -177,5 +227,32 @@ pub fn liquidate_without_receiving_ctokens(
         data: WrapperInstruction::LiquidateWithoutReceivingCtokens { liquidity_amount }
             .try_to_vec()
             .unwrap(),
+    }
+}
+
+/// max repay instruction
+pub fn max_repay(
+    program_id: Pubkey,
+    solend_program_id: Pubkey,
+    source_liquidity_pubkey: Pubkey,
+    destination_liquidity_pubkey: Pubkey,
+    repay_reserve_pubkey: Pubkey,
+    obligation_pubkey: Pubkey,
+    lending_market_pubkey: Pubkey,
+    user_transfer_authority_pubkey: Pubkey,
+) -> Instruction {
+    Instruction {
+        program_id,
+        accounts: vec![
+            AccountMeta::new_readonly(solend_program_id, false),
+            AccountMeta::new(source_liquidity_pubkey, false),
+            AccountMeta::new(destination_liquidity_pubkey, false),
+            AccountMeta::new(repay_reserve_pubkey, false),
+            AccountMeta::new(obligation_pubkey, false),
+            AccountMeta::new(lending_market_pubkey, false),
+            AccountMeta::new_readonly(user_transfer_authority_pubkey, true),
+            AccountMeta::new_readonly(spl_token::id(), false),
+        ],
+        data: WrapperInstruction::RepayMax.try_to_vec().unwrap(),
     }
 }
