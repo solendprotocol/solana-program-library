@@ -201,6 +201,10 @@ pub fn process_instruction(
             msg!("Instruction: Mark Obligation As Closable");
             process_set_obligation_closeability_status(program_id, closeable, accounts)
         }
+        LendingInstruction::RepayObligationLiquidity2 { liquidity_amount, or_best } => {
+            msg!("Instruction: Repay Obligation Liquidity 2");
+            process_repay_obligation_liquidity2(program_id, liquidity_amount, or_best, accounts)
+        }
     }
 }
 
@@ -1908,6 +1912,35 @@ fn process_repay_obligation_liquidity(
     liquidity_amount: u64,
     accounts: &[AccountInfo],
 ) -> ProgramResult {
+    _repay_obligation_liquidity(
+        program_id,
+        liquidity_amount,
+        false,
+        accounts,
+    )
+}
+#[inline(never)] // avoid stack frame limit
+fn process_repay_obligation_liquidity2(
+    program_id: &Pubkey,
+    liquidity_amount: u64,
+    or_best: bool,
+    accounts: &[AccountInfo],
+) -> ProgramResult {
+    _repay_obligation_liquidity(
+        program_id,
+        liquidity_amount,
+        or_best,
+        accounts,
+    )
+}
+
+#[inline(never)] // avoid stack frame limit
+fn _repay_obligation_liquidity(
+    program_id: &Pubkey,
+    mut liquidity_amount: u64,
+    or_best: bool,
+    accounts: &[AccountInfo],
+) -> ProgramResult {
     if liquidity_amount == 0 {
         msg!("Liquidity amount provided cannot be zero");
         return Err(LendingError::InvalidAmount.into());
@@ -1974,6 +2007,15 @@ fn process_repay_obligation_liquidity(
 
     // refreshing specific borrow instead of checking obligation stale
     liquidity.accrue_interest(repay_reserve.liquidity.cumulative_borrow_rate_wads)?;
+
+
+    if or_best {
+        let source_liquidity_balance = spl_token::state::Account::unpack_from_slice(
+            &source_liquidity_info.try_borrow_data()?,
+        )?
+        .amount;
+        liquidity_amount = min(liquidity_amount, source_liquidity_balance);
+    }
 
     let CalculateRepayResult {
         settle_amount,

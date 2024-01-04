@@ -511,6 +511,28 @@ pub enum LendingInstruction {
         /// Obligation is closable
         closeable: bool,
     },
+
+        // 11
+    /// Repay borrowed liquidity to a reserve. Requires a refreshed obligation and reserve.
+    ///
+    /// Accounts expected by this instruction:
+    ///
+    ///   0. `[writable]` Source liquidity token account.
+    ///                     Minted by repay reserve liquidity mint.
+    ///                     $authority can transfer $liquidity_amount.
+    ///   1. `[writable]` Destination repay reserve liquidity supply SPL Token account.
+    ///   2. `[writable]` Repay reserve account - refreshed.
+    ///   3. `[writable]` Obligation account - refreshed.
+    ///   4. `[]` Lending market account.
+    ///   5. `[signer]` User transfer authority ($authority).
+    ///   6. `[]` Clock sysvar (optional, will be removed soon).
+    ///   7. `[]` Token program id.
+    RepayObligationLiquidity2 {
+        /// Amount of liquidity to repay - u64::MAX for 100% of borrowed amount
+        liquidity_amount: u64,
+        /// Amount of liquidity to repay - u64::MAX for 100% of borrowed amount
+        or_best: bool,
+    },
 }
 
 impl LendingInstruction {
@@ -764,6 +786,15 @@ impl LendingInstruction {
                 };
 
                 Self::SetObligationCloseabilityStatus { closeable }
+            }
+            24 => {
+                let (liquidity_amount, rest) = Self::unpack_u64(rest)?;
+                let (or_best, _rest) = match Self::unpack_u8(rest)? {
+                    (0, rest) => (false, rest),
+                    (1, rest) => (true, rest),
+                    _ => return Err(LendingError::InstructionUnpackError.into()),
+                };
+                Self::RepayObligationLiquidity { liquidity_amount }
             }
             _ => {
                 msg!("Instruction cannot be unpacked");
@@ -1059,6 +1090,11 @@ impl LendingInstruction {
             Self::SetObligationCloseabilityStatus { closeable } => {
                 buf.push(23);
                 buf.extend_from_slice(&(closeable as u8).to_le_bytes());
+            }
+            Self::RepayObligationLiquidity2 { liquidity_amount, or_best } => {
+                buf.push(24);
+                buf.extend_from_slice(&liquidity_amount.to_le_bytes());
+                buf.extend_from_slice(&(or_best as u8).to_le_bytes());
             }
         }
         buf
@@ -1848,6 +1884,34 @@ pub fn set_obligation_closeability_status(
     }
 }
 
+/// Creates a `RepayObligationLiquidity2` instruction
+pub fn repay_obligation_liquidity2(
+    program_id: Pubkey,
+    liquidity_amount: u64,
+    or_best: bool,
+    source_liquidity_pubkey: Pubkey,
+    destination_liquidity_pubkey: Pubkey,
+    repay_reserve_pubkey: Pubkey,
+    obligation_pubkey: Pubkey,
+    lending_market_pubkey: Pubkey,
+    user_transfer_authority_pubkey: Pubkey,
+) -> Instruction {
+    Instruction {
+        program_id,
+        accounts: vec![
+            AccountMeta::new(source_liquidity_pubkey, false),
+            AccountMeta::new(destination_liquidity_pubkey, false),
+            AccountMeta::new(repay_reserve_pubkey, false),
+            AccountMeta::new(obligation_pubkey, false),
+            AccountMeta::new_readonly(lending_market_pubkey, false),
+            AccountMeta::new_readonly(user_transfer_authority_pubkey, true),
+            AccountMeta::new_readonly(spl_token::id(), false),
+        ],
+        data: LendingInstruction::RepayObligationLiquidity2 { liquidity_amount, or_best }.pack(),
+    }
+}
+
+
 #[cfg(test)]
 mod test {
     use super::*;
@@ -2173,3 +2237,5 @@ mod test {
         }
     }
 }
+
+
