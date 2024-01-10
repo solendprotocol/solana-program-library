@@ -2,7 +2,6 @@
 
 use borsh::{BorshDeserialize, BorshSerialize};
 use num_derive::FromPrimitive;
-use num_traits::FromPrimitive;
 use solana_program::pubkey::PUBKEY_BYTES;
 use solana_program::{
     account_info::{next_account_info, AccountInfo},

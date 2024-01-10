@@ -5,7 +5,7 @@
 use crate::processor;
 use solana_program::{
     account_info::AccountInfo, entrypoint, entrypoint::ProgramResult,
-    program_error::PrintProgramError, pubkey::Pubkey,
+    pubkey::Pubkey,
 };
 
 entrypoint!(process_instruction);
