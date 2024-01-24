@@ -14,6 +14,7 @@ use solana_program::{
     pubkey::Pubkey,
 };
 use solend_sdk::instruction::{
+    deposit_reserve_liquidity_and_obligation_collateral,
     liquidate_obligation_and_redeem_reserve_collateral, repay_obligation_liquidity,
 };
 use thiserror::Error;
@@ -30,6 +31,8 @@ pub enum WrapperInstruction {
     },
     /// Repay obligation liquidity with max amount in token account
     RepayMax,
+    /// Deposit max
+    DepositMax,
 }
 
 /// Processes an instruction
@@ -162,6 +165,74 @@ pub fn process_instruction(
 
             Ok(())
         }
+        WrapperInstruction::DepositMax => {
+            msg!("Instruction: DepositMax");
+            let account_info_iter = &mut accounts.iter();
+            let solend_program_id = next_account_info(account_info_iter)?;
+            let source_liquidity_info = next_account_info(account_info_iter)?;
+            let user_collateral_info = next_account_info(account_info_iter)?;
+            let reserve_info = next_account_info(account_info_iter)?;
+            let reserve_liquidity_supply_info = next_account_info(account_info_iter)?;
+            let reserve_collateral_mint_info = next_account_info(account_info_iter)?;
+            let lending_market_info = next_account_info(account_info_iter)?;
+            let lending_market_authority_info = next_account_info(account_info_iter)?;
+            let destination_collateral_info = next_account_info(account_info_iter)?;
+            let obligation_info = next_account_info(account_info_iter)?;
+            let obligation_owner_info = next_account_info(account_info_iter)?;
+            let pyth_price_info = next_account_info(account_info_iter)?;
+            let switchboard_feed_info = next_account_info(account_info_iter)?;
+            let user_transfer_authority_info = next_account_info(account_info_iter)?;
+            let token_program_id = next_account_info(account_info_iter)?;
+
+            for a in accounts.iter() {
+                msg!("account: {:?}", a.key);
+            }
+
+            let source_liquidity_balance = spl_token::state::Account::unpack_from_slice(
+                &source_liquidity_info.try_borrow_data()?,
+            )?
+            .amount;
+
+            msg!("source_liquidity_balance: {}", source_liquidity_balance);
+            let instruction = deposit_reserve_liquidity_and_obligation_collateral(
+                *solend_program_id.key,
+                source_liquidity_balance,
+                *source_liquidity_info.key,
+                *user_collateral_info.key,
+                *reserve_info.key,
+                *reserve_liquidity_supply_info.key,
+                *reserve_collateral_mint_info.key,
+                *lending_market_info.key,
+                *destination_collateral_info.key,
+                *obligation_info.key,
+                *obligation_owner_info.key,
+                *pyth_price_info.key,
+                *switchboard_feed_info.key,
+                *user_transfer_authority_info.key,
+            );
+            invoke(
+                &instruction,
+                &[
+                    solend_program_id.clone(),
+                    source_liquidity_info.clone(),
+                    user_collateral_info.clone(),
+                    reserve_info.clone(),
+                    reserve_liquidity_supply_info.clone(),
+                    reserve_collateral_mint_info.clone(),
+                    lending_market_info.clone(),
+                    lending_market_authority_info.clone(),
+                    destination_collateral_info.clone(),
+                    obligation_info.clone(),
+                    obligation_owner_info.clone(),
+                    pyth_price_info.clone(),
+                    switchboard_feed_info.clone(),
+                    user_transfer_authority_info.clone(),
+                    token_program_id.clone(),
+                ],
+            )?;
+
+            Ok(())
+        }
     }
 }
 
@@ -230,6 +301,7 @@ pub fn liquidate_without_receiving_ctokens(
 }
 
 /// max repay instruction
+#[allow(clippy::too_many_arguments)]
 pub fn max_repay(
     program_id: Pubkey,
     solend_program_id: Pubkey,
@@ -253,5 +325,51 @@ pub fn max_repay(
             AccountMeta::new_readonly(spl_token::id(), false),
         ],
         data: WrapperInstruction::RepayMax.try_to_vec().unwrap(),
+    }
+}
+
+/// max deposit
+#[allow(clippy::too_many_arguments)]
+pub fn max_deposit(
+    program_id: Pubkey,
+    solend_program_id: Pubkey,
+    source_liquidity_pubkey: Pubkey,
+    user_collateral_pubkey: Pubkey,
+    reserve_pubkey: Pubkey,
+    reserve_liquidity_supply_pubkey: Pubkey,
+    reserve_collateral_mint_pubkey: Pubkey,
+    lending_market_pubkey: Pubkey,
+    destination_deposit_collateral_pubkey: Pubkey,
+    obligation_pubkey: Pubkey,
+    obligation_owner_pubkey: Pubkey,
+    reserve_liquidity_pyth_oracle_pubkey: Pubkey,
+    reserve_liquidity_switchboard_oracle_pubkey: Pubkey,
+    user_transfer_authority_pubkey: Pubkey,
+) -> Instruction {
+    let (lending_market_authority_pubkey, _bump_seed) = Pubkey::find_program_address(
+        &[&lending_market_pubkey.to_bytes()[..PUBKEY_BYTES]],
+        &solend_program_id,
+    );
+
+    Instruction {
+        program_id,
+        accounts: vec![
+            AccountMeta::new_readonly(solend_program_id, false),
+            AccountMeta::new(source_liquidity_pubkey, false),
+            AccountMeta::new(user_collateral_pubkey, false),
+            AccountMeta::new(reserve_pubkey, false),
+            AccountMeta::new(reserve_liquidity_supply_pubkey, false),
+            AccountMeta::new(reserve_collateral_mint_pubkey, false),
+            AccountMeta::new_readonly(lending_market_pubkey, false),
+            AccountMeta::new_readonly(lending_market_authority_pubkey, false),
+            AccountMeta::new(destination_deposit_collateral_pubkey, false),
+            AccountMeta::new(obligation_pubkey, false),
+            AccountMeta::new(obligation_owner_pubkey, true),
+            AccountMeta::new_readonly(reserve_liquidity_pyth_oracle_pubkey, false),
+            AccountMeta::new_readonly(reserve_liquidity_switchboard_oracle_pubkey, false),
+            AccountMeta::new_readonly(user_transfer_authority_pubkey, true),
+            AccountMeta::new_readonly(spl_token::id(), false),
+        ],
+        data: WrapperInstruction::DepositMax.try_to_vec().unwrap(),
     }
 }

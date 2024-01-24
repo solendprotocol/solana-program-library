@@ -4,6 +4,7 @@ use crate::solend_program_test::TokenBalanceChange;
 use solana_sdk::instruction::InstructionError;
 use solana_sdk::transaction::TransactionError;
 use std::collections::HashSet;
+use wrapper::processor::max_deposit;
 use wrapper::processor::max_repay;
 
 use crate::solend_program_test::custom_scenario;
@@ -335,6 +336,70 @@ async fn test_repay() {
         lending_market.pubkey,
         users[0].keypair.pubkey(),
     );
+
+    test.process_transaction(&[instruction], Some(&[&users[0].keypair]))
+        .await
+        .unwrap();
+}
+
+#[tokio::test]
+async fn test_deposit() {
+    let (mut test, lending_market, reserves, obligations, users, _lending_market_owner) =
+        custom_scenario(
+            &[ReserveArgs {
+                mint: usdc_mint::id(),
+                config: reserve_config_no_fees(),
+                liquidity_amount: 10 * FRACTIONAL_TO_USDC,
+                price: PriceArgs {
+                    price: 10,
+                    conf: 0,
+                    expo: -1,
+                    ema_price: 10,
+                    ema_conf: 0,
+                },
+            }],
+            &[ObligationArgs {
+                deposits: vec![(usdc_mint::id(), 100 * FRACTIONAL_TO_USDC)],
+                borrows: vec![],
+            }],
+        )
+        .await;
+
+    test.advance_clock_by_slots(1).await;
+
+    let new_user =
+        User::new_with_balances(&mut test, &[(&usdc_mint::id(), 100 * FRACTIONAL_TO_USDC)]).await;
+
+    new_user
+        .transfer(
+            &usdc_mint::id(),
+            users[0].get_account(&usdc_mint::id()).unwrap(),
+            100 * FRACTIONAL_TO_USDC,
+            &mut test,
+        )
+        .await;
+
+    test.advance_clock_by_slots(1).await;
+
+    let instruction = max_deposit(
+        wrapper::id(),
+        solend_program::id(),
+        users[0].get_account(&usdc_mint::id()).unwrap(),
+        users[0]
+            .get_account(&reserves[0].account.collateral.mint_pubkey)
+            .unwrap(),
+        reserves[0].pubkey,
+        reserves[0].account.liquidity.supply_pubkey,
+        reserves[0].account.collateral.mint_pubkey,
+        lending_market.pubkey,
+        reserves[0].account.collateral.supply_pubkey,
+        obligations[0].pubkey,
+        obligations[0].account.owner,
+        reserves[0].account.liquidity.pyth_oracle_pubkey,
+        reserves[0].account.liquidity.switchboard_oracle_pubkey,
+        obligations[0].account.owner,
+    );
+    println!("hello");
 
     test.process_transaction(&[instruction], Some(&[&users[0].keypair]))
         .await
