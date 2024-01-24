@@ -39,7 +39,7 @@ use solend_sdk::{
     state::{LendingMarketMetadata, RateLimiter, RateLimiterConfig, ReserveType},
 };
 use solend_sdk::{switchboard_v2_devnet, switchboard_v2_mainnet};
-use spl_token::state::Mint;
+use spl_token::state::{Account, Mint};
 use std::{cmp::min, result::Result};
 use switchboard_program::{
     get_aggregator, get_aggregator_result, AggregatorState, RoundResult, SwitchboardAccountType,
@@ -727,6 +727,19 @@ fn _deposit_reserve_liquidity<'a>(
         return Err(LendingError::InvalidMarketAuthority.into());
     }
 
+    let liquidity_amount = if liquidity_amount == u64::MAX {
+        let user_token_balance = Account::unpack(&source_liquidity_info.data.borrow())
+            .map_err(|_| {
+                msg!("Failed to deserialize user token account");
+                LendingError::InvalidAccountInput
+            })?
+            .amount;
+
+        min(liquidity_amount, user_token_balance)
+    } else {
+        liquidity_amount
+    };
+
     if Decimal::from(liquidity_amount)
         .try_add(reserve.liquidity.total_supply()?)?
         .try_floor_u64()?
@@ -1317,6 +1330,19 @@ fn _deposit_obligation_collateral<'a>(
         msg!("Obligation owner provided must be a signer");
         return Err(LendingError::InvalidSigner.into());
     }
+
+    let collateral_amount = if collateral_amount == u64::MAX {
+        let user_token_balance = Account::unpack(&source_collateral_info.data.borrow())
+            .map_err(|_| {
+                msg!("Failed to deserialize user token account");
+                LendingError::InvalidAccountInput
+            })?
+            .amount;
+
+        min(collateral_amount, user_token_balance)
+    } else {
+        collateral_amount
+    };
 
     obligation
         .find_or_add_collateral_to_deposits(*deposit_reserve_info.key)?
@@ -1974,6 +2000,19 @@ fn process_repay_obligation_liquidity(
 
     // refreshing specific borrow instead of checking obligation stale
     liquidity.accrue_interest(repay_reserve.liquidity.cumulative_borrow_rate_wads)?;
+
+    let liquidity_amount = if liquidity_amount == u64::MAX {
+        let user_token_balance = Account::unpack(&source_liquidity_info.data.borrow())
+            .map_err(|_| {
+                msg!("Failed to deserialize user token account");
+                LendingError::InvalidAccountInput
+            })?
+            .amount;
+
+        min(liquidity_amount, user_token_balance)
+    } else {
+        liquidity_amount
+    };
 
     let CalculateRepayResult {
         settle_amount,

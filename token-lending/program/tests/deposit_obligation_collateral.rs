@@ -118,3 +118,34 @@ async fn test_fail_deposit_too_much() {
         e => panic!("unexpected error: {:#?}", e),
     };
 }
+
+#[tokio::test]
+async fn test_success_deposit_max() {
+    let (mut test, lending_market, usdc_reserve, user, obligation) = setup().await;
+
+    let balance_checker = BalanceChecker::start(&mut test, &[&usdc_reserve, &user]).await;
+
+    lending_market
+        .deposit_obligation_collateral(&mut test, &usdc_reserve, &obligation, &user, u64::MAX)
+        .await
+        .unwrap();
+
+    let (balance_changes, _) = balance_checker.find_balance_changes(&mut test).await;
+
+    let expected_balance_changes = HashSet::from([
+        TokenBalanceChange {
+            token_account: user
+                .get_account(&usdc_reserve.account.collateral.mint_pubkey)
+                .unwrap(),
+            mint: usdc_reserve.account.collateral.mint_pubkey,
+            diff: -1_000_000,
+        },
+        TokenBalanceChange {
+            token_account: usdc_reserve.account.collateral.supply_pubkey,
+            mint: usdc_reserve.account.collateral.mint_pubkey,
+            diff: 1_000_000,
+        },
+    ]);
+
+    assert_eq!(balance_changes, expected_balance_changes);
+}

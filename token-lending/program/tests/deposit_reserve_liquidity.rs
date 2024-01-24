@@ -163,3 +163,50 @@ async fn test_fail_deposit_too_much() {
         e => panic!("unexpected error: {:#?}", e),
     };
 }
+
+#[tokio::test]
+async fn test_success_deposit_max() {
+    let (mut test, lending_market, usdc_reserve, _) = setup().await;
+
+    let user = User::new_with_balances(
+        &mut test,
+        &[
+            (&usdc_mint::id(), 50_000 * FRACTIONAL_TO_USDC),
+            (&usdc_reserve.account.collateral.mint_pubkey, 0),
+        ],
+    )
+    .await;
+
+    let balance_checker = BalanceChecker::start(&mut test, &[&usdc_reserve, &user]).await;
+
+    lending_market
+        .deposit(&mut test, &usdc_reserve, &user, u64::MAX)
+        .await
+        .unwrap();
+
+    let (balance_changes, _) = balance_checker.find_balance_changes(&mut test).await;
+
+    let expected_balance_changes = HashSet::from([
+        TokenBalanceChange {
+            token_account: user
+                .get_account(&usdc_reserve.account.liquidity.mint_pubkey)
+                .unwrap(),
+            mint: usdc_reserve.account.liquidity.mint_pubkey,
+            diff: -(50_000 * FRACTIONAL_TO_USDC as i128),
+        },
+        TokenBalanceChange {
+            token_account: user
+                .get_account(&usdc_reserve.account.collateral.mint_pubkey)
+                .unwrap(),
+            mint: usdc_reserve.account.collateral.mint_pubkey,
+            diff: 50_000 * FRACTIONAL_TO_USDC as i128,
+        },
+        TokenBalanceChange {
+            token_account: usdc_reserve.account.liquidity.supply_pubkey,
+            mint: usdc_reserve.account.liquidity.mint_pubkey,
+            diff: 50_000 * FRACTIONAL_TO_USDC as i128,
+        },
+    ]);
+
+    assert_eq!(balance_changes, expected_balance_changes);
+}

@@ -2,7 +2,14 @@
 
 mod helpers;
 
+use crate::solend_program_test::custom_scenario;
 use crate::solend_program_test::scenario_1;
+use crate::solend_program_test::ObligationArgs;
+use crate::solend_program_test::PriceArgs;
+use crate::solend_program_test::ReserveArgs;
+use crate::solend_program_test::User;
+use solend_sdk::state::ReserveConfig;
+use solend_sdk::state::ReserveFees;
 use std::collections::HashSet;
 
 use helpers::solend_program_test::{BalanceChecker, TokenBalanceChange};
@@ -109,4 +116,79 @@ async fn test_success() {
             ..obligation.account
         }
     );
+}
+
+#[tokio::test]
+async fn test_repay_max() {
+    let (mut test, lending_market, reserves, obligations, _users, _) = custom_scenario(
+        &[
+            ReserveArgs {
+                mint: usdc_mint::id(),
+                config: test_reserve_config(),
+                liquidity_amount: 100_000 * FRACTIONAL_TO_USDC,
+                price: PriceArgs {
+                    price: 10,
+                    conf: 0,
+                    expo: -1,
+                    ema_price: 10,
+                    ema_conf: 1,
+                },
+            },
+            ReserveArgs {
+                mint: wsol_mint::id(),
+                config: ReserveConfig {
+                    loan_to_value_ratio: 50,
+                    liquidation_threshold: 55,
+                    fees: ReserveFees::default(),
+                    optimal_borrow_rate: 0,
+                    max_borrow_rate: 0,
+                    ..test_reserve_config()
+                },
+                liquidity_amount: 100 * LAMPORTS_PER_SOL,
+                price: PriceArgs {
+                    price: 10,
+                    conf: 0,
+                    expo: 0,
+                    ema_price: 10,
+                    ema_conf: 0,
+                },
+            },
+        ],
+        &[ObligationArgs {
+            deposits: vec![(usdc_mint::id(), 100 * FRACTIONAL_TO_USDC)],
+            borrows: vec![(wsol_mint::id(), LAMPORTS_PER_SOL)],
+        }],
+    )
+    .await;
+
+    let repayooor =
+        User::new_with_balances(&mut test, &[(&wsol_mint::id(), LAMPORTS_PER_SOL / 10)]).await;
+
+    let balance_checker = BalanceChecker::start(&mut test, &[&repayooor, &reserves[1]]).await;
+
+    lending_market
+        .repay_obligation_liquidity(
+            &mut test,
+            &reserves[1],
+            &obligations[0],
+            &repayooor,
+            u64::MAX,
+        )
+        .await
+        .unwrap();
+
+    let (balance_changes, _) = balance_checker.find_balance_changes(&mut test).await;
+    let expected_balance_changes = HashSet::from([
+        TokenBalanceChange {
+            token_account: repayooor.get_account(&wsol_mint::id()).unwrap(),
+            mint: wsol_mint::id(),
+            diff: -((LAMPORTS_PER_SOL / 10) as i128),
+        },
+        TokenBalanceChange {
+            token_account: reserves[1].account.liquidity.supply_pubkey,
+            mint: wsol_mint::id(),
+            diff: (LAMPORTS_PER_SOL / 10) as i128,
+        },
+    ]);
+    assert_eq!(balance_changes, expected_balance_changes);
 }
