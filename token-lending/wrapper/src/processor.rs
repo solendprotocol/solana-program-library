@@ -17,6 +17,9 @@ use solend_sdk::instruction::{
     deposit_reserve_liquidity_and_obligation_collateral,
     liquidate_obligation_and_redeem_reserve_collateral, repay_obligation_liquidity,
 };
+use solend_sdk::math::Decimal;
+use solend_sdk::math::SaturatingSub;
+use solend_sdk::state::Reserve;
 use thiserror::Error;
 
 /// Instruction types
@@ -192,6 +195,12 @@ pub fn process_instruction(
                 &source_liquidity_info.try_borrow_data()?,
             )?
             .amount;
+
+            let reserve = Reserve::unpack(&reserve_info.try_borrow_data()?)?;
+            let remaining_deposit_capacity = Decimal::from(reserve.config.deposit_limit)
+                .saturating_sub(reserve.liquidity.total_supply()?);
+            let source_liquidity_balance =
+                std::cmp::min(source_liquidity_balance, remaining_deposit_capacity.try_floor_u64()?);
 
             msg!("source_liquidity_balance: {}", source_liquidity_balance);
             let instruction = deposit_reserve_liquidity_and_obligation_collateral(
