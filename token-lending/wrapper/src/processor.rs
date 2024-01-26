@@ -187,10 +187,6 @@ pub fn process_instruction(
             let user_transfer_authority_info = next_account_info(account_info_iter)?;
             let token_program_id = next_account_info(account_info_iter)?;
 
-            for a in accounts.iter() {
-                msg!("account: {:?}", a.key);
-            }
-
             let source_liquidity_balance = spl_token::state::Account::unpack_from_slice(
                 &source_liquidity_info.try_borrow_data()?,
             )?
