@@ -2611,7 +2611,6 @@ fn process_redeem_fees(program_id: &Pubkey, accounts: &[AccountInfo]) -> Program
         return Err(LendingError::InvalidMarketAuthority.into());
     }
 
-
     let withdraw_amount = reserve.calculate_redeem_fees()?;
     if withdraw_amount == 0 {
         return Err(LendingError::InsufficientProtocolFeesToRedeem.into());
