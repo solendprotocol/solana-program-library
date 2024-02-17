@@ -24,6 +24,7 @@ jobs:
           source ci/solana-version.sh
           echo "SOLANA_VERSION=$solana_version" >> $GITHUB_ENV
 
+
       - uses: actions-rs/toolchain@v1
         with:
           toolchain: ${{ env.RUST_STABLE }}
