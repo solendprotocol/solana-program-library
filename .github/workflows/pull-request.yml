@@ -11,7 +11,7 @@ on:
 
 jobs:
   all_github_action_checks:
-    runs-on: ubuntu-latest
+    runs-on: blacksmith-16vcpu-ubuntu-2204
     needs:
       - rustfmt
       - clippy
@@ -20,7 +20,7 @@ jobs:
       - run: echo "Done"
 
   rustfmt:
-    runs-on: ubuntu-latest
+    runs-on: blacksmith-16vcpu-ubuntu-2204
     steps:
       - uses: actions/checkout@v2
 
@@ -43,7 +43,7 @@ jobs:
           args: --all -- --check
 
   clippy:
-    runs-on: ubuntu-latest
+    runs-on: blacksmith-16vcpu-ubuntu-2204
     steps:
       - uses: actions/checkout@v2
 
@@ -79,7 +79,7 @@ jobs:
           args: --workspace --all-targets -- --deny=warnings
 
   cargo-build-test:
-    runs-on: ubuntu-latest
+    runs-on: blacksmith-16vcpu-ubuntu-2204
     steps:
       - uses: actions/checkout@v2
 
@@ -126,7 +126,7 @@ jobs:
         run: ./ci/cargo-build-test.sh
 
   cargo-coverage:
-    runs-on: ubuntu-latest-16-cores
+    runs-on: blacksmith-16vcpu-ubuntu-2204
     steps:
       - uses: actions/checkout@v2
 
