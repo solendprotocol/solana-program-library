@@ -486,6 +486,7 @@ async fn test_liquidation_doesnt_use_smoothed_price() {
             diff: -((LAMPORTS_PER_SOL / 5) as i128),
         },
     ]);
+    println!("hello");
 
     assert_eq!(balance_changes, expected_balances_changes);
 }

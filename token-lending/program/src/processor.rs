@@ -600,9 +600,9 @@ fn _refresh_reserve<'a>(
 
 /// Lite version of refresh_reserve that should be used when the oracle price doesn't need to be updated
 /// BE CAREFUL WHEN USING THIS
-fn _refresh_reserve_interest<'a>(
+fn _refresh_reserve_interest(
     program_id: &Pubkey,
-    reserve_info: &AccountInfo<'a>,
+    reserve_info: &AccountInfo<'_>,
     clock: &Clock,
 ) -> ProgramResult {
     let mut reserve = Box::new(Reserve::unpack(&reserve_info.data.borrow())?);
