@@ -111,6 +111,15 @@ struct PartialReserveConfig {
     pub added_borrow_weight_bps: Option<u64>,
     /// Type of the reseerve (Regular, Isolated)
     pub reserve_type: Option<ReserveType>,
+    /// scaled price offset in basis points. Exclusively used to calculate a more reliable asset price for
+    /// staked assets (mSOL, stETH). Not used on extra oracle
+    pub scaled_price_offset_bps: Option<i64>,
+    /// Extra oracle. Only used to limit borrows and withdrawals.
+    pub extra_oracle_pubkey: Option<Option<Pubkey>>,
+    /// Open Attributed Borrow limit in USD
+    pub attributed_borrow_limit_open: Option<u64>,
+    /// Close Attributed Borrow limit in USD
+    pub attributed_borrow_limit_close: Option<u64>,
 }
 
 /// Reserve Fees with optional fields
@@ -649,6 +658,45 @@ fn main() {
                         .default_value("Regular")
                         .help("Reserve type"),
                 )
+                .arg(
+                    Arg::with_name("scaled_price_offset_bps")
+                        .long("scaled-price-offset-bps")
+                        .validator(is_parsable::<i64>)
+                        .value_name("INTEGER")
+                        .takes_value(true)
+                        .required(false)
+                        .default_value("0")
+                        .help("Scaled price offset in basis points"),
+                )
+                .arg(
+                    Arg::with_name("extra_oracle_pubkey")
+                        .long("extra-oracle-pubkey")
+                        .validator(is_pubkey)
+                        .value_name("PUBKEY")
+                        .takes_value(true)
+                        .required(false)
+                        .help("Extra oracle account"),
+                )
+                .arg(
+                    Arg::with_name("attributed_borrow_limit_open")
+                        .long("attributed-borrow-limit-open")
+                        .validator(is_parsable::<u64>)
+                        .value_name("INTEGER")
+                        .takes_value(true)
+                        .required(false)
+                        .default_value("0")
+                        .help("Open Attributed Borrow limit in USD"),
+                )
+                .arg(
+                    Arg::with_name("attributed_borrow_limit_close")
+                        .long("attributed-borrow-limit-close")
+                        .validator(is_parsable::<u64>)
+                        .value_name("INTEGER")
+                        .takes_value(true)
+                        .required(false)
+                        .default_value("0")
+                        .help("Close Attributed Borrow limit in USD"),
+                )
         )
         .subcommand(
             SubCommand::with_name("set-lending-market-owner-and-config")
@@ -982,6 +1030,42 @@ fn main() {
                         .default_value("Regular")
                         .help("Reserve type"),
                 )
+                .arg(
+                    Arg::with_name("scaled_price_offset_bps")
+                        .long("scaled-price-offset-bps")
+                        .validator(is_parsable::<i64>)
+                        .value_name("INTEGER")
+                        .takes_value(true)
+                        .required(false)
+                        .help("Scaled price offset in basis points"),
+                )
+                .arg(
+                    Arg::with_name("extra_oracle_pubkey")
+                        .long("extra-oracle-pubkey")
+                        .validator(is_pubkey)
+                        .value_name("PUBKEY")
+                        .takes_value(true)
+                        .required(false)
+                        .help("Extra oracle account"),
+                )
+                .arg(
+                    Arg::with_name("attributed_borrow_limit_open")
+                        .long("attributed-borrow-limit-open")
+                        .validator(is_parsable::<u64>)
+                        .value_name("INTEGER")
+                        .takes_value(true)
+                        .required(false)
+                        .help("Open Attributed Borrow limit in USD"),
+                )
+                .arg(
+                    Arg::with_name("attributed_borrow_limit_close")
+                        .long("attributed-borrow-limit-close")
+                        .validator(is_parsable::<u64>)
+                        .value_name("INTEGER")
+                        .takes_value(true)
+                        .required(false)
+                        .help("Close Attributed Borrow limit in USD"),
+                )
         )
         .get_matches();
 
@@ -1270,6 +1354,12 @@ fn main() {
             let rate_limiter_max_outflow = value_of(arg_matches, "rate_limiter_max_outflow");
             let added_borrow_weight_bps = value_of(arg_matches, "added_borrow_weight_bps");
             let reserve_type = value_of(arg_matches, "reserve_type");
+            let scaled_price_offset_bps = value_of(arg_matches, "scaled_price_offset_bps");
+            let extra_oracle_pubkey = pubkey_of(arg_matches, "extra_oracle_pubkey");
+            let attributed_borrow_limit_open =
+                value_of(arg_matches, "attributed_borrow_limit_open");
+            let attributed_borrow_limit_close =
+                value_of(arg_matches, "attributed_borrow_limit_close");
 
             let borrow_fee_wad = borrow_fee.map(|fee| (fee * WAD as f64) as u64);
             let flash_loan_fee_wad = flash_loan_fee.map(|fee| (fee * WAD as f64) as u64);
@@ -1302,6 +1392,14 @@ fn main() {
                     rate_limiter_max_outflow,
                     added_borrow_weight_bps,
                     reserve_type,
+                    scaled_price_offset_bps,
+                    extra_oracle_pubkey: if arg_matches.is_present("extra_oracle_pubkey") {
+                        Some(extra_oracle_pubkey)
+                    } else {
+                        None
+                    },
+                    attributed_borrow_limit_open,
+                    attributed_borrow_limit_close,
                 },
                 pyth_product_pubkey,
                 pyth_price_pubkey,
@@ -2189,6 +2287,58 @@ fn command_update_reserve(
         reserve.config.reserve_type = reserve_config.reserve_type.unwrap();
     }
 
+    if reserve_config.scaled_price_offset_bps.is_some()
+        && reserve.config.scaled_price_offset_bps != reserve_config.scaled_price_offset_bps.unwrap()
+    {
+        no_change = false;
+        println!(
+            "Updating scaled_price_offset_bps from {} to {}",
+            reserve.config.scaled_price_offset_bps,
+            reserve_config.scaled_price_offset_bps.unwrap(),
+        );
+        reserve.config.scaled_price_offset_bps = reserve_config.scaled_price_offset_bps.unwrap();
+    }
+
+    if reserve_config.extra_oracle_pubkey.is_some()
+        && reserve.config.extra_oracle_pubkey != reserve_config.extra_oracle_pubkey.unwrap()
+    {
+        no_change = false;
+        println!(
+            "Updating extra_oracle_pubkey from {:?} to {:?}",
+            reserve.config.extra_oracle_pubkey,
+            reserve_config.extra_oracle_pubkey.unwrap(),
+        );
+        reserve.config.extra_oracle_pubkey = reserve_config.extra_oracle_pubkey.unwrap();
+    }
+
+    if reserve_config.attributed_borrow_limit_open.is_some()
+        && reserve.config.attributed_borrow_limit_open
+            != reserve_config.attributed_borrow_limit_open.unwrap()
+    {
+        no_change = false;
+        println!(
+            "Updating attributed_borrow_limit_open from {} to {}",
+            reserve.config.attributed_borrow_limit_open,
+            reserve_config.attributed_borrow_limit_open.unwrap(),
+        );
+        reserve.config.attributed_borrow_limit_open =
+            reserve_config.attributed_borrow_limit_open.unwrap();
+    }
+
+    if reserve_config.attributed_borrow_limit_close.is_some()
+        && reserve.config.attributed_borrow_limit_close
+            != reserve_config.attributed_borrow_limit_close.unwrap()
+    {
+        no_change = false;
+        println!(
+            "Updating attributed_borrow_limit_close from {} to {}",
+            reserve.config.attributed_borrow_limit_close,
+            reserve_config.attributed_borrow_limit_close.unwrap(),
+        );
+        reserve.config.attributed_borrow_limit_close =
+            reserve_config.attributed_borrow_limit_close.unwrap();
+    }
+
     if validate_reserve_config(reserve.config).is_err() {
         println!("Error: invalid reserve config");
         return Err("Error: invalid reserve config".into());
@@ -2202,20 +2352,23 @@ fn command_update_reserve(
     let recent_blockhash = config.rpc_client.get_latest_blockhash()?;
 
     let message = Message::new_with_blockhash(
-        &[update_reserve_config(
-            config.lending_program_id,
-            reserve.config,
-            RateLimiterConfig {
-                window_duration: reserve.rate_limiter.config.window_duration,
-                max_outflow: reserve.rate_limiter.config.max_outflow,
-            },
-            reserve_pubkey,
-            lending_market_pubkey,
-            lending_market_owner_keypair.pubkey(),
-            new_pyth_product_pubkey,
-            reserve.liquidity.pyth_oracle_pubkey,
-            reserve.liquidity.switchboard_oracle_pubkey,
-        )],
+        &[
+            ComputeBudgetInstruction::set_compute_unit_price(30101),
+            update_reserve_config(
+                config.lending_program_id,
+                reserve.config,
+                RateLimiterConfig {
+                    window_duration: reserve.rate_limiter.config.window_duration,
+                    max_outflow: reserve.rate_limiter.config.max_outflow,
+                },
+                reserve_pubkey,
+                lending_market_pubkey,
+                lending_market_owner_keypair.pubkey(),
+                new_pyth_product_pubkey,
+                reserve.liquidity.pyth_oracle_pubkey,
+                reserve.liquidity.switchboard_oracle_pubkey,
+            ),
+        ],
         Some(&config.fee_payer.pubkey()),
         &recent_blockhash,
     );
