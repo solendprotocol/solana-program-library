@@ -1,3 +1,5 @@
+#![allow(deprecated)]
+
 use super::*;
 use crate::{
     error::LendingError,

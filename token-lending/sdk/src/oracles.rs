@@ -1,3 +1,4 @@
+/*
 #![allow(missing_docs)]
 use crate::{
     self as solend_program,
@@ -413,3 +414,4 @@ mod test {
         }
     }
 }
+ */

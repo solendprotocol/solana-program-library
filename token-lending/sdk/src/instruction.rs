@@ -1,5 +1,7 @@
 //! Instruction types
 
+#![allow(deprecated)]
+
 use crate::state::{LendingMarketMetadata, ReserveType};
 use crate::{
     error::LendingError,
