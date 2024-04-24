@@ -671,7 +671,6 @@ fn main() {
                 .arg(
                     Arg::with_name("extra_oracle_pubkey")
                         .long("extra-oracle-pubkey")
-                        .validator(is_pubkey)
                         .value_name("PUBKEY")
                         .takes_value(true)
                         .required(false)
@@ -1042,7 +1041,6 @@ fn main() {
                 .arg(
                     Arg::with_name("extra_oracle_pubkey")
                         .long("extra-oracle-pubkey")
-                        .validator(is_pubkey)
                         .value_name("PUBKEY")
                         .takes_value(true)
                         .required(false)
