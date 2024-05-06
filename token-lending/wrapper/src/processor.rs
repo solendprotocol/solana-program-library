@@ -1,6 +1,5 @@
 //! Program state processor
 
-use solend_sdk::math::TrySub;
 use borsh::{BorshDeserialize, BorshSerialize};
 use num_derive::FromPrimitive;
 use solana_program::pubkey::PUBKEY_BYTES;
@@ -20,6 +19,7 @@ use solend_sdk::instruction::{
     withdraw_obligation_collateral_and_redeem_reserve_collateral,
 };
 use solend_sdk::math::Decimal;
+use solend_sdk::math::TrySub;
 use solend_sdk::state::Reserve;
 use thiserror::Error;
 
@@ -264,6 +264,11 @@ pub fn process_instruction(
             let user_transfer_authority_info = next_account_info(account_info_iter)?;
             let token_program_id = next_account_info(account_info_iter)?;
 
+            // while account info iter has pubkeys, add them to collateral reserves
+            let collateral_reserves = account_info_iter
+                .map(|account_info| *account_info.key)
+                .collect();
+
             let reserve = Reserve::unpack(&reserve_info.try_borrow_data()?)?;
             let mut ctoken_amount = reserve
                 .collateral_exchange_rate()?
@@ -289,6 +294,7 @@ pub fn process_instruction(
                 *reserve_liquidity_supply_info.key,
                 *obligation_owner_info.key,
                 *user_transfer_authority_info.key,
+                collateral_reserves,
             );
 
             invoke(
@@ -468,6 +474,7 @@ pub fn withdraw_exact(
     reserve_liquidity_supply_pubkey: Pubkey,
     obligation_owner_pubkey: Pubkey,
     user_transfer_authority_pubkey: Pubkey,
+    collateral_reserves: Vec<Pubkey>,
     liquidity_amount: u64,
 ) -> Instruction {
     let (lending_market_authority_pubkey, _bump_seed) = Pubkey::find_program_address(
@@ -475,28 +482,33 @@ pub fn withdraw_exact(
         &solend_program_id,
     );
 
+    let mut accounts = vec![
+        AccountMeta::new_readonly(solend_program_id, false),
+        AccountMeta::new(reserve_collateral_pubkey, false),
+        AccountMeta::new(user_collateral_pubkey, false),
+        AccountMeta::new(reserve_pubkey, false),
+        AccountMeta::new(obligation_pubkey, false),
+        AccountMeta::new(lending_market_pubkey, false),
+        AccountMeta::new_readonly(lending_market_authority_pubkey, false),
+        AccountMeta::new(user_liquidity_pubkey, false),
+        AccountMeta::new(reserve_collateral_mint_pubkey, false),
+        AccountMeta::new(reserve_liquidity_supply_pubkey, false),
+        AccountMeta::new(obligation_owner_pubkey, true),
+        AccountMeta::new_readonly(user_transfer_authority_pubkey, true),
+        AccountMeta::new_readonly(spl_token::id(), false),
+    ];
+
+    accounts.extend(
+        collateral_reserves
+            .iter()
+            .map(|reserve| AccountMeta::new(*reserve, false)),
+    );
+
     Instruction {
         program_id,
-        accounts: vec![
-            AccountMeta::new_readonly(solend_program_id, false),
-            AccountMeta::new(reserve_collateral_pubkey, false),
-            AccountMeta::new(user_collateral_pubkey, false),
-            AccountMeta::new(reserve_pubkey, false),
-            AccountMeta::new(obligation_pubkey, false),
-            AccountMeta::new(lending_market_pubkey, false),
-            AccountMeta::new_readonly(lending_market_authority_pubkey, false),
-            AccountMeta::new(user_liquidity_pubkey, false),
-            AccountMeta::new(reserve_collateral_mint_pubkey, false),
-            AccountMeta::new(reserve_liquidity_supply_pubkey, false),
-            AccountMeta::new(obligation_owner_pubkey, true),
-            AccountMeta::new_readonly(user_transfer_authority_pubkey, true),
-            AccountMeta::new_readonly(spl_token::id(), false),
-        ],
+        accounts,
         data: WrapperInstruction::WithdrawExact { liquidity_amount }
             .try_to_vec()
             .unwrap(),
     }
 }
-
-
-
