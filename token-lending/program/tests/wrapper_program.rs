@@ -1,10 +1,10 @@
 #![cfg(feature = "test-bpf")]
 
-use solana_sdk::signer::keypair::Keypair;
-use solend_sdk::state::{ReserveFees, ReserveType};
 use crate::solend_program_test::TokenBalanceChange;
 use solana_sdk::instruction::InstructionError;
+use solana_sdk::signer::keypair::Keypair;
 use solana_sdk::transaction::TransactionError;
+use solend_sdk::state::{ReserveFees, ReserveType};
 use std::collections::HashSet;
 use wrapper::processor::max_deposit;
 use wrapper::processor::max_repay;
@@ -445,7 +445,9 @@ async fn test_withdraw_exact() {
         solend_program::id(),
         reserves[0].account.collateral.supply_pubkey,
         // user_collateral_pubkey,
-        users[0].get_account(&reserves[0].account.collateral.mint_pubkey).unwrap(),
+        users[0]
+            .get_account(&reserves[0].account.collateral.mint_pubkey)
+            .unwrap(),
         // reserve_pubkey,
         reserves[0].pubkey,
         // obligation_pubkey,
@@ -453,7 +455,9 @@ async fn test_withdraw_exact() {
         // lending_market_pubkey,
         lending_market.pubkey,
         // user_liquidity_pubkey,
-        users[0].get_account(&reserves[0].account.liquidity.mint_pubkey).unwrap(),
+        users[0]
+            .get_account(&reserves[0].account.liquidity.mint_pubkey)
+            .unwrap(),
         // reserve_collateral_mint_pubkey,
         reserves[0].account.collateral.mint_pubkey,
         // reserve_liquidity_supply_pubkey,
@@ -462,7 +466,12 @@ async fn test_withdraw_exact() {
         obligations[0].account.owner,
         // user_transfer_authority_pubkey,
         users[0].keypair.pubkey(),
-        obligations[0].account.deposits.iter().map(|d| d.deposit_reserve).collect(),
+        obligations[0]
+            .account
+            .deposits
+            .iter()
+            .map(|d| d.deposit_reserve)
+            .collect(),
         // liquidity amount
         4 * FRACTIONAL_TO_USDC,
     ));
