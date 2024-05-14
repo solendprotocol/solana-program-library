@@ -7,7 +7,7 @@ use crate::{
     state::LendingMarket,
     switchboard_v2_mainnet,
 };
-use pyth_sdk_solana::Price;
+use pyth_sdk_solana::{state::SolanaPriceAccount, Price};
 // use pyth_sdk_solana;
 use solana_program::{
     account_info::AccountInfo, msg, program_error::ProgramError, sysvar::clock::Clock,
@@ -81,10 +81,11 @@ pub fn get_pyth_price(
     }
 
     let data = &pyth_price_info.try_borrow_data()?;
-    let price_account = pyth_sdk_solana::state::load_price_account(data).map_err(|e| {
-        msg!("Couldn't load price feed from account info: {:?}", e);
-        LendingError::InvalidOracleConfig
-    })?;
+    let price_account: &SolanaPriceAccount = pyth_sdk_solana::state::load_price_account(data)
+        .map_err(|e| {
+            msg!("Couldn't load price feed from account info: {:?}", e);
+            LendingError::InvalidOracleConfig
+        })?;
     let pyth_price = price_account
         .get_price_no_older_than(clock, STALE_AFTER_SLOTS_ELAPSED)
         .ok_or_else(|| {
