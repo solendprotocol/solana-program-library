@@ -413,21 +413,38 @@ async fn test_deposit() {
 async fn test_withdraw_exact() {
     let (mut test, lending_market, reserves, obligations, users, _lending_market_owner) =
         custom_scenario(
-            &[ReserveArgs {
-                mint: usdc_mint::id(),
-                config: reserve_config_no_fees(),
-                liquidity_amount: 10 * FRACTIONAL_TO_USDC,
-                price: PriceArgs {
-                    price: 10,
-                    conf: 0,
-                    expo: -1,
-                    ema_price: 10,
-                    ema_conf: 0,
+            &[
+                ReserveArgs {
+                    mint: usdt_mint::id(),
+                    config: reserve_config_no_fees(),
+                    liquidity_amount: 10 * FRACTIONAL_TO_USDC,
+                    price: PriceArgs {
+                        price: 10,
+                        conf: 0,
+                        expo: -1,
+                        ema_price: 10,
+                        ema_conf: 0,
+                    },
                 },
-            }],
+                ReserveArgs {
+                    mint: usdc_mint::id(),
+                    config: reserve_config_no_fees(),
+                    liquidity_amount: 10 * FRACTIONAL_TO_USDC,
+                    price: PriceArgs {
+                        price: 10,
+                        conf: 0,
+                        expo: -1,
+                        ema_price: 10,
+                        ema_conf: 0,
+                    },
+                },
+            ],
             &[ObligationArgs {
-                deposits: vec![(usdc_mint::id(), 100 * FRACTIONAL_TO_USDC)],
-                borrows: vec![],
+                deposits: vec![
+                    (usdc_mint::id(), 100 * FRACTIONAL_TO_USDC),
+                    (usdt_mint::id(), 1 * FRACTIONAL_TO_USDC),
+                ],
+                borrows: vec![(usdt_mint::id(), 1 * FRACTIONAL_TO_USDC)],
             }],
         )
         .await;

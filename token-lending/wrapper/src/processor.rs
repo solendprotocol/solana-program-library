@@ -265,9 +265,7 @@ pub fn process_instruction(
             let token_program_id = next_account_info(account_info_iter)?;
 
             // while account info iter has pubkeys, add them to collateral reserves
-            let collateral_reserves = account_info_iter
-                .map(|account_info| *account_info.key)
-                .collect();
+            let collateral_reserves: Vec<_> = account_info_iter.cloned().collect();
 
             let reserve = Reserve::unpack(&reserve_info.try_borrow_data()?)?;
             let mut ctoken_amount = reserve
@@ -294,12 +292,14 @@ pub fn process_instruction(
                 *reserve_liquidity_supply_info.key,
                 *obligation_owner_info.key,
                 *user_transfer_authority_info.key,
-                collateral_reserves,
+                collateral_reserves
+                    .iter()
+                    .map(|account_info| *account_info.key)
+                    .collect(),
             );
 
-            invoke(
-                &instruction,
-                &[
+            invoke(&instruction, &{
+                let mut accounts = vec![
                     solend_program_id.clone(),
                     reserve_collateral_info.clone(),
                     user_collateral_info.clone(),
@@ -313,8 +313,11 @@ pub fn process_instruction(
                     obligation_owner_info.clone(),
                     user_transfer_authority_info.clone(),
                     token_program_id.clone(),
-                ],
-            )?;
+                ];
+                accounts.extend(collateral_reserves);
+
+                accounts
+            })?;
 
             Ok(())
         }
