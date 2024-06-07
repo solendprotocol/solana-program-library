@@ -1,14 +1,9 @@
 #![allow(missing_docs)]
 use crate::{
-    self as solend_program,
-    error::LendingError,
-    math::{Decimal, TryDiv, TryMul},
-    pyth_mainnet,
-    state::LendingMarket,
-    switchboard_v2_mainnet,
+    self as solend_program, error::LendingError, math::{Decimal, TryDiv, TryMul}, pyth_mainnet, pyth_pull_mainnet, state::LendingMarket, switchboard_v2_mainnet
 };
 use pyth_sdk_solana::Price;
-// use pyth_sdk_solana;
+use pyth_solana_receiver_sdk::price_update::{self, PriceUpdateV2, VerificationLevel};
 use solana_program::{
     account_info::AccountInfo, msg, program_error::ProgramError, sysvar::clock::Clock,
 };
@@ -17,11 +12,14 @@ use std::{convert::TryInto, result::Result};
 pub enum OracleType {
     Pyth,
     Switchboard,
+    PythPull,
 }
 
 pub fn get_oracle_type(extra_oracle_info: &AccountInfo) -> Result<OracleType, ProgramError> {
     if *extra_oracle_info.owner == pyth_mainnet::id() {
         return Ok(OracleType::Pyth);
+    } else if *extra_oracle_info.owner == pyth_pull_mainnet::id() {
+        return Ok(OracleType::PythPull);
     } else if *extra_oracle_info.owner == switchboard_v2_mainnet::id() {
         return Ok(OracleType::Switchboard);
     }
