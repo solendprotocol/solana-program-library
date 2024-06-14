@@ -4,18 +4,16 @@ use crate::{
     error::LendingError,
     math::{Decimal, TryDiv, TryMul},
     pyth_mainnet, pyth_pull_mainnet, solana_program,
-    state::LendingMarket,
     switchboard_v2_mainnet,
 };
 
 use borsh::BorshDeserialize;
-use pyth_sdk_solana::Price;
-use pyth_solana_receiver_sdk::price_update::{self, PriceUpdateV2, VerificationLevel};
+use pyth_solana_receiver_sdk::price_update::{PriceUpdateV2, VerificationLevel};
 use solana_program::{
     account_info::AccountInfo, msg, program_error::ProgramError, sysvar::clock::Clock,
 };
 use std::{
-    convert::{TryFrom, TryInto},
+    convert::{TryInto},
     result::Result,
 };
 

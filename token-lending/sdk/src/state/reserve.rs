@@ -2606,13 +2606,11 @@ mod test {
 
     fn calculate_liquidation_test_cases() -> impl Strategy<Value = LiquidationTestCase> {
         let close_factor: Decimal = Rate::from_percent(LIQUIDATION_CLOSE_FACTOR)
-            .try_into()
-            .unwrap();
+            .into();
         let liquidation_bonus: Decimal = Rate::from_percent(5)
             .try_add(Rate::one())
             .unwrap()
-            .try_into()
-            .unwrap();
+            .into();
 
         prop_oneof![
             // collateral market value > liquidation value
