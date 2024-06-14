@@ -96,7 +96,7 @@ pub fn get_pyth_price_unchecked(pyth_price_info: &AccountInfo) -> Result<Decimal
 pub fn get_pyth_pull_price_unchecked(
     pyth_price_info: &AccountInfo,
 ) -> Result<Decimal, ProgramError> {
-   if *pyth_price_info.owner != pyth_pull_mainnet::id() {
+    if *pyth_price_info.owner != pyth_pull_mainnet::id() {
         msg!("pyth price account is not owned by pyth program");
         return Err(ProgramError::IncorrectProgramId);
     }
@@ -106,13 +106,14 @@ pub fn get_pyth_pull_price_unchecked(
         LendingError::InvalidOracleConfig
     })?;
 
-    let price = price_feed_account.get_price_unchecked(&price_feed_account.price_message.feed_id).map_err(|e| {
-        msg!("Couldn't load price feed from account info: {:?}", e);
-        LendingError::InvalidOracleConfig
-    })?;
+    let price = price_feed_account
+        .get_price_unchecked(&price_feed_account.price_message.feed_id)
+        .map_err(|e| {
+            msg!("Couldn't load price feed from account info: {:?}", e);
+            LendingError::InvalidOracleConfig
+        })?;
     pyth_pull_price_to_decimal(&price)
 }
-
 
 pub fn get_pyth_price(
     pyth_price_info: &AccountInfo,
@@ -180,15 +181,17 @@ pub fn get_pyth_pull_price(
         LendingError::InvalidOracleConfig
     })?;
 
-    let pyth_price = price_feed_account.get_price_no_older_than_with_custom_verification_level(
-        clock,
-        STALE_AFTER_SECONDS_ELAPSED, // MAXIMUM_AGE, // this should be filtered by the caller
-        &price_feed_account.price_message.feed_id,
-        VerificationLevel::Full, // All our prices and the sponsored feeds are full verified
-    ).map_err(|e| {
-        msg!("Pyth oracle price is likey too stale! error: {:?}", e);
-        LendingError::InvalidOracleConfig
-    })?;
+    let pyth_price = price_feed_account
+        .get_price_no_older_than_with_custom_verification_level(
+            clock,
+            STALE_AFTER_SECONDS_ELAPSED, // MAXIMUM_AGE, // this should be filtered by the caller
+            &price_feed_account.price_message.feed_id,
+            VerificationLevel::Full, // All our prices and the sponsored feeds are full verified
+        )
+        .map_err(|e| {
+            msg!("Pyth oracle price is likey too stale! error: {:?}", e);
+            LendingError::InvalidOracleConfig
+        })?;
 
     let price: u64 = pyth_price.price.try_into().map_err(|_| {
         msg!("Oracle price cannot be negative");
@@ -208,20 +211,19 @@ pub fn get_pyth_pull_price(
     }
 
     let market_price = pyth_pull_price_to_decimal(&pyth_price)?;
-    
+
     let ema_price = {
-        let ema_price = pyth_solana_receiver_sdk::price_update::Price{
+        let ema_price = pyth_solana_receiver_sdk::price_update::Price {
             price: price_feed_account.price_message.ema_price,
             conf: price_feed_account.price_message.ema_conf,
             exponent: price_feed_account.price_message.exponent,
-            publish_time:  price_feed_account.price_message.publish_time,
+            publish_time: price_feed_account.price_message.publish_time,
         };
         pyth_pull_price_to_decimal(&ema_price)?
     };
 
     Ok((market_price, ema_price))
 }
-
 
 fn pyth_price_to_decimal(pyth_price: &pyth_sdk_solana::Price) -> Result<Decimal, ProgramError> {
     let price: u64 = pyth_price.price.try_into().map_err(|_| {
@@ -252,8 +254,9 @@ fn pyth_price_to_decimal(pyth_price: &pyth_sdk_solana::Price) -> Result<Decimal,
     }
 }
 
-
-fn pyth_pull_price_to_decimal(pyth_price: &pyth_solana_receiver_sdk::price_update::Price) -> Result<Decimal, ProgramError> {
+fn pyth_pull_price_to_decimal(
+    pyth_price: &pyth_solana_receiver_sdk::price_update::Price,
+) -> Result<Decimal, ProgramError> {
     let price: u64 = pyth_price.price.try_into().map_err(|_| {
         msg!("Oracle price cannot be negative");
         LendingError::InvalidOracleConfig
