@@ -3,25 +3,37 @@ use crate::{
     self as solend_program,
     error::LendingError,
     math::{Decimal, TryDiv, TryMul},
-    pyth_mainnet,
+    pyth_mainnet, pyth_pull_mainnet, solana_program,
     state::LendingMarket,
     switchboard_v2_mainnet,
 };
+
+use borsh::BorshDeserialize;
 use pyth_sdk_solana::Price;
-// use pyth_sdk_solana;
+use pyth_solana_receiver_sdk::price_update::{self, PriceUpdateV2, VerificationLevel};
 use solana_program::{
     account_info::AccountInfo, msg, program_error::ProgramError, sysvar::clock::Clock,
 };
-use std::{convert::TryInto, result::Result};
+use std::{
+    convert::{TryFrom, TryInto},
+    result::Result,
+};
+
+const PYTH_CONFIDENCE_RATIO: u64 = 10;
+const STALE_AFTER_SLOTS_ELAPSED: u64 = 240; // roughly 2 min
+const STALE_AFTER_SECONDS_ELAPSED: u64 = 120; // roughly 2 min
 
 pub enum OracleType {
     Pyth,
     Switchboard,
+    PythPull,
 }
 
 pub fn get_oracle_type(extra_oracle_info: &AccountInfo) -> Result<OracleType, ProgramError> {
     if *extra_oracle_info.owner == pyth_mainnet::id() {
         return Ok(OracleType::Pyth);
+    } else if *extra_oracle_info.owner == pyth_pull_mainnet::id() {
+        return Ok(OracleType::PythPull);
     } else if *extra_oracle_info.owner == switchboard_v2_mainnet::id() {
         return Ok(OracleType::Switchboard);
     }
@@ -34,11 +46,8 @@ pub fn get_oracle_type(extra_oracle_info: &AccountInfo) -> Result<OracleType, Pr
     Err(LendingError::InvalidOracleConfig.into())
 }
 
-pub fn validate_pyth_price_account_info(
-    lending_market: &LendingMarket,
-    pyth_price_info: &AccountInfo,
-) -> Result<(), ProgramError> {
-    if *pyth_price_info.owner != lending_market.oracle_program_id {
+pub fn validate_pyth_price_account_info(pyth_price_info: &AccountInfo) -> Result<(), ProgramError> {
+    if *pyth_price_info.owner != pyth_mainnet::id() {
         msg!("pyth price account is not owned by pyth program");
         return Err(ProgramError::IncorrectProgramId);
     }
@@ -49,6 +58,21 @@ pub fn validate_pyth_price_account_info(
         LendingError::InvalidOracleConfig
     })?;
 
+    Ok(())
+}
+
+pub fn validate_pyth_pull_price_account_info(
+    pyth_price_info: &AccountInfo,
+) -> Result<(), ProgramError> {
+    if *pyth_price_info.owner != pyth_pull_mainnet::id() {
+        msg!("pyth price account is not owned by pyth program");
+        return Err(ProgramError::IncorrectProgramId);
+    }
+    let data = &pyth_price_info.data.borrow();
+    let _price_feed_account: PriceUpdateV2 = PriceUpdateV2::try_from_slice(data).map_err(|e| {
+        msg!("Couldn't load price feed from account info: {:?}", e);
+        LendingError::InvalidOracleConfig
+    })?;
     Ok(())
 }
 
@@ -69,13 +93,31 @@ pub fn get_pyth_price_unchecked(pyth_price_info: &AccountInfo) -> Result<Decimal
     pyth_price_to_decimal(&price)
 }
 
+pub fn get_pyth_pull_price_unchecked(
+    pyth_price_info: &AccountInfo,
+) -> Result<Decimal, ProgramError> {
+   if *pyth_price_info.owner != pyth_pull_mainnet::id() {
+        msg!("pyth price account is not owned by pyth program");
+        return Err(ProgramError::IncorrectProgramId);
+    }
+    let data = &pyth_price_info.data.borrow();
+    let price_feed_account: PriceUpdateV2 = PriceUpdateV2::try_from_slice(data).map_err(|e| {
+        msg!("Couldn't load price feed from account info: {:?}", e);
+        LendingError::InvalidOracleConfig
+    })?;
+
+    let price = price_feed_account.get_price_unchecked(&price_feed_account.price_message.feed_id).map_err(|e| {
+        msg!("Couldn't load price feed from account info: {:?}", e);
+        LendingError::InvalidOracleConfig
+    })?;
+    pyth_pull_price_to_decimal(&price)
+}
+
+
 pub fn get_pyth_price(
     pyth_price_info: &AccountInfo,
     clock: &Clock,
 ) -> Result<(Decimal, Decimal), ProgramError> {
-    const PYTH_CONFIDENCE_RATIO: u64 = 10;
-    const STALE_AFTER_SLOTS_ELAPSED: u64 = 240; // roughly 2 min
-
     if *pyth_price_info.key == solend_program::NULL_PUBKEY {
         return Err(LendingError::NullOracleConfig.into());
     }
@@ -124,7 +166,64 @@ pub fn get_pyth_price(
     Ok((market_price?, ema_price))
 }
 
-fn pyth_price_to_decimal(pyth_price: &Price) -> Result<Decimal, ProgramError> {
+pub fn get_pyth_pull_price(
+    pyth_price_info: &AccountInfo,
+    clock: &Clock,
+) -> Result<(Decimal, Decimal), ProgramError> {
+    if *pyth_price_info.key == solend_program::NULL_PUBKEY {
+        return Err(LendingError::NullOracleConfig.into());
+    }
+
+    let data = &pyth_price_info.data.borrow();
+    let price_feed_account: PriceUpdateV2 = PriceUpdateV2::try_from_slice(data).map_err(|e| {
+        msg!("Couldn't load price feed from account info: {:?}", e);
+        LendingError::InvalidOracleConfig
+    })?;
+
+    let pyth_price = price_feed_account.get_price_no_older_than_with_custom_verification_level(
+        clock,
+        STALE_AFTER_SECONDS_ELAPSED, // MAXIMUM_AGE, // this should be filtered by the caller
+        &price_feed_account.price_message.feed_id,
+        VerificationLevel::Full, // All our prices and the sponsored feeds are full verified
+    ).map_err(|e| {
+        msg!("Pyth oracle price is likey too stale! error: {:?}", e);
+        LendingError::InvalidOracleConfig
+    })?;
+
+    let price: u64 = pyth_price.price.try_into().map_err(|_| {
+        msg!("Oracle price cannot be negative");
+        LendingError::InvalidOracleConfig
+    })?;
+
+    // Perhaps confidence_ratio should exist as a per reserve config
+    // 100/confidence_ratio = maximum size of confidence range as a percent of price
+    // confidence_ratio of 10 filters out pyth prices with conf > 10% of price
+    if pyth_price.conf.saturating_mul(PYTH_CONFIDENCE_RATIO) > price {
+        msg!(
+            "Oracle price confidence is too wide. price: {}, conf: {}",
+            price,
+            pyth_price.conf,
+        );
+        return Err(LendingError::InvalidOracleConfig.into());
+    }
+
+    let market_price = pyth_pull_price_to_decimal(&pyth_price)?;
+    
+    let ema_price = {
+        let ema_price = pyth_solana_receiver_sdk::price_update::Price{
+            price: price_feed_account.price_message.ema_price,
+            conf: price_feed_account.price_message.ema_conf,
+            exponent: price_feed_account.price_message.exponent,
+            publish_time:  price_feed_account.price_message.publish_time,
+        };
+        pyth_pull_price_to_decimal(&ema_price)?
+    };
+
+    Ok((market_price, ema_price))
+}
+
+
+fn pyth_price_to_decimal(pyth_price: &pyth_sdk_solana::Price) -> Result<Decimal, ProgramError> {
     let price: u64 = pyth_price.price.try_into().map_err(|_| {
         msg!("Oracle price cannot be negative");
         LendingError::InvalidOracleConfig
@@ -142,6 +241,36 @@ fn pyth_price_to_decimal(pyth_price: &Price) -> Result<Decimal, ProgramError> {
     } else {
         let exponent = pyth_price
             .expo
+            .checked_abs()
+            .ok_or(LendingError::MathOverflow)?
+            .try_into()
+            .map_err(|_| LendingError::MathOverflow)?;
+        let decimals = 10u64
+            .checked_pow(exponent)
+            .ok_or(LendingError::MathOverflow)?;
+        Decimal::from(price).try_div(decimals)
+    }
+}
+
+
+fn pyth_pull_price_to_decimal(pyth_price: &pyth_solana_receiver_sdk::price_update::Price) -> Result<Decimal, ProgramError> {
+    let price: u64 = pyth_price.price.try_into().map_err(|_| {
+        msg!("Oracle price cannot be negative");
+        LendingError::InvalidOracleConfig
+    })?;
+
+    if pyth_price.exponent >= 0 {
+        let exponent = pyth_price
+            .exponent
+            .try_into()
+            .map_err(|_| LendingError::MathOverflow)?;
+        let zeros = 10u64
+            .checked_pow(exponent)
+            .ok_or(LendingError::MathOverflow)?;
+        Decimal::from(price).try_mul(zeros)
+    } else {
+        let exponent = pyth_price
+            .exponent
             .checked_abs()
             .ok_or(LendingError::MathOverflow)?
             .try_into()

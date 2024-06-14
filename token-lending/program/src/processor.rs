@@ -34,7 +34,8 @@ use solana_program::{
 use solend_sdk::{
     math::SaturatingSub,
     oracles::{
-        get_oracle_type, get_pyth_price_unchecked, validate_pyth_price_account_info, OracleType,
+        get_oracle_type, get_pyth_price_unchecked, get_pyth_pull_price_unchecked,
+        validate_pyth_price_account_info, OracleType,
     },
     state::{LendingMarketMetadata, RateLimiter, RateLimiterConfig, ReserveType},
 };
@@ -497,7 +498,10 @@ fn validate_extra_oracle(
 
     match get_oracle_type(extra_oracle_info)? {
         OracleType::Pyth => {
-            validate_pyth_price_account_info(lending_market, extra_oracle_info)?;
+            validate_pyth_price_account_info(extra_oracle_info)?;
+        }
+        OracleType::PythPull => {
+            validate_pyth_price_account_info(extra_oracle_info)?;
         }
         OracleType::Switchboard => {
             validate_switchboard_keys(lending_market, extra_oracle_info)?;
@@ -573,6 +577,9 @@ fn _refresh_reserve<'a>(
 
                 match get_oracle_type(extra_oracle_account_info)? {
                     OracleType::Pyth => Some(get_pyth_price_unchecked(extra_oracle_account_info)?),
+                    OracleType::PythPull => {
+                        Some(get_pyth_pull_price_unchecked(extra_oracle_account_info)?)
+                    }
                     OracleType::Switchboard => Some(get_switchboard_price_v2(
                         extra_oracle_account_info,
                         clock,
