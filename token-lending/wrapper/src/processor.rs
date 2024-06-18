@@ -289,6 +289,7 @@ pub fn process_instruction(
                 *reserve_liquidity_supply_info.key,
                 *obligation_owner_info.key,
                 *user_transfer_authority_info.key,
+                vec![]
             );
 
             invoke(

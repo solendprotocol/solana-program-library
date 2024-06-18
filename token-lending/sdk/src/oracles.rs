@@ -7,7 +7,7 @@ use crate::{
     state::LendingMarket,
     switchboard_v2_mainnet,
 };
-use pyth_sdk_solana::{state::SolanaPriceAccount, Price};
+use pyth_sdk_solana::{state::SolanaPriceAccount, Price, PythError};
 // use pyth_sdk_solana;
 use solana_program::{
     account_info::AccountInfo, msg, program_error::ProgramError, sysvar::clock::Clock,
@@ -44,7 +44,8 @@ pub fn validate_pyth_price_account_info(
     }
 
     let data = &pyth_price_info.try_borrow_data()?;
-    pyth_sdk_solana::state::load_price_account(data).map_err(|e| {
+    let res: Result<&SolanaPriceAccount, PythError> = pyth_sdk_solana::state::load_price_account(data);
+    res.map_err(|e| {
         msg!("Couldn't load price feed from account info: {:?}", e);
         LendingError::InvalidOracleConfig
     })?;
@@ -59,7 +60,7 @@ pub fn get_pyth_price_unchecked(pyth_price_info: &AccountInfo) -> Result<Decimal
     }
 
     let data = &pyth_price_info.try_borrow_data()?;
-    let price_account = pyth_sdk_solana::state::load_price_account(data).map_err(|e| {
+    let price_account: &SolanaPriceAccount = pyth_sdk_solana::state::load_price_account(data).map_err(|e| {
         msg!("Couldn't load price feed from account info: {:?}", e);
         LendingError::InvalidOracleConfig
     })?;
