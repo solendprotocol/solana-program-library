@@ -4,7 +4,9 @@ use crate::{
     self as solend_program,
     error::LendingError,
     math::{Decimal, TryDiv, TryMul},
-    pyth_mainnet, pyth_pull_mainnet, solana_program, switchboard_v2_mainnet,
+    pyth_mainnet, pyth_pull_mainnet, solana_program,
+    switchboard_v2_mainnet,
+    switchboard_on_demand_mainnet,
 };
 
 use anchor_lang::AccountDeserialize;
@@ -21,6 +23,7 @@ const STALE_AFTER_SECONDS_ELAPSED: u64 = 120; // roughly 2 min
 
 pub enum OracleType {
     Pyth,
+    SbOnDemand,
     Switchboard,
     PythPull,
 }
@@ -32,6 +35,8 @@ pub fn get_oracle_type(extra_oracle_info: &AccountInfo) -> Result<OracleType, Pr
         return Ok(OracleType::PythPull);
     } else if *extra_oracle_info.owner == switchboard_v2_mainnet::id() {
         return Ok(OracleType::Switchboard);
+    } else if *extra_oracle_info.owner == switchboard_on_demand_mainnet::id() {
+        return Ok(OracleType::SbOnDemand);
     }
 
     msg!(
