@@ -590,7 +590,7 @@ fn _refresh_reserve<'a>(
                         false,
                     )?),
                     OracleType::SbOnDemand => {
-                        todo!();
+                        Some(get_switchboard_price_on_demand(extra_oracle_account_info, clock, true)?)
                     }
                 }
             }
