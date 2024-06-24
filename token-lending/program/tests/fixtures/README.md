@@ -21,4 +21,6 @@ solana account 992moaMQKs32GKZ9dxi8keyM2bUmbrwBZpK4p2K6X5Vs --output-file 992moa
 solana account BAoygKcKN7wk8yKzLD6sxzUQUqLvhBV1rjMA4UJqfZuH --output-file BAoygKcKN7wk8yKzLD6sxzUQUqLvhBV1rjMA4UJqfZuH.bin
 # Switchboardv2 price: SRM/USD
 solana account CUgoqwiQ4wCt6Tthkrgx5saAEpLBjPCdHshVa4Pbfcx2 --output-file CUgoqwiQ4wCt6Tthkrgx5saAEpLBjPCdHshVa4Pbfcx2.bin
+# pyth v2 sol price
+solana account 7UVimffxr9ow1uXYxsr4LHAcV58mLzhmwaeKvJ1pjLiE --output-file 7UVimffxr9ow1uXYxsr4LHAcV58mLzhmwaeKvJ1pjLiE.bin
 ```
