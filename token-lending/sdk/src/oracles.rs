@@ -3,8 +3,7 @@ use crate::{
     self as solend_program,
     error::LendingError,
     math::{Decimal, TryDiv, TryMul},
-    pyth_mainnet, pyth_pull_mainnet, solana_program,
-    switchboard_v2_mainnet,
+    pyth_mainnet, pyth_pull_mainnet, solana_program, switchboard_v2_mainnet,
 };
 
 use borsh::BorshDeserialize;
@@ -12,10 +11,7 @@ use pyth_solana_receiver_sdk::price_update::{PriceUpdateV2, VerificationLevel};
 use solana_program::{
     account_info::AccountInfo, msg, program_error::ProgramError, sysvar::clock::Clock,
 };
-use std::{
-    convert::{TryInto},
-    result::Result,
-};
+use std::{convert::TryInto, result::Result};
 
 const PYTH_CONFIDENCE_RATIO: u64 = 10;
 const STALE_AFTER_SLOTS_ELAPSED: u64 = 240; // roughly 2 min
@@ -285,7 +281,8 @@ fn pyth_pull_price_to_decimal(
 
 #[cfg(test)]
 mod test {
-    use super::*;
+    use std::str::FromStr;
+use super::*;
     use bytemuck::bytes_of_mut;
     use proptest::prelude::*;
     use pyth_sdk_solana::state::Rational;
@@ -293,6 +290,9 @@ mod test {
         AccountType, CorpAction, PriceAccount, PriceInfo, PriceStatus, PriceType, MAGIC, VERSION_2,
     };
     use solana_program::pubkey::Pubkey;
+    use std::fs::File;
+    use std::io::Read;
+    use std::path::Path;
 
     #[derive(Clone, Debug)]
     struct PythPriceTestCase {
@@ -641,6 +641,56 @@ mod test {
         assert_eq!(
             get_pyth_price_unchecked(&account_info),
             Ok(Decimal::from(2000_u64))
+        );
+    }
+
+    fn read_file<P: AsRef<Path>>(path: P) -> Vec<u8> {
+        let path = path.as_ref();
+        let mut file = File::open(path)
+            .unwrap_or_else(|err| panic!("Failed to open \"{}\": {}", path.display(), err));
+
+        let mut file_data = Vec::new();
+        file.read_to_end(&mut file_data)
+            .unwrap_or_else(|err| panic!("Failed to read \"{}\": {}", path.display(), err));
+        file_data
+    }
+
+    #[test]
+    fn test_pyth_pull_price() {
+        let mut price_account_data = read_file(
+            "fixtures/7UVimffxr9ow1uXYxsr4LHAcV58mLzhmwaeKvJ1pjLiE.bin",
+        );
+        // println!("data {:?}", price_account_data);
+        // let price_account: PriceUpdateV2 =
+        //     PriceUpdateV2::try_from_slice(&price_account_data.clone()).unwrap();
+        // println!("{:#?}", price_account.price_message);
+
+        let mut lamports = 20;
+        let pubkey = Pubkey::new_unique();
+        let owner = Pubkey::from_str("rec5EKMGg6MxZYaMdyBfgwp4d5rB9T1VQH5pJv5LtFJ").unwrap();
+        let account_info = AccountInfo::new(
+            &pubkey,
+            false,
+            false,
+            &mut lamports,
+            &mut price_account_data,
+            &owner,
+            false,
+            0,
+        );
+
+        assert_eq!(
+            get_pyth_pull_price_unchecked(&account_info),
+            Ok(Decimal::from(2000_u64))
+        );
+
+        let clock = Clock {
+            slot: 240,
+            ..Clock::default()
+        };
+        assert_eq!(
+            get_pyth_pull_price(&account_info, &clock),
+            Ok((Decimal::from(2000_u64), Decimal::from(110_u64)))
         );
     }
 }
