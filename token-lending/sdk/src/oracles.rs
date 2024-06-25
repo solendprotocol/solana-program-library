@@ -1,4 +1,5 @@
 #![allow(missing_docs)]
+use anchor_lang::Key;
 use crate::{
     self as solend_program,
     error::LendingError,
@@ -6,6 +7,7 @@ use crate::{
     pyth_mainnet, pyth_pull_mainnet, solana_program, switchboard_v2_mainnet,
 };
 
+use anchor_lang::AccountDeserialize;
 use borsh::BorshDeserialize;
 use pyth_solana_receiver_sdk::price_update::{PriceUpdateV2, VerificationLevel};
 use solana_program::{
@@ -94,11 +96,13 @@ pub fn get_pyth_pull_price_unchecked(
         msg!("pyth price account is not owned by pyth program");
         return Err(ProgramError::IncorrectProgramId);
     }
-    let data = &pyth_price_info.data.borrow();
-    let price_feed_account: PriceUpdateV2 = PriceUpdateV2::try_from_slice(data).map_err(|e| {
-        msg!("Couldn't load price feed from account info: {:?}", e);
-        LendingError::InvalidOracleConfig
-    })?;
+
+    let price_feed_account: PriceUpdateV2 = account_deserialize(pyth_price_info)?;
+    // let data = &pyth_price_info.data.borrow()[..];
+    // let price_feed_account: PriceUpdateV2 = PriceUpdateV2::try_from_slice(data).map_err(|e| {
+    //     msg!("Couldn't load price feed from account info: {:?}", e);
+    //     LendingError::InvalidOracleConfig
+    // })?;
 
     let price = price_feed_account
         .get_price_unchecked(&price_feed_account.price_message.feed_id)
@@ -161,6 +165,20 @@ pub fn get_pyth_price(
     Ok((market_price?, ema_price))
 }
 
+pub fn account_deserialize<T: AccountDeserialize>(
+    account: &AccountInfo<'_>,
+) -> Result<T, ProgramError> {
+    let data = account.clone().data.borrow().to_owned();
+    let mut data: &[u8] = &data;
+
+    let user: T = T::try_deserialize(&mut data).map_err(|_| {
+        msg!("Account {:?} deserialization failed", account.key());
+        LendingError::InvalidAccountInput
+    })?;
+
+    Ok(user)
+}
+
 pub fn get_pyth_pull_price(
     pyth_price_info: &AccountInfo,
     clock: &Clock,
@@ -169,11 +187,7 @@ pub fn get_pyth_pull_price(
         return Err(LendingError::NullOracleConfig.into());
     }
 
-    let data = &pyth_price_info.data.borrow();
-    let price_feed_account: PriceUpdateV2 = PriceUpdateV2::try_from_slice(data).map_err(|e| {
-        msg!("Couldn't load price feed from account info: {:?}", e);
-        LendingError::InvalidOracleConfig
-    })?;
+    let price_feed_account: PriceUpdateV2 = account_deserialize(pyth_price_info)?;
 
     let pyth_price = price_feed_account
         .get_price_no_older_than_with_custom_verification_level(
@@ -658,8 +672,9 @@ use super::*;
     #[test]
     fn test_pyth_pull_price() {
         let mut price_account_data = read_file(
-            "fixtures/7UVimffxr9ow1uXYxsr4LHAcV58mLzhmwaeKvJ1pjLiE.bin",
+            "fixtures/5CKzb9j4ChgLUt8Gfm5CNGLN6khXKiqMbnGAW4cgXgxK.bin",
         );
+        println!("hello");
         // println!("data {:?}", price_account_data);
         // let price_account: PriceUpdateV2 =
         //     PriceUpdateV2::try_from_slice(&price_account_data.clone()).unwrap();
