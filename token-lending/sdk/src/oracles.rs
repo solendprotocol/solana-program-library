@@ -23,26 +23,26 @@ const STALE_AFTER_SECONDS_ELAPSED: u64 = 120; // roughly 2 min
 
 pub enum OracleType {
     Pyth,
-    SbOnDemand,
     Switchboard,
     PythPull,
+    SbOnDemand,
 }
 
-pub fn get_oracle_type(extra_oracle_info: &AccountInfo) -> Result<OracleType, ProgramError> {
-    if *extra_oracle_info.owner == pyth_mainnet::id() {
+pub fn get_oracle_type(oracle_info: &AccountInfo) -> Result<OracleType, ProgramError> {
+    if *oracle_info.owner == pyth_mainnet::id() {
         return Ok(OracleType::Pyth);
-    } else if *extra_oracle_info.owner == pyth_pull_mainnet::id() {
+    } else if *oracle_info.owner == pyth_pull_mainnet::id() {
         return Ok(OracleType::PythPull);
-    } else if *extra_oracle_info.owner == switchboard_v2_mainnet::id() {
+    } else if *oracle_info.owner == switchboard_v2_mainnet::id() {
         return Ok(OracleType::Switchboard);
-    } else if *extra_oracle_info.owner == switchboard_on_demand_mainnet::id() {
+    } else if *oracle_info.owner == switchboard_on_demand_mainnet::id() {
         return Ok(OracleType::SbOnDemand);
     }
 
     msg!(
         "Could not find oracle type for {:?} with owner {:?}",
-        extra_oracle_info.key,
-        extra_oracle_info.owner
+        oracle_info.key,
+        oracle_info.owner
     );
     Err(LendingError::InvalidOracleConfig.into())
 }

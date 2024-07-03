@@ -6,7 +6,6 @@ use crate::{
     error::LendingError,
     instruction::LendingInstruction,
     math::{Decimal, Rate, TryAdd, TryDiv, TryMul, TrySub},
-    oracles::get_pyth_price,
     state::{
         validate_reserve_config, CalculateBorrowResult, CalculateLiquidationResult,
         CalculateRepayResult, InitLendingMarketParams, InitObligationParams, InitReserveParams,
@@ -30,12 +29,10 @@ use solana_program::{
     sysvar::instructions::{load_current_index_checked, load_instruction_at_checked},
     sysvar::{clock::Clock, rent::Rent, Sysvar},
 };
-
-use solend_sdk::oracles::get_pyth_pull_price;
 use solend_sdk::{
     math::SaturatingSub,
     oracles::{
-        get_oracle_type, get_pyth_price_unchecked, get_pyth_pull_price_unchecked,
+        get_oracle_type, get_pyth_price, get_pyth_price_unchecked, get_pyth_pull_price, get_pyth_pull_price_unchecked,
         validate_pyth_price_account_info, OracleType,
     },
     state::{LendingMarketMetadata, RateLimiter, RateLimiterConfig, ReserveType},
@@ -3276,6 +3273,10 @@ fn get_single_price(
             Ok((price.0, Some(price.1)))
         }
         OracleType::Switchboard => {
+            let price = get_switchboard_price(oracle_account_info, clock)?;
+            Ok((price, None))
+        }
+        OracleType::SbOnDemand => {
             let price = get_switchboard_price(oracle_account_info, clock)?;
             Ok((price, None))
         }

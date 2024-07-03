@@ -23,4 +23,6 @@ solana account BAoygKcKN7wk8yKzLD6sxzUQUqLvhBV1rjMA4UJqfZuH --output-file BAoygK
 solana account CUgoqwiQ4wCt6Tthkrgx5saAEpLBjPCdHshVa4Pbfcx2 --output-file CUgoqwiQ4wCt6Tthkrgx5saAEpLBjPCdHshVa4Pbfcx2.bin
 # pyth v2 sol price
 solana account 7UVimffxr9ow1uXYxsr4LHAcV58mLzhmwaeKvJ1pjLiE --output-file 7UVimffxr9ow1uXYxsr4LHAcV58mLzhmwaeKvJ1pjLiE.bin
+# SB on demand WEN/USD oracle
+solana account GcNZRMqGSEyEULZnLDD3ParcHTgFBrNfUdUCDtThP55e --output-file GcNZRMqGSEyEULZnLDD3ParcHTgFBrNfUdUCDtThP55e.bin
 ```
