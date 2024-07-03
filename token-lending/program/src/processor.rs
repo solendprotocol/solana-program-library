@@ -43,9 +43,6 @@ use solend_sdk::{
 use solend_sdk::{switchboard_v2_devnet, switchboard_v2_mainnet, switchboard_on_demand_devnet, switchboard_on_demand_mainnet};
 use spl_token::state::Mint;
 use std::{cmp::min, result::Result};
-use switchboard_program::{
-    get_aggregator, get_aggregator_result, AggregatorState, RoundResult, SwitchboardAccountType,
-};
 use switchboard_v2::AggregatorAccountData;
 
 /// solend market owner
@@ -3317,10 +3314,22 @@ fn get_switchboard_price_on_demand(
     let data = switchboard_feed_info.try_borrow_data()?;
     let feed = SbOnDemandFeed::parse(data)
         .map_err(|_| ProgramError::InvalidAccountData)?;
-    let mut value = feed.get_value(clock, STALE_AFTER_SLOTS_ELAPSED, 5, true)
-        .map_err(|_| ProgramError::InvalidAccountData)?;
-    value.rescale(18);
-    Ok(Decimal::from(value.mantissa() as u128))
+    let slots_elapsed = clock
+        .slot
+        .checked_sub(feed.result.slot)
+        .ok_or(LendingError::MathOverflow)?;
+    if check_staleness && slots_elapsed >= STALE_AFTER_SLOTS_ELAPSED {
+        msg!("Switchboard oracle price is stale");
+        return Err(LendingError::InvalidOracleConfig.into());
+    }
+    let price_desc = feed.value().ok_or(ProgramError::InvalidAccountData)?;
+    if price_desc.mantissa() < 0 {
+        msg!("Switchboard oracle price is negative which is not allowed");
+        return Err(LendingError::InvalidOracleConfig.into());
+    }
+    let price = Decimal::from(price_desc.mantissa() as u128);
+    let exp = Decimal::from((10u128).checked_pow(price_desc.scale()).unwrap());
+    price.try_div(exp)
 }
 
 fn get_switchboard_price_v2(
