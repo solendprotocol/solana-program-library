@@ -31,6 +31,7 @@ use solana_program::{
     sysvar::{clock::Clock, rent::Rent, Sysvar},
 };
 
+use solend_sdk::oracles::get_pyth_pull_price;
 use solend_sdk::{
     math::SaturatingSub,
     oracles::{
@@ -3238,25 +3239,44 @@ fn get_pyth_product_quote_currency(
 /// The first element in the returned tuple is the market price, and the second is the optional
 /// smoothed price (eg ema, twap).
 fn get_price(
-    switchboard_feed_info: Option<&AccountInfo>,
-    pyth_price_account_info: &AccountInfo,
+    secondary_price_account_info: Option<&AccountInfo>,
+    main_price_account_info: &AccountInfo,
     clock: &Clock,
 ) -> Result<(Decimal, Option<Decimal>), ProgramError> {
-    if let Ok(prices) = get_pyth_price(pyth_price_account_info, clock) {
-        return Ok((prices.0, Some(prices.1)));
+    if let Ok(prices) = get_single_price(main_price_account_info, clock) {
+        return Ok((prices.0, prices.1));
     }
 
-    // if switchboard was not passed in don't try to grab the price
-    if let Some(switchboard_feed_info_unwrapped) = switchboard_feed_info {
-        // TODO: add support for switchboard smoothed prices. Probably need to add a new
-        // switchboard account per reserve.
-        return match get_switchboard_price(switchboard_feed_info_unwrapped, clock) {
-            Ok(price) => Ok((price, None)),
-            Err(e) => Err(e),
-        };
+    // if secondary was not passed in don't try to grab the price
+    if let Some(secondary_price_account_info_unwrapped) = secondary_price_account_info {
+        // TODO: add support for secondary smoothed prices. Probably need to add a new
+        // secondary account per reserve.
+        if let Ok(prices) = get_single_price(secondary_price_account_info_unwrapped, clock) {
+            return Ok((prices.0, prices.1));
+        }
     }
 
     Err(LendingError::InvalidOracleConfig.into())
+}
+
+fn get_single_price(
+    oracle_account_info: &AccountInfo,
+    clock: &Clock,
+) -> Result<(Decimal, Option<Decimal>), ProgramError> {
+    match get_oracle_type(oracle_account_info)? {
+        OracleType::Pyth => {
+            let price = get_pyth_price(oracle_account_info, clock)?;
+            Ok((price.0, Some(price.1)))
+        }
+        OracleType::PythPull => {
+            let price = get_pyth_pull_price(oracle_account_info, clock)?;
+            Ok((price.0, Some(price.1)))
+        }
+        OracleType::Switchboard => {
+            let price = get_switchboard_price(oracle_account_info, clock)?;
+            Ok((price, None))
+        }
+    }
 }
 
 fn get_switchboard_price(
