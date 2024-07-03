@@ -672,9 +672,8 @@ use super::*;
     #[test]
     fn test_pyth_pull_price() {
         let mut price_account_data = read_file(
-            "fixtures/5CKzb9j4ChgLUt8Gfm5CNGLN6khXKiqMbnGAW4cgXgxK.bin",
+            "fixtures/7UVimffxr9ow1uXYxsr4LHAcV58mLzhmwaeKvJ1pjLiE.bin",
         );
-        println!("hello");
         // println!("data {:?}", price_account_data);
         // let price_account: PriceUpdateV2 =
         //     PriceUpdateV2::try_from_slice(&price_account_data.clone()).unwrap();
@@ -694,9 +693,11 @@ use super::*;
             0,
         );
 
+        let price = Decimal::from(135426693_u64).try_div(Decimal::from(1000000_u64)).unwrap();
+        let ema_price = Decimal::from(134522707_u64).try_div(Decimal::from(1000000_u64)).unwrap();
         assert_eq!(
-            get_pyth_pull_price_unchecked(&account_info),
-            Ok(Decimal::from(2000_u64))
+            get_pyth_pull_price_unchecked(&account_info).unwrap(),
+            price
         );
 
         let clock = Clock {
@@ -704,8 +705,8 @@ use super::*;
             ..Clock::default()
         };
         assert_eq!(
-            get_pyth_pull_price(&account_info, &clock),
-            Ok((Decimal::from(2000_u64), Decimal::from(110_u64)))
+            get_pyth_pull_price(&account_info, &clock).unwrap(),
+            (price, ema_price)
         );
     }
 }
