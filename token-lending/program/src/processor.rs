@@ -15,7 +15,6 @@ use crate::{
 };
 use bytemuck::bytes_of;
 use pyth_sdk_solana::{self, state::ProductAccount};
-use switchboard_on_demand::on_demand::accounts::pull_feed::PullFeedAccountData as SbOnDemandFeed;
 use solana_program::{
     account_info::{next_account_info, AccountInfo},
     entrypoint::ProgramResult,
@@ -32,14 +31,19 @@ use solana_program::{
 use solend_sdk::{
     math::SaturatingSub,
     oracles::{
-        get_oracle_type, get_pyth_price, get_pyth_price_unchecked, get_pyth_pull_price, get_pyth_pull_price_unchecked,
-        validate_pyth_price_account_info, OracleType,
+        get_oracle_type, get_pyth_price, get_pyth_price_unchecked, get_pyth_pull_price,
+        get_pyth_pull_price_unchecked, validate_pyth_price_account_info, OracleType,
     },
     state::{LendingMarketMetadata, RateLimiter, RateLimiterConfig, ReserveType},
 };
-use solend_sdk::{switchboard_v2_devnet, switchboard_v2_mainnet, switchboard_on_demand_devnet, switchboard_on_demand_mainnet};
+use solend_sdk::{
+    switchboard_on_demand_devnet, switchboard_on_demand_mainnet, switchboard_v2_devnet,
+    switchboard_v2_mainnet,
+};
 use spl_token::state::Mint;
 use std::{cmp::min, result::Result};
+use switchboard_on_demand::decimal;
+use switchboard_on_demand::on_demand::accounts::pull_feed::PullFeedAccountData as SbOnDemandFeed;
 use switchboard_v2::AggregatorAccountData;
 
 /// solend market owner
@@ -583,9 +587,11 @@ fn _refresh_reserve<'a>(
                         clock,
                         false,
                     )?),
-                    OracleType::SbOnDemand => {
-                        Some(get_switchboard_price_on_demand(extra_oracle_account_info, clock, true)?)
-                    }
+                    OracleType::SbOnDemand => Some(get_switchboard_price_on_demand(
+                        extra_oracle_account_info,
+                        clock,
+                        true,
+                    )?),
                 }
             }
             None => {
@@ -3287,7 +3293,6 @@ fn get_switchboard_price(
     switchboard_feed_info: &AccountInfo,
     clock: &Clock,
 ) -> Result<Decimal, ProgramError> {
-
     if *switchboard_feed_info.key == solend_program::NULL_PUBKEY {
         return Err(LendingError::NullOracleConfig.into());
     }
@@ -3303,7 +3308,6 @@ fn get_switchboard_price(
         return get_switchboard_price_on_demand(switchboard_feed_info, clock, true);
     }
     Err(LendingError::NullOracleConfig.into())
-
 }
 
 fn get_switchboard_price_on_demand(
@@ -3313,8 +3317,7 @@ fn get_switchboard_price_on_demand(
 ) -> Result<Decimal, ProgramError> {
     const STALE_AFTER_SLOTS_ELAPSED: u64 = 240;
     let data = switchboard_feed_info.try_borrow_data()?;
-    let feed = SbOnDemandFeed::parse(data)
-        .map_err(|_| ProgramError::InvalidAccountData)?;
+    let feed = SbOnDemandFeed::parse(data).map_err(|_| ProgramError::InvalidAccountData)?;
     let slots_elapsed = clock
         .slot
         .checked_sub(feed.result.slot)
@@ -3328,9 +3331,29 @@ fn get_switchboard_price_on_demand(
         msg!("Switchboard oracle price is negative which is not allowed");
         return Err(LendingError::InvalidOracleConfig.into());
     }
-    let price = Decimal::from(price_desc.mantissa() as u128);
+    let price_mantissa = Decimal::from(price_desc.mantissa() as u128);
     let exp = Decimal::from((10u128).checked_pow(price_desc.scale()).unwrap());
-    price.try_div(exp)
+    let price = price_mantissa.try_div(exp)?;
+
+    let range_desc = feed.range().ok_or(ProgramError::InvalidAccountData)?;
+    if range_desc.mantissa() < 0 {
+        msg!("Switchboard oracle price range is negative which is not allowed");
+        return Err(LendingError::InvalidOracleConfig.into());
+    }
+    let range_mantissa = Decimal::from(range_desc.mantissa() as u128);
+    let range_exp = Decimal::from((10u128).checked_pow(range_desc.scale()).unwrap());
+    let range = range_mantissa.try_div(range_exp)?;
+
+    if range.try_mul(10_u64)? > price {
+        msg!(
+            "Oracle price range is too wide. price: {}, conf: {}",
+            price,
+            range,
+        );
+        return Err(LendingError::InvalidOracleConfig.into());
+    }
+
+    Ok(price)
 }
 
 fn get_switchboard_price_v2(
@@ -3568,8 +3591,7 @@ fn validate_sb_on_demand_keys(
     }
 
     let data = switchboard_feed_info.try_borrow_data()?;
-    SbOnDemandFeed::parse(data)
-        .map_err(|_| ProgramError::InvalidAccountData)?;
+    SbOnDemandFeed::parse(data).map_err(|_| ProgramError::InvalidAccountData)?;
 
     Ok(())
 }

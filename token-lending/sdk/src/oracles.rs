@@ -1,13 +1,12 @@
 #![allow(missing_docs)]
-use anchor_lang::Key;
 use crate::{
     self as solend_program,
     error::LendingError,
     math::{Decimal, TryDiv, TryMul},
-    pyth_mainnet, pyth_pull_mainnet, solana_program,
+    pyth_mainnet, pyth_pull_mainnet, solana_program, switchboard_on_demand_mainnet,
     switchboard_v2_mainnet,
-    switchboard_on_demand_mainnet,
 };
+use anchor_lang::Key;
 
 use anchor_lang::AccountDeserialize;
 use borsh::BorshDeserialize;
@@ -300,8 +299,7 @@ fn pyth_pull_price_to_decimal(
 
 #[cfg(test)]
 mod test {
-    use std::str::FromStr;
-use super::*;
+    use super::*;
     use bytemuck::bytes_of_mut;
     use proptest::prelude::*;
     use pyth_sdk_solana::state::Rational;
@@ -312,6 +310,7 @@ use super::*;
     use std::fs::File;
     use std::io::Read;
     use std::path::Path;
+    use std::str::FromStr;
 
     #[derive(Clone, Debug)]
     struct PythPriceTestCase {
@@ -676,9 +675,8 @@ use super::*;
 
     #[test]
     fn test_pyth_pull_price() {
-        let mut price_account_data = read_file(
-            "fixtures/7UVimffxr9ow1uXYxsr4LHAcV58mLzhmwaeKvJ1pjLiE.bin",
-        );
+        let mut price_account_data =
+            read_file("fixtures/7UVimffxr9ow1uXYxsr4LHAcV58mLzhmwaeKvJ1pjLiE.bin");
         // println!("data {:?}", price_account_data);
         // let price_account: PriceUpdateV2 =
         //     PriceUpdateV2::try_from_slice(&price_account_data.clone()).unwrap();
@@ -698,12 +696,13 @@ use super::*;
             0,
         );
 
-        let price = Decimal::from(135426693_u64).try_div(Decimal::from(1000000_u64)).unwrap();
-        let ema_price = Decimal::from(134522707_u64).try_div(Decimal::from(1000000_u64)).unwrap();
-        assert_eq!(
-            get_pyth_pull_price_unchecked(&account_info).unwrap(),
-            price
-        );
+        let price = Decimal::from(135426693_u64)
+            .try_div(Decimal::from(1000000_u64))
+            .unwrap();
+        let ema_price = Decimal::from(134522707_u64)
+            .try_div(Decimal::from(1000000_u64))
+            .unwrap();
+        assert_eq!(get_pyth_pull_price_unchecked(&account_info).unwrap(), price);
 
         let clock = Clock {
             slot: 240,
