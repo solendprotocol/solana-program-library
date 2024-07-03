@@ -19,6 +19,7 @@ solana-program = "=1.16.20"
 solend-sdk = { path = "../sdk" }
 spl-token = { version = "3.3.0", features=["no-entrypoint"] }
 static_assertions = "1.1.0"
+switchboard-on-demand = "0.1.12"
 switchboard-program = "0.2.0"
 switchboard-v2 = "0.1.3"
 
