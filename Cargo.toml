@@ -8,3 +8,6 @@ members = [
 
 [profile.dev]
 split-debuginfo = "unpacked"
+
+[profile.release]
+overflow-checks = true
