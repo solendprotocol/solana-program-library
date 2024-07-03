@@ -68,11 +68,12 @@ pub fn validate_pyth_pull_price_account_info(
         msg!("pyth price account is not owned by pyth program");
         return Err(ProgramError::IncorrectProgramId);
     }
-    let data = &pyth_price_info.data.borrow();
-    let _price_feed_account: PriceUpdateV2 = PriceUpdateV2::try_from_slice(data).map_err(|e| {
+
+    let _price_feed_account: PriceUpdateV2 = account_deserialize(pyth_price_info).map_err(|e| {
         msg!("Couldn't load price feed from account info: {:?}", e);
         LendingError::InvalidOracleConfig
     })?;
+
     Ok(())
 }
 
@@ -201,7 +202,7 @@ pub fn get_pyth_pull_price(
             VerificationLevel::Full, // All our prices and the sponsored feeds are full verified
         )
         .map_err(|e| {
-            msg!("Pyth oracle price is likey too stale! error: {:?}", e);
+            msg!("Pyth oracle price is likley too stale! error: {:?}", e);
             LendingError::InvalidOracleConfig
         })?;
 

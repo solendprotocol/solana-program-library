@@ -4,6 +4,7 @@ pub mod flash_loan_proxy;
 pub mod flash_loan_receiver;
 pub mod genesis;
 pub mod mock_pyth;
+pub mod mock_pyth_pull;
 pub mod mock_switchboard;
 pub mod solend_program_test;
 

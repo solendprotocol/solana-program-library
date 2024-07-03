@@ -1,7 +1,9 @@
 use bytemuck::checked::from_bytes;
 
+use pyth_solana_receiver_sdk::price_update::PriceUpdateV2;
 use solend_sdk::instruction::*;
 use solend_sdk::pyth_mainnet;
+use solend_sdk::pyth_pull_mainnet;
 use solend_sdk::state::*;
 use solend_sdk::switchboard_v2_mainnet;
 
@@ -47,6 +49,7 @@ use std::{
 };
 
 use super::mock_pyth::{init, set_price};
+use super::mock_pyth_pull::{init as init_pull, set_price as set_price_pull};
 
 pub struct SolendProgramTest {
     pub context: ProgramTestContext,
@@ -78,6 +81,11 @@ impl SolendProgramTest {
             "mock_pyth",
             pyth_mainnet::id(),
             processor!(mock_pyth::process_instruction),
+        );
+        test.add_program(
+            "mock_pyth_pull",
+            pyth_pull_mainnet::id(),
+            processor!(mock_pyth_pull::process_instruction),
         );
         test.add_program(
             "mock_switchboard",
@@ -128,6 +136,11 @@ impl SolendProgramTest {
             "mock_pyth",
             pyth_mainnet::id(),
             processor!(mock_pyth::process_instruction),
+        );
+        test.add_program(
+            "mock_pyth_pull",
+            pyth_pull_mainnet::id(),
+            processor!(mock_pyth_pull::process_instruction),
         );
         test.add_program(
             "mock_switchboard",
@@ -448,6 +461,48 @@ impl SolendProgramTest {
         self.process_transaction(
             &[set_price(
                 pyth_mainnet::id(),
+                oracle.pyth_price_pubkey,
+                price.price,
+                price.conf,
+                price.expo,
+                price.ema_price,
+                price.ema_conf,
+            )],
+            None,
+        )
+        .await
+        .unwrap();
+    }
+
+    pub async fn init_pyth_pull_feed(&mut self, mint: &Pubkey) -> Pubkey {
+        let pyth_price_pubkey = self.create_account(PriceUpdateV2::LEN, &pyth_pull_mainnet::id(), None).await;
+
+        self.process_transaction(
+            &[init_pull(
+                pyth_pull_mainnet::id(),
+                pyth_price_pubkey,
+            )],
+            None,
+        )
+        .await
+        .unwrap();
+
+        let oracle = self.mints.get_mut(mint).unwrap();
+        if let Some(ref mut oracle) = oracle {
+            oracle.pyth_price_pubkey = pyth_price_pubkey;
+        } else {
+            panic!("oracle not initialized");
+        }
+
+
+        pyth_price_pubkey
+    }
+
+    pub async fn set_pyth_pull_price(&mut self, mint: &Pubkey, price: &PriceArgs) {
+        let oracle = self.mints.get(mint).unwrap().unwrap();
+        self.process_transaction(
+            &[set_price_pull(
+                pyth_pull_mainnet::id(),
                 oracle.pyth_price_pubkey,
                 price.price,
                 price.conf,

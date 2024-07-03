@@ -28,6 +28,7 @@ use solana_program::{
     sysvar::instructions::{load_current_index_checked, load_instruction_at_checked},
     sysvar::{clock::Clock, rent::Rent, Sysvar},
 };
+use solend_sdk::oracles::validate_pyth_pull_price_account_info;
 use solend_sdk::{
     math::SaturatingSub,
     oracles::{
@@ -366,7 +367,7 @@ fn process_init_reserve(
         msg!("Both price oracles are null. At least one must be non-null");
         return Err(LendingError::InvalidOracleConfig.into());
     }
-    validate_pyth_keys(&lending_market, pyth_product_info, pyth_price_info)?;
+    validate_pyth_keys(pyth_price_info)?;
     validate_switchboard_keys(&lending_market, switchboard_feed_info)?;
 
     if let Some(extra_oracle_pubkey) = config.extra_oracle_pubkey {
@@ -2391,7 +2392,7 @@ fn process_update_reserve_config(
     let lending_market_info = next_account_info(account_info_iter)?;
     let lending_market_authority_info = next_account_info(account_info_iter)?;
     let signer_info = next_account_info(account_info_iter)?;
-    let pyth_product_info = next_account_info(account_info_iter)?;
+    let _pyth_product_info = next_account_info(account_info_iter)?;
     let pyth_price_info = next_account_info(account_info_iter)?;
     let switchboard_feed_info = next_account_info(account_info_iter)?;
 
@@ -2465,7 +2466,7 @@ fn process_update_reserve_config(
         }
 
         if *pyth_price_info.key != reserve.liquidity.pyth_oracle_pubkey {
-            validate_pyth_keys(&lending_market, pyth_product_info, pyth_price_info)?;
+            validate_pyth_keys(pyth_price_info)?;
             reserve.liquidity.pyth_oracle_pubkey = *pyth_price_info.key;
         }
 
@@ -3519,37 +3520,16 @@ fn spl_token_burn(params: TokenBurnParams<'_, '_>) -> ProgramResult {
 
 /// validates pyth AccountInfos
 #[inline(always)]
-fn validate_pyth_keys(
-    lending_market: &LendingMarket,
-    pyth_product_info: &AccountInfo,
-    pyth_price_info: &AccountInfo,
-) -> ProgramResult {
+fn validate_pyth_keys(pyth_price_info: &AccountInfo) -> ProgramResult {
     if *pyth_price_info.key == solend_program::NULL_PUBKEY {
         return Ok(());
     }
-    if &lending_market.oracle_program_id != pyth_product_info.owner {
-        msg!("Pyth product account provided is not owned by the lending market oracle program");
-        return Err(LendingError::InvalidOracleConfig.into());
-    }
-    if &lending_market.oracle_program_id != pyth_price_info.owner {
-        msg!("Pyth price account provided is not owned by the lending market oracle program");
-        return Err(LendingError::InvalidOracleConfig.into());
-    }
 
-    let pyth_product_data = pyth_product_info.try_borrow_data()?;
-    let pyth_product = pyth_sdk_solana::state::load_product_account(&pyth_product_data)?;
-
-    if &pyth_product.px_acc != pyth_price_info.key {
-        msg!("Pyth product price account does not match the Pyth price provided");
-        return Err(LendingError::InvalidOracleConfig.into());
+    match get_oracle_type(pyth_price_info)? {
+        OracleType::Pyth => validate_pyth_price_account_info(pyth_price_info),
+        OracleType::PythPull => validate_pyth_pull_price_account_info(pyth_price_info),
+        _ => Err(LendingError::InvalidOracleConfig.into()),
     }
-
-    let quote_currency = get_pyth_product_quote_currency(pyth_product)?;
-    if lending_market.quote_currency != quote_currency {
-        msg!("Lending market quote currency does not match the oracle quote currency");
-        return Err(LendingError::InvalidOracleConfig.into());
-    }
-    Ok(())
 }
 
 /// validates switchboard AccountInfo

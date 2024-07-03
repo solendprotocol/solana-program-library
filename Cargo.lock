@@ -5353,6 +5353,7 @@ dependencies = [
 name = "solend-program"
 version = "2.0.2"
 dependencies = [
+ "anchor-lang 0.28.0",
  "assert_matches",
  "base64 0.13.1",
  "bincode",
