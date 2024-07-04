@@ -833,7 +833,6 @@ async fn test_pyth_pull_oracle() {
 
     let wsol_reserve_post = test.load_account::<Reserve>(wsol_reserve.pubkey).await;
 
-    // when pyth is null and only switchboard exists, both price fields get overwritten
     assert_eq!(
         wsol_reserve_post.account.liquidity.market_price,
         Decimal::from(8u64)
@@ -843,4 +842,95 @@ async fn test_pyth_pull_oracle() {
         Decimal::from(9u64)
     );
 
+    test.advance_clock_by_slots(1).await;
+
+    // bad confidence interval
+    test.set_pyth_pull_price(
+        &wsol_mint::id(),
+        &PriceArgs {
+            price: 8,
+            conf: 10,
+            expo: 0,
+            ema_price: 9,
+            ema_conf: 0,
+        },
+    )
+    .await;
+
+    let wsol_reserve = test.load_account::<Reserve>(wsol_reserve.pubkey).await;
+    let res = lending_market
+        .refresh_reserve(&mut test, &wsol_reserve)
+        .await
+        .unwrap_err()
+        .unwrap();
+
+    assert_eq!(
+        res,
+        TransactionError::InstructionError(
+            1,
+            InstructionError::Custom(LendingError::InvalidOracleConfig as u32),
+        ),
+    );
+}
+
+#[tokio::test]
+async fn test_switchboard_pull_oracle() {
+    let (mut test, lending_market, _, wsol_reserve, lending_market_owner, _) = setup().await;
+
+    test.set_price(
+        &wsol_mint::id(),
+        &PriceArgs {
+            price: 10,
+            conf: 0,
+            expo: 0,
+            ema_price: 11,
+            ema_conf: 0,
+        },
+    )
+    .await;
+
+    test.advance_clock_by_slots(1).await;
+
+    let feed = test.init_switchboard_pull_feed(&wsol_mint::id()).await;
+
+    test.advance_clock_by_slots(1).await;
+
+    lending_market
+        .update_reserve_config(
+            &mut test,
+            &lending_market_owner,
+            &wsol_reserve,
+            wsol_reserve.account.config,
+            wsol_reserve.account.rate_limiter.config,
+            Some(&Oracle {
+                pyth_price_pubkey: NULL_PUBKEY,
+                pyth_product_pubkey: NULL_PUBKEY,
+                switchboard_feed_pubkey: Some(feed),
+            }),
+        )
+        .await
+        .unwrap();
+
+    test.advance_clock_by_slots(1).await;
+
+    test.set_switchboard_pull_price(&wsol_mint::id(), SwitchboardPriceArgs { price: 10, expo: 0 }).await;
+
+    let wsol_reserve = test.load_account::<Reserve>(wsol_reserve.pubkey).await;
+    lending_market
+        .refresh_reserve(&mut test, &wsol_reserve)
+        .await
+        .unwrap();
+
+    let wsol_reserve_post = test.load_account::<Reserve>(wsol_reserve.pubkey).await;
+
+    assert_eq!(
+        wsol_reserve_post.account.liquidity.market_price,
+        Decimal::from(8u64)
+    );
+    assert_eq!(
+        wsol_reserve_post.account.liquidity.smoothed_market_price,
+        Decimal::from(9u64)
+    );
+
+    test.advance_clock_by_slots(1).await;
 }

@@ -368,11 +368,11 @@ fn process_init_reserve(
         return Err(LendingError::InvalidOracleConfig.into());
     }
     validate_pyth_keys(pyth_price_info)?;
-    validate_switchboard_keys(&lending_market, switchboard_feed_info)?;
+    validate_switchboard_keys(switchboard_feed_info)?;
 
     if let Some(extra_oracle_pubkey) = config.extra_oracle_pubkey {
         let extra_oracle_info = next_account_info(account_info_iter)?;
-        validate_extra_oracle(&lending_market, extra_oracle_pubkey, extra_oracle_info)?;
+        validate_extra_oracle(extra_oracle_pubkey, extra_oracle_info)?;
     }
 
     let (market_price, smoothed_market_price) =
@@ -482,7 +482,6 @@ fn process_init_reserve(
 }
 
 fn validate_extra_oracle(
-    lending_market: &LendingMarket,
     extra_oracle_pubkey: Pubkey,
     extra_oracle_info: &AccountInfo<'_>,
 ) -> Result<(), ProgramError> {
@@ -504,10 +503,10 @@ fn validate_extra_oracle(
             validate_pyth_price_account_info(extra_oracle_info)?;
         }
         OracleType::Switchboard => {
-            validate_switchboard_keys(lending_market, extra_oracle_info)?;
+            validate_switchboard_keys(extra_oracle_info)?;
         }
         OracleType::SbOnDemand => {
-            validate_sb_on_demand_keys(lending_market, extra_oracle_info)?;
+            validate_sb_on_demand_keys(extra_oracle_info)?;
         }
     }
 
@@ -2471,7 +2470,7 @@ fn process_update_reserve_config(
         }
 
         if *switchboard_feed_info.key != reserve.liquidity.switchboard_oracle_pubkey {
-            validate_switchboard_keys(&lending_market, switchboard_feed_info)?;
+            validate_switchboard_keys(switchboard_feed_info)?;
             reserve.liquidity.switchboard_oracle_pubkey = *switchboard_feed_info.key;
         }
         if reserve.liquidity.switchboard_oracle_pubkey == solend_program::NULL_PUBKEY
@@ -2483,7 +2482,7 @@ fn process_update_reserve_config(
 
         if let Some(extra_oracle_pubkey) = config.extra_oracle_pubkey {
             let extra_oracle_info = next_account_info(account_info_iter)?;
-            validate_extra_oracle(&lending_market, extra_oracle_pubkey, extra_oracle_info)?;
+            validate_extra_oracle(extra_oracle_pubkey, extra_oracle_info)?;
         }
 
         reserve.config = config;
@@ -3532,16 +3531,24 @@ fn validate_pyth_keys(pyth_price_info: &AccountInfo) -> ProgramResult {
     }
 }
 
-/// validates switchboard AccountInfo
-fn validate_switchboard_keys(
-    lending_market: &LendingMarket,
-    switchboard_feed_info: &AccountInfo,
-) -> ProgramResult {
+fn validate_switchboard_keys(switchboard_feed_info: &AccountInfo) -> ProgramResult {
     if *switchboard_feed_info.key == solend_program::NULL_PUBKEY {
         return Ok(());
     }
-    if switchboard_feed_info.owner != &lending_market.switchboard_oracle_program_id
-        && switchboard_feed_info.owner != &switchboard_v2_mainnet::id()
+
+    match get_oracle_type(switchboard_feed_info)? {
+        OracleType::Switchboard => validate_switchboard_v2_keys(switchboard_feed_info),
+        OracleType::SbOnDemand => validate_sb_on_demand_keys(switchboard_feed_info),
+        _ => Err(LendingError::InvalidOracleConfig.into()),
+    }
+}
+
+/// validates switchboard AccountInfo
+fn validate_switchboard_v2_keys(switchboard_feed_info: &AccountInfo) -> ProgramResult {
+    if *switchboard_feed_info.key == solend_program::NULL_PUBKEY {
+        return Ok(());
+    }
+    if switchboard_feed_info.owner != &switchboard_v2_mainnet::id()
         && switchboard_feed_info.owner != &switchboard_v2_devnet::id()
     {
         msg!("Switchboard account provided is not owned by the switchboard oracle program");
@@ -3555,15 +3562,12 @@ fn validate_switchboard_keys(
 }
 
 /// validates switchboard on-demand AccountInfo
-fn validate_sb_on_demand_keys(
-    lending_market: &LendingMarket,
-    switchboard_feed_info: &AccountInfo,
-) -> ProgramResult {
+fn validate_sb_on_demand_keys(switchboard_feed_info: &AccountInfo) -> ProgramResult {
     if *switchboard_feed_info.key == solend_program::NULL_PUBKEY {
         return Ok(());
     }
-    if switchboard_feed_info.owner != &lending_market.switchboard_oracle_program_id
-        && switchboard_feed_info.owner != &switchboard_on_demand_mainnet::id()
+
+    if switchboard_feed_info.owner != &switchboard_on_demand_mainnet::id()
         && switchboard_feed_info.owner != &switchboard_on_demand_devnet::id()
     {
         msg!("Switchboard account provided is not owned by the switchboard oracle program");

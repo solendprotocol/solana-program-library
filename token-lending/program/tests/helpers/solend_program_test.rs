@@ -1,4 +1,5 @@
 use bytemuck::checked::from_bytes;
+use solend_sdk::switchboard_on_demand_mainnet;
 
 use pyth_solana_receiver_sdk::price_update::PriceUpdateV2;
 use solend_sdk::instruction::*;
@@ -6,10 +7,15 @@ use solend_sdk::pyth_mainnet;
 use solend_sdk::pyth_pull_mainnet;
 use solend_sdk::state::*;
 use solend_sdk::switchboard_v2_mainnet;
+use switchboard_on_demand::PullFeedAccountData;
 
 use super::{
     flash_loan_proxy::proxy_program,
     mock_switchboard::{init_switchboard, set_switchboard_price},
+    mock_switchboard_pull::{
+        init_switchboard as init_switchboard_pull,
+        set_switchboard_price as set_switchboard_pull_price,
+    },
 };
 use crate::helpers::*;
 use solana_program::native_token::LAMPORTS_PER_SOL;
@@ -92,6 +98,11 @@ impl SolendProgramTest {
             switchboard_v2_mainnet::id(),
             processor!(mock_switchboard::process_instruction),
         );
+        test.add_program(
+            "mock_switchboard_pull",
+            switchboard_on_demand_mainnet::id(),
+            processor!(mock_switchboard_pull::process_instruction),
+        );
 
         test.add_program(
             "flash_loan_proxy",
@@ -146,6 +157,11 @@ impl SolendProgramTest {
             "mock_switchboard",
             switchboard_v2_mainnet::id(),
             processor!(mock_switchboard::process_instruction),
+        );
+        test.add_program(
+            "mock_switchboard_pull",
+            switchboard_on_demand_mainnet::id(),
+            processor!(mock_switchboard_pull::process_instruction),
         );
 
         test.add_program(
@@ -475,13 +491,12 @@ impl SolendProgramTest {
     }
 
     pub async fn init_pyth_pull_feed(&mut self, mint: &Pubkey) -> Pubkey {
-        let pyth_price_pubkey = self.create_account(PriceUpdateV2::LEN, &pyth_pull_mainnet::id(), None).await;
+        let pyth_price_pubkey = self
+            .create_account(PriceUpdateV2::LEN, &pyth_pull_mainnet::id(), None)
+            .await;
 
         self.process_transaction(
-            &[init_pull(
-                pyth_pull_mainnet::id(),
-                pyth_price_pubkey,
-            )],
+            &[init_pull(pyth_pull_mainnet::id(), pyth_price_pubkey)],
             None,
         )
         .await
@@ -493,7 +508,6 @@ impl SolendProgramTest {
         } else {
             panic!("oracle not initialized");
         }
-
 
         pyth_price_pubkey
     }
@@ -544,10 +558,53 @@ impl SolendProgramTest {
         }
     }
 
+    pub async fn init_switchboard_pull_feed(&mut self, mint: &Pubkey) -> Pubkey {
+        let switchboard_feed_pubkey = self
+            .create_account(
+                std::mem::size_of::<PullFeedAccountData>() + 8,
+                &switchboard_on_demand_mainnet::id(),
+                None,
+            )
+            .await;
+
+        self.process_transaction(
+            &[init_switchboard_pull(
+                switchboard_on_demand_mainnet::id(),
+                switchboard_feed_pubkey,
+            )],
+            None,
+        )
+        .await
+        .unwrap();
+
+        let oracle = self.mints.get_mut(mint).unwrap();
+        if let Some(ref mut oracle) = oracle {
+            oracle.switchboard_feed_pubkey = Some(switchboard_feed_pubkey);
+            switchboard_feed_pubkey
+        } else {
+            panic!("oracle not initialized");
+        }
+    }
+
     pub async fn set_switchboard_price(&mut self, mint: &Pubkey, price: SwitchboardPriceArgs) {
         let oracle = self.mints.get(mint).unwrap().unwrap();
         self.process_transaction(
             &[set_switchboard_price(
+                switchboard_v2_mainnet::id(),
+                oracle.switchboard_feed_pubkey.unwrap(),
+                price.price,
+                price.expo,
+            )],
+            None,
+        )
+        .await
+        .unwrap();
+    }
+
+    pub async fn set_switchboard_pull_price(&mut self, mint: &Pubkey, price: SwitchboardPriceArgs) {
+        let oracle = self.mints.get(mint).unwrap().unwrap();
+        self.process_transaction(
+            &[set_switchboard_pull_price(
                 switchboard_v2_mainnet::id(),
                 oracle.switchboard_feed_pubkey.unwrap(),
                 price.price,
