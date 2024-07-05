@@ -4,7 +4,7 @@
 
 pub mod entrypoint;
 pub mod processor;
-pub use solend_sdk::{error, instruction, math, oracles, state};
+pub use solend_sdk::{error, instruction, math, state};
 
 // Export current sdk types for downstream users building with a different sdk version
 pub use solana_program;

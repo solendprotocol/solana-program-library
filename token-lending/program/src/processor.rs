@@ -14,7 +14,19 @@ use crate::{
     },
 };
 use bytemuck::bytes_of;
-use pyth_sdk_solana::{self, state::ProductAccount};
+use oracles::get_single_price;
+use oracles::pyth::validate_pyth_keys;
+use oracles::switchboard::get_switchboard_price_on_demand;
+use oracles::switchboard::get_switchboard_price_v2;
+use oracles::switchboard::validate_sb_on_demand_keys;
+use oracles::switchboard::validate_switchboard_keys;
+use oracles::{
+    get_oracle_type,
+    pyth::{
+        get_pyth_price_unchecked, get_pyth_pull_price_unchecked, validate_pyth_price_account_info,
+    },
+    OracleType,
+};
 use solana_program::{
     account_info::{next_account_info, AccountInfo},
     entrypoint::ProgramResult,
@@ -28,24 +40,13 @@ use solana_program::{
     sysvar::instructions::{load_current_index_checked, load_instruction_at_checked},
     sysvar::{clock::Clock, rent::Rent, Sysvar},
 };
-use solend_sdk::oracles::validate_pyth_pull_price_account_info;
 use solend_sdk::{
     math::SaturatingSub,
-    oracles::{
-        get_oracle_type, get_pyth_price, get_pyth_price_unchecked, get_pyth_pull_price,
-        get_pyth_pull_price_unchecked, validate_pyth_price_account_info, OracleType,
-    },
     state::{LendingMarketMetadata, RateLimiter, RateLimiterConfig, ReserveType},
 };
-use solend_sdk::{
-    switchboard_on_demand_devnet, switchboard_on_demand_mainnet, switchboard_v2_devnet,
-    switchboard_v2_mainnet,
-};
+
 use spl_token::state::Mint;
 use std::{cmp::min, result::Result};
-
-use switchboard_on_demand::on_demand::accounts::pull_feed::PullFeedAccountData as SbOnDemandFeed;
-use switchboard_v2::AggregatorAccountData;
 
 /// solend market owner
 pub mod solend_market_owner {
@@ -3221,26 +3222,6 @@ fn unpack_mint(data: &[u8]) -> Result<Mint, LendingError> {
     Mint::unpack(data).map_err(|_| LendingError::InvalidTokenMint)
 }
 
-fn _get_pyth_product_quote_currency(
-    pyth_product: &ProductAccount,
-) -> Result<[u8; 32], ProgramError> {
-    pyth_product
-        .iter()
-        .find_map(|(key, val)| {
-            if key == "quote_currency" {
-                let mut value = [0u8; 32];
-                value[0..val.len()].copy_from_slice(val.as_bytes());
-                Some(value)
-            } else {
-                None
-            }
-        })
-        .ok_or_else(|| {
-            msg!("Pyth product quote currency not found");
-            LendingError::InvalidOracleConfig.into()
-        })
-}
-
 /// get_price tries to load the oracle price from pyth, and if it fails, uses switchboard.
 /// The first element in the returned tuple is the market price, and the second is the optional
 /// smoothed price (eg ema, twap).
@@ -3263,125 +3244,6 @@ fn get_price(
     }
 
     Err(LendingError::InvalidOracleConfig.into())
-}
-
-fn get_single_price(
-    oracle_account_info: &AccountInfo,
-    clock: &Clock,
-) -> Result<(Decimal, Option<Decimal>), ProgramError> {
-    match get_oracle_type(oracle_account_info)? {
-        OracleType::Pyth => {
-            let price = get_pyth_price(oracle_account_info, clock)?;
-            Ok((price.0, Some(price.1)))
-        }
-        OracleType::PythPull => {
-            let price = get_pyth_pull_price(oracle_account_info, clock)?;
-            Ok((price.0, Some(price.1)))
-        }
-        OracleType::Switchboard => {
-            let price = get_switchboard_price(oracle_account_info, clock)?;
-            Ok((price, None))
-        }
-        OracleType::SbOnDemand => {
-            let price = get_switchboard_price(oracle_account_info, clock)?;
-            Ok((price, None))
-        }
-    }
-}
-
-fn get_switchboard_price(
-    switchboard_feed_info: &AccountInfo,
-    clock: &Clock,
-) -> Result<Decimal, ProgramError> {
-    if *switchboard_feed_info.key == solend_program::NULL_PUBKEY {
-        return Err(LendingError::NullOracleConfig.into());
-    }
-    if switchboard_feed_info.owner == &switchboard_v2_mainnet::id()
-        || switchboard_feed_info.owner == &switchboard_v2_devnet::id()
-    {
-        return get_switchboard_price_v2(switchboard_feed_info, clock, true);
-    }
-
-    if switchboard_feed_info.owner == &switchboard_on_demand_devnet::id()
-        || switchboard_feed_info.owner == &switchboard_on_demand_mainnet::id()
-    {
-        return get_switchboard_price_on_demand(switchboard_feed_info, clock, true);
-    }
-    Err(LendingError::NullOracleConfig.into())
-}
-
-fn get_switchboard_price_on_demand(
-    switchboard_feed_info: &AccountInfo,
-    clock: &Clock,
-    check_staleness: bool,
-) -> Result<Decimal, ProgramError> {
-    const STALE_AFTER_SLOTS_ELAPSED: u64 = 240;
-    let data = switchboard_feed_info.try_borrow_data()?;
-    let feed = SbOnDemandFeed::parse(data).map_err(|_| ProgramError::InvalidAccountData)?;
-    let slots_elapsed = clock
-        .slot
-        .checked_sub(feed.result.slot)
-        .ok_or(LendingError::MathOverflow)?;
-    if check_staleness && slots_elapsed >= STALE_AFTER_SLOTS_ELAPSED {
-        msg!("Switchboard oracle price is stale");
-        return Err(LendingError::InvalidOracleConfig.into());
-    }
-    let price_desc = feed.value().ok_or(ProgramError::InvalidAccountData)?;
-    if price_desc.mantissa() < 0 {
-        msg!("Switchboard oracle price is negative which is not allowed");
-        return Err(LendingError::InvalidOracleConfig.into());
-    }
-    let price_mantissa = Decimal::from(price_desc.mantissa() as u128);
-    let exp = Decimal::from((10u128).checked_pow(price_desc.scale()).unwrap());
-    let price = price_mantissa.try_div(exp)?;
-
-    let range_desc = feed.range().ok_or(ProgramError::InvalidAccountData)?;
-    if range_desc.mantissa() < 0 {
-        msg!("Switchboard oracle price range is negative which is not allowed");
-        return Err(LendingError::InvalidOracleConfig.into());
-    }
-    let range_mantissa = Decimal::from(range_desc.mantissa() as u128);
-    let range_exp = Decimal::from((10u128).checked_pow(range_desc.scale()).unwrap());
-    let range = range_mantissa.try_div(range_exp)?;
-
-    if range.try_mul(10_u64)? > price {
-        msg!(
-            "Oracle price range is too wide. price: {}, conf: {}",
-            price,
-            range,
-        );
-        return Err(LendingError::InvalidOracleConfig.into());
-    }
-
-    Ok(price)
-}
-
-fn get_switchboard_price_v2(
-    switchboard_feed_info: &AccountInfo,
-    clock: &Clock,
-    check_staleness: bool,
-) -> Result<Decimal, ProgramError> {
-    const STALE_AFTER_SLOTS_ELAPSED: u64 = 240;
-    let data = &switchboard_feed_info.try_borrow_data()?;
-    let feed = AggregatorAccountData::new_from_bytes(data)?;
-
-    let slots_elapsed = clock
-        .slot
-        .checked_sub(feed.latest_confirmed_round.round_open_slot)
-        .ok_or(LendingError::MathOverflow)?;
-    if check_staleness && slots_elapsed >= STALE_AFTER_SLOTS_ELAPSED {
-        msg!("Switchboard oracle price is stale");
-        return Err(LendingError::InvalidOracleConfig.into());
-    }
-
-    let price_switchboard_desc = feed.get_result()?;
-    if price_switchboard_desc.mantissa < 0 {
-        msg!("Switchboard oracle price is negative which is not allowed");
-        return Err(LendingError::InvalidOracleConfig.into());
-    }
-    let price = Decimal::from(price_switchboard_desc.mantissa as u128);
-    let exp = Decimal::from((10u128).checked_pow(price_switchboard_desc.scale).unwrap());
-    price.try_div(exp)
 }
 
 /// Issue a spl_token `InitializeAccount` instruction.
@@ -3515,69 +3377,6 @@ fn spl_token_burn(params: TokenBurnParams<'_, '_>) -> ProgramResult {
         authority_signer_seeds,
     );
     result.map_err(|_| LendingError::TokenBurnFailed.into())
-}
-
-/// validates pyth AccountInfos
-#[inline(always)]
-fn validate_pyth_keys(pyth_price_info: &AccountInfo) -> ProgramResult {
-    if *pyth_price_info.key == solend_program::NULL_PUBKEY {
-        return Ok(());
-    }
-
-    match get_oracle_type(pyth_price_info)? {
-        OracleType::Pyth => validate_pyth_price_account_info(pyth_price_info),
-        OracleType::PythPull => validate_pyth_pull_price_account_info(pyth_price_info),
-        _ => Err(LendingError::InvalidOracleConfig.into()),
-    }
-}
-
-fn validate_switchboard_keys(switchboard_feed_info: &AccountInfo) -> ProgramResult {
-    if *switchboard_feed_info.key == solend_program::NULL_PUBKEY {
-        return Ok(());
-    }
-
-    match get_oracle_type(switchboard_feed_info)? {
-        OracleType::Switchboard => validate_switchboard_v2_keys(switchboard_feed_info),
-        OracleType::SbOnDemand => validate_sb_on_demand_keys(switchboard_feed_info),
-        _ => Err(LendingError::InvalidOracleConfig.into()),
-    }
-}
-
-/// validates switchboard AccountInfo
-fn validate_switchboard_v2_keys(switchboard_feed_info: &AccountInfo) -> ProgramResult {
-    if *switchboard_feed_info.key == solend_program::NULL_PUBKEY {
-        return Ok(());
-    }
-    if switchboard_feed_info.owner != &switchboard_v2_mainnet::id()
-        && switchboard_feed_info.owner != &switchboard_v2_devnet::id()
-    {
-        msg!("Switchboard account provided is not owned by the switchboard oracle program");
-        return Err(LendingError::InvalidOracleConfig.into());
-    }
-
-    let data = &switchboard_feed_info.try_borrow_data()?;
-    AggregatorAccountData::new_from_bytes(data)?;
-
-    Ok(())
-}
-
-/// validates switchboard on-demand AccountInfo
-fn validate_sb_on_demand_keys(switchboard_feed_info: &AccountInfo) -> ProgramResult {
-    if *switchboard_feed_info.key == solend_program::NULL_PUBKEY {
-        return Ok(());
-    }
-
-    if switchboard_feed_info.owner != &switchboard_on_demand_mainnet::id()
-        && switchboard_feed_info.owner != &switchboard_on_demand_devnet::id()
-    {
-        msg!("Switchboard account provided is not owned by the switchboard oracle program");
-        return Err(LendingError::InvalidOracleConfig.into());
-    }
-
-    let data = switchboard_feed_info.try_borrow_data()?;
-    SbOnDemandFeed::parse(data).map_err(|_| ProgramError::InvalidAccountData)?;
-
-    Ok(())
 }
 
 fn is_cpi_call(

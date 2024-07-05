@@ -4,7 +4,7 @@ members = [
   "token-lending/program",
   "token-lending/sdk",
   "token-lending/brick"
-]
+, "token-lending/oracles"]
 
 [profile.dev]
 split-debuginfo = "unpacked"

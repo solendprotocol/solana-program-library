@@ -3006,6 +3006,29 @@ dependencies = [
 ]
 
 [[package]]
+name = "oracles"
+version = "0.1.0"
+dependencies = [
+ "anchor-lang 0.28.0",
+ "assert_matches",
+ "base64 0.13.1",
+ "bytemuck",
+ "log",
+ "proptest",
+ "pyth-sdk-solana",
+ "pyth-solana-receiver-sdk",
+ "rand 0.8.5",
+ "serde",
+ "serde_yaml 0.8.26",
+ "solana-program",
+ "solana-sdk",
+ "solend-sdk",
+ "switchboard-on-demand",
+ "switchboard-program",
+ "switchboard-v2",
+]
+
+[[package]]
 name = "os_str_bytes"
 version = "6.4.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -5360,6 +5383,7 @@ dependencies = [
  "borsh 0.10.3",
  "bytemuck",
  "log",
+ "oracles",
  "proptest",
  "pyth-sdk-solana",
  "pyth-solana-receiver-sdk",
@@ -5399,7 +5423,6 @@ dependencies = [
 name = "solend-sdk"
 version = "2.0.2"
 dependencies = [
- "anchor-lang 0.28.0",
  "arrayref",
  "assert_matches",
  "base64 0.13.1",
@@ -5409,8 +5432,6 @@ dependencies = [
  "num-derive 0.3.3",
  "num-traits",
  "proptest",
- "pyth-sdk-solana",
- "pyth-solana-receiver-sdk",
  "rand 0.8.5",
  "serde",
  "serde_yaml 0.8.26",
@@ -5418,7 +5439,6 @@ dependencies = [
  "solana-sdk",
  "spl-token 3.5.0",
  "static_assertions",
- "switchboard-on-demand",
  "thiserror",
  "uint",
 ]

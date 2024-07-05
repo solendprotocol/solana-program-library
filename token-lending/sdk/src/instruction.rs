@@ -1,12 +1,12 @@
 //! Instruction types
 
-use std::convert::TryFrom;
 use crate::state::{LendingMarketMetadata, ReserveType};
 use crate::{
     error::LendingError,
     state::{RateLimiterConfig, ReserveConfig, ReserveFees},
 };
 use bytemuck::bytes_of;
+use std::convert::TryFrom;
 
 use num_traits::FromPrimitive;
 use solana_program::system_program;

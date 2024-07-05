@@ -1,18 +1,17 @@
 #![allow(missing_docs)]
-use crate::{
-    self as solend_program,
+use crate::{get_oracle_type, pyth_mainnet, pyth_pull_mainnet, OracleType};
+use anchor_lang::Key;
+use solend_sdk::{
     error::LendingError,
     math::{Decimal, TryDiv, TryMul},
-    pyth_mainnet, pyth_pull_mainnet, solana_program, switchboard_on_demand_mainnet,
-    switchboard_v2_mainnet,
 };
-use anchor_lang::Key;
 
 use anchor_lang::AccountDeserialize;
 
 use pyth_solana_receiver_sdk::price_update::{PriceUpdateV2, VerificationLevel};
 use solana_program::{
-    account_info::AccountInfo, msg, program_error::ProgramError, sysvar::clock::Clock,
+    account_info::AccountInfo, entrypoint::ProgramResult, msg, program_error::ProgramError,
+    sysvar::clock::Clock,
 };
 use std::{convert::TryInto, result::Result};
 
@@ -20,30 +19,18 @@ const PYTH_CONFIDENCE_RATIO: u64 = 10;
 const STALE_AFTER_SLOTS_ELAPSED: u64 = 240; // roughly 2 min
 const STALE_AFTER_SECONDS_ELAPSED: u64 = 120; // roughly 2 min
 
-pub enum OracleType {
-    Pyth,
-    Switchboard,
-    PythPull,
-    SbOnDemand,
-}
-
-pub fn get_oracle_type(oracle_info: &AccountInfo) -> Result<OracleType, ProgramError> {
-    if *oracle_info.owner == pyth_mainnet::id() {
-        return Ok(OracleType::Pyth);
-    } else if *oracle_info.owner == pyth_pull_mainnet::id() {
-        return Ok(OracleType::PythPull);
-    } else if *oracle_info.owner == switchboard_v2_mainnet::id() {
-        return Ok(OracleType::Switchboard);
-    } else if *oracle_info.owner == switchboard_on_demand_mainnet::id() {
-        return Ok(OracleType::SbOnDemand);
+/// validates pyth AccountInfos
+#[inline(always)]
+pub fn validate_pyth_keys(pyth_price_info: &AccountInfo) -> ProgramResult {
+    if *pyth_price_info.key == solend_sdk::NULL_PUBKEY {
+        return Ok(());
     }
 
-    msg!(
-        "Could not find oracle type for {:?} with owner {:?}",
-        oracle_info.key,
-        oracle_info.owner
-    );
-    Err(LendingError::InvalidOracleConfig.into())
+    match get_oracle_type(pyth_price_info)? {
+        OracleType::Pyth => validate_pyth_price_account_info(pyth_price_info),
+        OracleType::PythPull => validate_pyth_pull_price_account_info(pyth_price_info),
+        _ => Err(LendingError::InvalidOracleConfig.into()),
+    }
 }
 
 pub fn validate_pyth_price_account_info(pyth_price_info: &AccountInfo) -> Result<(), ProgramError> {
@@ -79,7 +66,7 @@ pub fn validate_pyth_pull_price_account_info(
 
 /// get pyth price without caring about staleness or variance. only used
 pub fn get_pyth_price_unchecked(pyth_price_info: &AccountInfo) -> Result<Decimal, ProgramError> {
-    if *pyth_price_info.key == solend_program::NULL_PUBKEY {
+    if *pyth_price_info.key == solend_sdk::NULL_PUBKEY {
         return Err(LendingError::NullOracleConfig.into());
     }
 
@@ -122,7 +109,7 @@ pub fn get_pyth_price(
     pyth_price_info: &AccountInfo,
     clock: &Clock,
 ) -> Result<(Decimal, Decimal), ProgramError> {
-    if *pyth_price_info.key == solend_program::NULL_PUBKEY {
+    if *pyth_price_info.key == solend_sdk::NULL_PUBKEY {
         return Err(LendingError::NullOracleConfig.into());
     }
 
@@ -188,7 +175,7 @@ pub fn get_pyth_pull_price(
     pyth_price_info: &AccountInfo,
     clock: &Clock,
 ) -> Result<(Decimal, Decimal), ProgramError> {
-    if *pyth_price_info.key == solend_program::NULL_PUBKEY {
+    if *pyth_price_info.key == solend_sdk::NULL_PUBKEY {
         return Err(LendingError::NullOracleConfig.into());
     }
 
