@@ -27,32 +27,3 @@ pub const NULL_PUBKEY: solana_program::pubkey::Pubkey =
         138, 64, 177, 28, 19, 90, 156, 0, 0, 0, 0, 0,
     ]);
 
-/// Mainnet program id for Switchboard v2.
-pub mod switchboard_v2_mainnet {
-    solana_program::declare_id!("SW1TCH7qEPTdLsDHRgPuMQjbQxKdH2aBStViMFnt64f");
-}
-
-/// Devnet program id for Switchboard v2.
-pub mod switchboard_v2_devnet {
-    solana_program::declare_id!("2TfB33aLaneQb5TNVwyDz3jSZXS6jdW2ARw1Dgf84XCG");
-}
-
-/// Mainnet program id for Switchboard On-Demand Oracle.
-pub mod switchboard_on_demand_mainnet {
-    solana_program::declare_id!("SBondMDrcV3K4kxZR1HNVT7osZxAHVHgYXL5Ze1oMUv");
-}
-
-/// Devnet program id for Switchboard On-Demand Oracle.
-pub mod switchboard_on_demand_devnet {
-    solana_program::declare_id!("SBondMDrcV3K4kxZR1HNVT7osZxAHVHgYXL5Ze1oMUv");
-}
-
-/// Mainnet program id for pyth
-pub mod pyth_mainnet {
-    solana_program::declare_id!("FsJ3A3u2vn5cTVofAjvy6y5kwABJAqYWpe4975bi2epH");
-}
-
-/// Mainnet program id for pyth
-pub mod pyth_pull_mainnet {
-    solana_program::declare_id!("rec5EKMGg6MxZYaMdyBfgwp4d5rB9T1VQH5pJv5LtFJ");
-}

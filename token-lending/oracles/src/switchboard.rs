@@ -8,7 +8,7 @@ use solana_program::{
     sysvar::clock::Clock,
 };
 use solend_sdk::{error::LendingError, math::Decimal};
-use solend_sdk::{
+use crate::{
     switchboard_on_demand_devnet, switchboard_on_demand_mainnet, switchboard_v2_devnet,
     switchboard_v2_mainnet,
 };
