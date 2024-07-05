@@ -915,6 +915,8 @@ async fn test_switchboard_pull_oracle() {
 
     test.set_switchboard_pull_price(&wsol_mint::id(), SwitchboardPriceArgs { price: 10, expo: 0 }).await;
 
+    test.advance_clock_by_slots(1).await;
+
     let wsol_reserve = test.load_account::<Reserve>(wsol_reserve.pubkey).await;
     lending_market
         .refresh_reserve(&mut test, &wsol_reserve)
@@ -925,12 +927,28 @@ async fn test_switchboard_pull_oracle() {
 
     assert_eq!(
         wsol_reserve_post.account.liquidity.market_price,
-        Decimal::from(8u64)
+        Decimal::from(10u64)
     );
     assert_eq!(
         wsol_reserve_post.account.liquidity.smoothed_market_price,
-        Decimal::from(9u64)
+        Decimal::from(10u64)
     );
 
-    test.advance_clock_by_slots(1).await;
+    test.advance_clock_by_slots(1000).await;
+
+    // stale
+    let wsol_reserve = test.load_account::<Reserve>(wsol_reserve.pubkey).await;
+    let res = lending_market
+        .refresh_reserve(&mut test, &wsol_reserve)
+        .await
+        .unwrap_err()
+        .unwrap();
+
+    assert_eq!(
+        res,
+        TransactionError::InstructionError(
+            1,
+            InstructionError::Custom(LendingError::InvalidOracleConfig as u32),
+        ),
+    );
 }

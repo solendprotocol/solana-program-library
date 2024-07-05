@@ -1,3 +1,4 @@
+use switchboard_on_demand::OracleSubmission;
 /// mock oracle prices in tests with this program.
 use solana_program::{
     account_info::AccountInfo,
@@ -33,6 +34,8 @@ pub fn process_instruction(
 ) -> ProgramResult {
     Processor::process(program_id, accounts, instruction_data)
 }
+
+static_assertions::const_assert_eq!(std::mem::size_of::<OracleSubmission>(), 64);
 
 pub struct Processor;
 impl Processor {

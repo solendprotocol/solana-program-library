@@ -8,8 +8,8 @@ use solana_program::{
     pubkey::Pubkey,
     sysvar::Sysvar,
 };
-use switchboard_on_demand::PullFeedAccountData;
 use std::cell::RefMut;
+use switchboard_on_demand::PullFeedAccountData;
 use switchboard_v2::{AggregatorAccountData, SwitchboardDecimal};
 
 use borsh::{BorshDeserialize, BorshSerialize};
@@ -52,24 +52,21 @@ impl Processor {
                 let mut data = switchboard_feed.try_borrow_mut_data()?;
 
                 data[0..8].copy_from_slice(&PullFeedAccountData::discriminator());
+
                 Ok(())
             }
             MockSwitchboardPullInstruction::SetSwitchboardPrice { price, expo } => {
                 msg!("Mock Switchboard Pull: Set Switchboard price");
                 let switchboard_feed = next_account_info(account_info_iter)?;
-                let data = switchboard_feed.try_borrow_mut_data()?;
 
-                let mut pull_feed: RefMut<PullFeedAccountData> =
-                    RefMut::map(data, |data| {
-                        bytemuck::from_bytes_mut(
-                            &mut data[8..std::mem::size_of::<PullFeedAccountData>() + 8],
-                        )
-                    });
+                let mut data = switchboard_feed.try_borrow_mut_data()?;
 
                 let scaled = (price as i128) * 10i128.pow((18 + expo) as u32);
 
-                pull_feed.result.value = scaled;
-                pull_feed.result.slot = Clock::get()?.slot;
+                let result_offset = 8 + 2256;
+                data[result_offset..(result_offset + 16)].copy_from_slice(&scaled.to_le_bytes());
+                data[(result_offset + 104)..(result_offset + 112)]
+                    .copy_from_slice(&Clock::get()?.slot.to_le_bytes());
 
                 Ok(())
             }

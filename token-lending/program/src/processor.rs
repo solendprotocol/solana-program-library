@@ -339,7 +339,7 @@ fn process_init_reserve(
         return Err(LendingError::InvalidAccountInput.into());
     }
 
-    let lending_market = LendingMarket::unpack(&lending_market_info.data.borrow())?;
+    let lending_market = Box::new(LendingMarket::unpack(&lending_market_info.data.borrow())?);
     if lending_market_info.owner != program_id {
         msg!(
             "Lending market provided is not owned by the lending program  {} != {}",
@@ -2036,7 +2036,7 @@ fn _liquidate_obligation<'a>(
     clock: &Clock,
     token_program_id: &AccountInfo<'a>,
 ) -> Result<(u64, Bonus), ProgramError> {
-    let lending_market = LendingMarket::unpack(&lending_market_info.data.borrow())?;
+    let lending_market = Box::new(LendingMarket::unpack(&lending_market_info.data.borrow())?);
     if lending_market_info.owner != program_id {
         msg!("Lending market provided is not owned by the lending program");
         return Err(LendingError::InvalidAccountOwner.into());
@@ -2409,7 +2409,7 @@ fn process_update_reserve_config(
         return Err(LendingError::InvalidAccountInput.into());
     }
 
-    let lending_market = LendingMarket::unpack(&lending_market_info.data.borrow())?;
+    let lending_market = Box::new(LendingMarket::unpack(&lending_market_info.data.borrow())?);
     if lending_market_info.owner != program_id {
         msg!(
             "Lending market provided is not owned by the lending program  {} != {}",

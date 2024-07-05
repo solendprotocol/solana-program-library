@@ -605,7 +605,7 @@ impl SolendProgramTest {
         let oracle = self.mints.get(mint).unwrap().unwrap();
         self.process_transaction(
             &[set_switchboard_pull_price(
-                switchboard_v2_mainnet::id(),
+                switchboard_on_demand_mainnet::id(),
                 oracle.switchboard_feed_pubkey.unwrap(),
                 price.price,
                 price.expo,
@@ -656,7 +656,7 @@ impl SolendProgramTest {
         let res = self
             .process_transaction(
                 &[
-                    ComputeBudgetInstruction::set_compute_unit_limit(70_000),
+                    ComputeBudgetInstruction::set_compute_unit_limit(80_000),
                     init_reserve(
                         solend_program::id(),
                         liquidity_amount,
@@ -939,7 +939,7 @@ impl Info<LendingMarket> {
         collateral_amount: u64,
     ) -> Result<(), BanksClientError> {
         let instructions = [
-            ComputeBudgetInstruction::set_compute_unit_limit(48_000),
+            ComputeBudgetInstruction::set_compute_unit_limit(58_000),
             refresh_reserve(
                 solend_program::id(),
                 reserve.pubkey,
@@ -1035,7 +1035,7 @@ impl Info<LendingMarket> {
     ) -> Result<(), BanksClientError> {
         test.process_transaction(
             &[
-                ComputeBudgetInstruction::set_compute_unit_limit(40_000),
+                ComputeBudgetInstruction::set_compute_unit_limit(2_000_000),
                 refresh_reserve(
                     solend_program::id(),
                     reserve.pubkey,
@@ -1156,7 +1156,7 @@ impl Info<LendingMarket> {
             .await;
         test.process_transaction(&refresh_ixs, None).await.unwrap();
 
-        let mut instructions = vec![ComputeBudgetInstruction::set_compute_unit_limit(1_000_000)];
+        let mut instructions = vec![ComputeBudgetInstruction::set_compute_unit_limit(100_000)];
         instructions.push(borrow_obligation_liquidity(
             solend_program::id(),
             liquidity_amount,
@@ -1190,7 +1190,7 @@ impl Info<LendingMarket> {
         liquidity_amount: u64,
     ) -> Result<(), BanksClientError> {
         let instructions = [
-            ComputeBudgetInstruction::set_compute_unit_limit(27_000),
+            ComputeBudgetInstruction::set_compute_unit_limit(35_000),
             repay_obligation_liquidity(
                 solend_program::id(),
                 liquidity_amount,
@@ -1214,7 +1214,7 @@ impl Info<LendingMarket> {
         reserve: &Info<Reserve>,
     ) -> Result<(), BanksClientError> {
         let instructions = [
-            ComputeBudgetInstruction::set_compute_unit_limit(40_000),
+            ComputeBudgetInstruction::set_compute_unit_limit(50_000),
             refresh_reserve(
                 solend_program::id(),
                 reserve.pubkey,
@@ -1250,7 +1250,7 @@ impl Info<LendingMarket> {
 
         test.process_transaction(
             &[
-                ComputeBudgetInstruction::set_compute_unit_limit(100_000),
+                ComputeBudgetInstruction::set_compute_unit_limit(110_000),
                 liquidate_obligation_and_redeem_reserve_collateral(
                     solend_program::id(),
                     liquidity_amount,
@@ -1327,7 +1327,7 @@ impl Info<LendingMarket> {
 
         test.process_transaction(
             &[
-                ComputeBudgetInstruction::set_compute_unit_limit(100_000),
+                ComputeBudgetInstruction::set_compute_unit_limit(110_000),
                 withdraw_obligation_collateral_and_redeem_reserve_collateral(
                     solend_program::id(),
                     collateral_amount,
