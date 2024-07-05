@@ -35,8 +35,6 @@ pub fn process_instruction(
     Processor::process(program_id, accounts, instruction_data)
 }
 
-static_assertions::const_assert_eq!(std::mem::size_of::<OracleSubmission>(), 64);
-
 pub struct Processor;
 impl Processor {
     pub fn process(

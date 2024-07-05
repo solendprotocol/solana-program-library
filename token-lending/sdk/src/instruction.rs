@@ -1,5 +1,6 @@
 //! Instruction types
 
+use std::convert::TryFrom;
 use crate::state::{LendingMarketMetadata, ReserveType};
 use crate::{
     error::LendingError,
@@ -834,7 +835,7 @@ impl LendingInstruction {
             return Err(LendingError::InstructionUnpackError.into());
         }
         let (key, rest) = input.split_at(PUBKEY_BYTES);
-        let pk = Pubkey::new(key);
+        let pk = Pubkey::try_from(key).map_err(|_| LendingError::InstructionUnpackError)?;
         Ok((pk, rest))
     }
 

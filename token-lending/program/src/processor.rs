@@ -3221,7 +3221,7 @@ fn unpack_mint(data: &[u8]) -> Result<Mint, LendingError> {
     Mint::unpack(data).map_err(|_| LendingError::InvalidTokenMint)
 }
 
-fn get_pyth_product_quote_currency(
+fn _get_pyth_product_quote_currency(
     pyth_product: &ProductAccount,
 ) -> Result<[u8; 32], ProgramError> {
     pyth_product
