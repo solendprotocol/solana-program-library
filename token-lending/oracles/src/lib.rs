@@ -1,8 +1,12 @@
 pub mod pyth;
 pub mod switchboard;
 
+use crate::pyth::get_pyth_price_unchecked;
 use crate::pyth::get_pyth_pull_price;
+use crate::pyth::get_pyth_pull_price_unchecked;
 use crate::switchboard::get_switchboard_price;
+use crate::switchboard::get_switchboard_price_on_demand;
+use crate::switchboard::get_switchboard_price_v2;
 use solana_program::{
     account_info::AccountInfo, msg, program_error::ProgramError, sysvar::clock::Clock,
 };
@@ -56,6 +60,18 @@ pub fn get_single_price(
             let price = get_switchboard_price(oracle_account_info, clock)?;
             Ok((price, None))
         }
+    }
+}
+
+pub fn get_single_price_unchecked(
+    oracle_account_info: &AccountInfo,
+    clock: &Clock,
+) -> Result<Decimal, ProgramError> {
+    match get_oracle_type(oracle_account_info)? {
+        OracleType::Pyth => get_pyth_price_unchecked(oracle_account_info),
+        OracleType::PythPull => get_pyth_pull_price_unchecked(oracle_account_info),
+        OracleType::Switchboard => get_switchboard_price_v2(oracle_account_info, clock, false),
+        OracleType::SbOnDemand => get_switchboard_price_on_demand(oracle_account_info, clock, true),
     }
 }
 

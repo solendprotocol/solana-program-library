@@ -15,18 +15,11 @@ use crate::{
 };
 use bytemuck::bytes_of;
 use oracles::get_single_price;
+use oracles::get_single_price_unchecked;
 use oracles::pyth::validate_pyth_keys;
-use oracles::switchboard::get_switchboard_price_on_demand;
-use oracles::switchboard::get_switchboard_price_v2;
 use oracles::switchboard::validate_sb_on_demand_keys;
 use oracles::switchboard::validate_switchboard_keys;
-use oracles::{
-    get_oracle_type,
-    pyth::{
-        get_pyth_price_unchecked, get_pyth_pull_price_unchecked, validate_pyth_price_account_info,
-    },
-    OracleType,
-};
+use oracles::{get_oracle_type, pyth::validate_pyth_price_account_info, OracleType};
 use solana_program::{
     account_info::{next_account_info, AccountInfo},
     entrypoint::ProgramResult,
@@ -578,22 +571,10 @@ fn _refresh_reserve<'a>(
                     return Err(LendingError::InvalidAccountInput.into());
                 }
 
-                match get_oracle_type(extra_oracle_account_info)? {
-                    OracleType::Pyth => Some(get_pyth_price_unchecked(extra_oracle_account_info)?),
-                    OracleType::PythPull => {
-                        Some(get_pyth_pull_price_unchecked(extra_oracle_account_info)?)
-                    }
-                    OracleType::Switchboard => Some(get_switchboard_price_v2(
-                        extra_oracle_account_info,
-                        clock,
-                        false,
-                    )?),
-                    OracleType::SbOnDemand => Some(get_switchboard_price_on_demand(
-                        extra_oracle_account_info,
-                        clock,
-                        true,
-                    )?),
-                }
+                Some(get_single_price_unchecked(
+                    extra_oracle_account_info,
+                    clock,
+                )?)
             }
             None => {
                 msg!("Reserve extra oracle account info missing");
