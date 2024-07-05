@@ -1,12 +1,12 @@
 use bytemuck::checked::from_bytes;
-use solend_sdk::switchboard_on_demand_mainnet;
+use oracles::switchboard_on_demand_mainnet;
 
+use oracles::pyth_mainnet;
+use oracles::pyth_pull_mainnet;
+use oracles::switchboard_v2_mainnet;
 use pyth_solana_receiver_sdk::price_update::PriceUpdateV2;
 use solend_sdk::instruction::*;
-use solend_sdk::pyth_mainnet;
-use solend_sdk::pyth_pull_mainnet;
 use solend_sdk::state::*;
-use solend_sdk::switchboard_v2_mainnet;
 use switchboard_on_demand::PullFeedAccountData;
 
 use super::{

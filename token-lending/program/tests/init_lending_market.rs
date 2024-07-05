@@ -12,7 +12,7 @@ use solana_sdk::transaction::TransactionError;
 use solend_program::error::LendingError;
 use solend_program::instruction::init_lending_market;
 use solend_program::state::{LendingMarket, RateLimiter, PROGRAM_VERSION};
-use solend_sdk::{pyth_mainnet, switchboard_v2_mainnet};
+use oracles::{pyth_mainnet, switchboard_v2_mainnet};
 
 #[tokio::test]
 async fn test_success() {
