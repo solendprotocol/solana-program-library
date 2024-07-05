@@ -1870,10 +1870,7 @@ pub async fn custom_scenario(
             .or_insert(arg.liquidity_amount);
     }
 
-    let mints_and_liquidity_amounts = mints_and_liquidity_amounts
-        .into_iter()
-        .map(|(mint, liquidity_amount)| (mint, liquidity_amount))
-        .collect::<Vec<_>>();
+    let mints_and_liquidity_amounts = mints_and_liquidity_amounts.into_iter().collect::<Vec<_>>();
 
     let lending_market_owner =
         User::new_with_balances(&mut test, &mints_and_liquidity_amounts).await;

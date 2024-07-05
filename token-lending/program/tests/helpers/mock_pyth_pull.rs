@@ -15,8 +15,6 @@ use borsh::{BorshDeserialize, BorshSerialize};
 use spl_token::solana_program::{account_info::next_account_info, program_error::ProgramError};
 use thiserror::Error;
 
-use super::{load_mut, QUOTE_CURRENCY};
-
 #[derive(BorshSerialize, BorshDeserialize)]
 pub enum MockPythPullInstruction {
     /// Accounts:

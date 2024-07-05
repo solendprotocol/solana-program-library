@@ -8,9 +8,8 @@ use solana_program::{
     pubkey::Pubkey,
     sysvar::Sysvar,
 };
-use std::cell::RefMut;
+
 use switchboard_on_demand::PullFeedAccountData;
-use switchboard_v2::{AggregatorAccountData, SwitchboardDecimal};
 
 use borsh::{BorshDeserialize, BorshSerialize};
 use spl_token::solana_program::{account_info::next_account_info, program_error::ProgramError};

@@ -9,7 +9,7 @@ use solana_program::{
     sysvar::Sysvar,
 };
 use std::cell::RefMut;
-use switchboard_on_demand::OracleSubmission;
+
 use switchboard_v2::{AggregatorAccountData, SwitchboardDecimal};
 
 use borsh::{BorshDeserialize, BorshSerialize};
