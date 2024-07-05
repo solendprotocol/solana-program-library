@@ -824,7 +824,6 @@ async fn test_pyth_pull_oracle() {
     )
     .await;
 
-
     let wsol_reserve = test.load_account::<Reserve>(wsol_reserve.pubkey).await;
     lending_market
         .refresh_reserve(&mut test, &wsol_reserve)
@@ -913,7 +912,11 @@ async fn test_switchboard_pull_oracle() {
 
     test.advance_clock_by_slots(1).await;
 
-    test.set_switchboard_pull_price(&wsol_mint::id(), SwitchboardPriceArgs { price: 10, expo: 0 }).await;
+    test.set_switchboard_pull_price(
+        &wsol_mint::id(),
+        SwitchboardPriceArgs { price: 10, expo: 0 },
+    )
+    .await;
 
     test.advance_clock_by_slots(1).await;
 

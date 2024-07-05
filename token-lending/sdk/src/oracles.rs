@@ -9,7 +9,7 @@ use crate::{
 use anchor_lang::Key;
 
 use anchor_lang::AccountDeserialize;
-use borsh::BorshDeserialize;
+
 use pyth_solana_receiver_sdk::price_update::{PriceUpdateV2, VerificationLevel};
 use solana_program::{
     account_info::AccountInfo, msg, program_error::ProgramError, sysvar::clock::Clock,

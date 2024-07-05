@@ -1,5 +1,5 @@
-use pyth_solana_receiver_sdk::price_update::{PriceUpdateV2, VerificationLevel, PriceFeedMessage};
 use anchor_lang::{AccountDeserialize, AccountSerialize};
+use pyth_solana_receiver_sdk::price_update::{PriceFeedMessage, PriceUpdateV2, VerificationLevel};
 /// mock oracle prices in tests with this program.
 use solana_program::{
     account_info::AccountInfo,
@@ -53,7 +53,6 @@ fn account_deserialize<T: AccountDeserialize>(
     Ok(user)
 }
 
-
 pub struct Processor;
 impl Processor {
     pub fn process(
@@ -84,7 +83,7 @@ impl Processor {
                         ema_price: 1,
                         ema_conf: 1,
                     },
-                    posted_slot: 0
+                    posted_slot: 0,
                 };
 
                 // let mut data = price_account_info.try_borrow_mut_data()?;
@@ -95,7 +94,9 @@ impl Processor {
                 let mut buf_sized = [0u8; PriceUpdateV2::LEN];
                 buf_sized[0..buf.len()].copy_from_slice(&buf);
 
-                price_account_info.try_borrow_mut_data()?.copy_from_slice(&buf_sized);
+                price_account_info
+                    .try_borrow_mut_data()?
+                    .copy_from_slice(&buf_sized);
 
                 Ok(())
             }
@@ -109,10 +110,11 @@ impl Processor {
                 msg!("Mock Pyth Pull: Set price");
                 let price_account_info = next_account_info(account_info_iter)?;
 
-                let mut price_feed_account: PriceUpdateV2 = account_deserialize(price_account_info).map_err(|e| {
-                    msg!("Failed to deserialize account: {:?}", e);
-                    MockPythPullError::FailedToDeserialize
-                })?;
+                let mut price_feed_account: PriceUpdateV2 = account_deserialize(price_account_info)
+                    .map_err(|e| {
+                        msg!("Failed to deserialize account: {:?}", e);
+                        MockPythPullError::FailedToDeserialize
+                    })?;
 
                 price_feed_account.price_message.price = price;
                 price_feed_account.price_message.conf = conf;
@@ -130,8 +132,9 @@ impl Processor {
                 let mut buf_sized = [0u8; PriceUpdateV2::LEN];
                 buf_sized[0..buf.len()].copy_from_slice(&buf);
 
-                price_account_info.try_borrow_mut_data()?.copy_from_slice(&buf_sized);
-
+                price_account_info
+                    .try_borrow_mut_data()?
+                    .copy_from_slice(&buf_sized);
 
                 Ok(())
             }
@@ -156,16 +159,11 @@ impl From<MockPythPullError> for ProgramError {
     }
 }
 
-pub fn init(
-    program_id: Pubkey,
-    price_account_pubkey: Pubkey,
-) -> Instruction {
+pub fn init(program_id: Pubkey, price_account_pubkey: Pubkey) -> Instruction {
     let data = MockPythPullInstruction::Init.try_to_vec().unwrap();
     Instruction {
         program_id,
-        accounts: vec![
-            AccountMeta::new(price_account_pubkey, false),
-        ],
+        accounts: vec![AccountMeta::new(price_account_pubkey, false)],
         data,
     }
 }

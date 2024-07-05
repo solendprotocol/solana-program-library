@@ -1,4 +1,3 @@
-use switchboard_on_demand::OracleSubmission;
 /// mock oracle prices in tests with this program.
 use solana_program::{
     account_info::AccountInfo,
@@ -10,6 +9,7 @@ use solana_program::{
     sysvar::Sysvar,
 };
 use std::cell::RefMut;
+use switchboard_on_demand::OracleSubmission;
 use switchboard_v2::{AggregatorAccountData, SwitchboardDecimal};
 
 use borsh::{BorshDeserialize, BorshSerialize};
