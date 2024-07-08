@@ -3,15 +3,15 @@ use crate::OracleType;
 use solend_sdk::math::TryDiv;
 use solend_sdk::math::TryMul;
 
+use crate::{
+    switchboard_on_demand_devnet, switchboard_on_demand_mainnet, switchboard_v2_devnet,
+    switchboard_v2_mainnet,
+};
 use solana_program::{
     account_info::AccountInfo, entrypoint::ProgramResult, msg, program_error::ProgramError,
     sysvar::clock::Clock,
 };
 use solend_sdk::{error::LendingError, math::Decimal};
-use crate::{
-    switchboard_on_demand_devnet, switchboard_on_demand_mainnet, switchboard_v2_devnet,
-    switchboard_v2_mainnet,
-};
 use std::result::Result;
 
 use switchboard_on_demand::on_demand::accounts::pull_feed::PullFeedAccountData as SbOnDemandFeed;

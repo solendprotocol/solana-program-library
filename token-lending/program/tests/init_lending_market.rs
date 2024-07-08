@@ -4,6 +4,7 @@ mod helpers;
 
 use helpers::solend_program_test::{SolendProgramTest, User};
 use helpers::*;
+use oracles::{pyth_mainnet, switchboard_v2_mainnet};
 use solana_program::instruction::InstructionError;
 use solana_program_test::*;
 use solana_sdk::signature::Keypair;
@@ -12,7 +13,6 @@ use solana_sdk::transaction::TransactionError;
 use solend_program::error::LendingError;
 use solend_program::instruction::init_lending_market;
 use solend_program::state::{LendingMarket, RateLimiter, PROGRAM_VERSION};
-use oracles::{pyth_mainnet, switchboard_v2_mainnet};
 
 #[tokio::test]
 async fn test_success() {
