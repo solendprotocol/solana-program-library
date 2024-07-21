@@ -1,7 +1,11 @@
 use lending_state::SolendState;
+use reqwest::blocking::Client;
+use serde_json::Value;
 use solana_account_decoder::UiAccountEncoding;
 use solana_client::rpc_config::{RpcProgramAccountsConfig, RpcSendTransactionConfig};
 use solana_client::{rpc_config::RpcAccountInfoConfig, rpc_filter::RpcFilterType};
+use solana_sdk::bs58;
+use solana_sdk::instruction::Instruction;
 use solana_sdk::{commitment_config::CommitmentLevel, compute_budget::ComputeBudgetInstruction};
 use solend_program::{
     instruction::set_lending_market_owner_and_config,
@@ -31,7 +35,7 @@ use {
     },
     solana_client::rpc_client::RpcClient,
     solana_program::{
-        message::Message, native_token::lamports_to_sol, program_pack::Pack, pubkey::Pubkey,
+        message::Message, native_token::lamports_to_sol, program_pack::Pack, pubkey::Pubkey, hash::Hash
     },
     solana_sdk::{
         commitment_config::CommitmentConfig,
@@ -1505,17 +1509,26 @@ fn command_redeem_collateral(
     let transaction = Transaction::new(
         &vec![config.fee_payer.as_ref()],
         Message::new_with_blockhash(
-            &[redeem_reserve_collateral(
-                config.lending_program_id,
-                collateral_amount,
-                source_ata,
-                dest_ata,
-                *redeem_reserve_pubkey,
-                redeem_reserve.collateral.mint_pubkey,
-                redeem_reserve.liquidity.supply_pubkey,
-                redeem_reserve.lending_market,
-                config.fee_payer.pubkey(),
-            )],
+            &[
+                refresh_reserve(
+                    config.lending_program_id,
+                    *redeem_reserve_pubkey,
+                    redeem_reserve.liquidity.pyth_oracle_pubkey,
+                    redeem_reserve.liquidity.switchboard_oracle_pubkey,
+                    None
+                ),
+                redeem_reserve_collateral(
+                    config.lending_program_id,
+                    collateral_amount,
+                    source_ata,
+                    dest_ata,
+                    *redeem_reserve_pubkey,
+                    redeem_reserve.collateral.mint_pubkey,
+                    redeem_reserve.liquidity.supply_pubkey,
+                    redeem_reserve.lending_market,
+                    config.fee_payer.pubkey(),
+                ),
+            ],
             Some(&config.fee_payer.pubkey()),
             &recent_blockhash,
         ),
@@ -1559,7 +1572,8 @@ fn command_withdraw_collateral(
         recent_blockhash,
     );
 
-    send_transaction(config, transaction)?;
+    // send_transaction(config, transaction)?;
+    send_transaction_to_jito(config, vec![instructions])?;
 
     Ok(())
 }
@@ -1794,7 +1808,7 @@ fn command_add_reserve(
                 Token::LEN as u64,
                 &spl_token::id(),
             ),
-        ],
+        ],        
         Some(&config.fee_payer.pubkey()),
         &recent_blockhash,
     );
@@ -1861,6 +1875,9 @@ fn command_add_reserve(
         &recent_blockhash,
     );
 
+
+    // send_transaction_to_jito(config, ixes)?;
+
     check_fee_payer_balance(
         config,
         total_balance
@@ -1880,7 +1897,7 @@ fn command_add_reserve(
         message_1,
         recent_blockhash,
     );
-    send_transaction(config, transaction_1)?;
+    // send_transaction(config, transaction_1)?;
     let transaction_2 = Transaction::new(
         &vec![
             config.fee_payer.as_ref(),
@@ -1890,7 +1907,7 @@ fn command_add_reserve(
         message_2,
         recent_blockhash,
     );
-    send_transaction(config, transaction_2)?;
+    // send_transaction(config, transaction_2)?;
     let transaction_3 = Transaction::new(
         &vec![
             config.fee_payer.as_ref(),
@@ -1901,7 +1918,9 @@ fn command_add_reserve(
         message_3,
         recent_blockhash,
     );
-    send_transaction(config, transaction_3)?;
+    // send_transaction(config, transaction_3)?;
+    let mut transactions = vec![transaction_1, transaction_2, transaction_3];
+    send_transactions_to_jito(config, &mut transactions , recent_blockhash)?;
     Ok(())
 }
 
@@ -2399,6 +2418,155 @@ fn check_fee_payer_balance(config: &Config, required_balance: u64) -> Result<(),
     }
 }
 
+fn send_transaction_to_jito(
+    config: &Config,
+    ixes: Vec<Vec<Instruction>>,
+) -> solana_client::client_error::Result<()> {
+    let blockhash = config.rpc_client.get_latest_blockhash()?;
+    let tip_account = Pubkey::from_str("ADaUMid9yfUytqMBgopwjb2DTLSokTSzL1zt6iGPaS49").unwrap();
+
+    if config.dry_run {
+        return Ok(());
+    } else {
+        let url = "https://mainnet.block-engine.jito.wtf/api/v1/bundles";
+
+        let encoded_txns = ixes
+            .into_iter()
+            .map(|mut ixes| {
+                ixes.push(system_instruction::transfer(
+                    &config.fee_payer.pubkey(),
+                    &tip_account,
+                    1_000_000,
+                ));
+
+                let message = Message::new_with_blockhash(
+                    &ixes,
+                    Some(&config.fee_payer.pubkey()),
+                    &blockhash,
+                );
+
+                let transaction =
+                    Transaction::new(&vec![config.fee_payer.as_ref()], message, blockhash);
+
+                // config
+                //     .rpc_client
+                //     .simulate_transaction(&transaction)
+                //     .unwrap();
+
+                let serialized = bincode::serialize(&transaction).unwrap();
+                bs58::encode(serialized).into_string()
+            })
+            .collect::<Vec<String>>();
+
+        let request_body = serde_json::json!({
+            "jsonrpc": "2.0",
+            "id": 1,
+            "method": "sendBundle",
+            "params": [encoded_txns]
+        });
+
+        let client = reqwest::blocking::Client::new();
+        let response = client.post(url).json(&request_body).send().unwrap();
+
+        println!("Status: {}", response.status());
+        let response_text: Value = response.json().unwrap();
+        println!("Response: {}", response_text);
+        let bundle_id = response_text["result"].as_str().unwrap();
+
+        let url = "https://mainnet.block-engine.jito.wtf/api/v1/bundles";
+        let request_body = serde_json::json!({
+            "jsonrpc": "2.0",
+            "id": 1,
+            "method": "getBundleStatuses",
+            "params": [[
+                bundle_id
+            ]]
+        });
+
+        for _ in 0..100 {
+            let response = client.post(url).json(&request_body).send().unwrap();
+            let response_text: Value = response.json().unwrap();
+            println!("Response: {:#?}", response_text);
+            let status = response_text["result"]["value"][0].get("confirmation_status");
+            println!("Status: {:#?}", status);
+            if status.is_some() {
+                break;
+            }
+        }
+    }
+    Ok(())
+}
+fn send_transactions_to_jito(
+    config: &Config,
+    transactions: &mut Vec<Transaction>,
+    blockhash: Hash,
+) -> solana_client::client_error::Result<()> {
+    let tip_account = Pubkey::from_str("ADaUMid9yfUytqMBgopwjb2DTLSokTSzL1zt6iGPaS49").unwrap();
+
+    let tip_message = Message::new_with_blockhash(
+        &[system_instruction::transfer(
+                    &config.fee_payer.pubkey(),
+                    &tip_account,
+                    100_000,
+                )],
+        Some(&config.fee_payer.pubkey()),
+        &blockhash,
+    );
+    let tip_transaction =
+                    Transaction::new(&vec![config.fee_payer.as_ref()], tip_message, blockhash);
+    transactions.push(tip_transaction);
+    if config.dry_run {
+        return Ok(());
+    } else {
+        let url = "https://mainnet.block-engine.jito.wtf/api/v1/bundles";
+
+        let encoded_txns = transactions
+            .into_iter()
+            .map(|mut transaction| {
+                let serialized = bincode::serialize(&transaction).unwrap();
+                bs58::encode(serialized).into_string()
+            })
+            .collect::<Vec<String>>();
+
+        let request_body = serde_json::json!({
+            "jsonrpc": "2.0",
+            "id": 1,
+            "method": "sendBundle",
+            "params": [encoded_txns]
+        });
+
+        let client = reqwest::blocking::Client::new();
+        let response = client.post(url).json(&request_body).send().unwrap();
+
+        println!("Status: {}", response.status());
+        let response_text: Value = response.json().unwrap();
+        println!("Response: {}", response_text);
+        let bundle_id = response_text["result"].as_str().unwrap();
+
+        let url = "https://mainnet.block-engine.jito.wtf/api/v1/bundles";
+        let request_body = serde_json::json!({
+            "jsonrpc": "2.0",
+            "id": 1,
+            "method": "getBundleStatuses",
+            "params": [[
+                bundle_id
+            ]]
+        });
+
+        for _ in 0..100 {
+            let response = client.post(url).json(&request_body).send().unwrap();
+            let response_text: Value = response.json().unwrap();
+            println!("Response: {:#?}", response_text);
+            let status = response_text["result"]["value"][0].get("confirmation_status");
+            println!("Status: {:#?}", status);
+            if status.is_some() {
+                break;
+            }
+        }
+    }
+    Ok(())
+}
+
 fn send_transaction(
     config: &Config,
     transaction: Transaction,
@@ -2414,7 +2582,7 @@ fn send_transaction(
                 CommitmentConfig::confirmed(),
                 RpcSendTransactionConfig {
                     preflight_commitment: Some(CommitmentLevel::Processed),
-                    skip_preflight: true,
+                    skip_preflight: false,
                     encoding: None,
                     max_retries: None,
                     min_context_slot: None,
