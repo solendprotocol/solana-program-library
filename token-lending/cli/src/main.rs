@@ -2212,7 +2212,9 @@ fn command_update_reserve(
     }
 
     let mut new_pyth_product_pubkey = solend_sdk::NULL_PUBKEY;
-    if pyth_price_pubkey.is_some() && reserve.liquidity.pyth_oracle_pubkey != pyth_price_pubkey.unwrap() {
+    if pyth_price_pubkey.is_some()
+        && reserve.liquidity.pyth_oracle_pubkey != pyth_price_pubkey.unwrap()
+    {
         no_change = false;
         println!(
             "Updating pyth oracle pubkey from {} to {}",
