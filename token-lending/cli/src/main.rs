@@ -1228,7 +1228,7 @@ fn main() {
             let added_borrow_weight_bps = value_of(arg_matches, "added_borrow_weight_bps").unwrap();
             let reserve_type = value_of(arg_matches, "reserve_type").unwrap();
             let scaled_price_offset_bps = value_of(arg_matches, "scaled_price_offset_bps").unwrap();
-            let extra_oracle_pubkey = pubkey_of(arg_matches, "extra_oracle_pubkey").unwrap();
+            let extra_oracle_pubkey = pubkey_of(arg_matches, "extra_oracle_pubkey");
             let attributed_borrow_limit_open =
                 value_of(arg_matches, "attributed_borrow_limit_open").unwrap();
             let attributed_borrow_limit_close =
@@ -1287,7 +1287,7 @@ fn main() {
                     added_borrow_weight_bps,
                     reserve_type,
                     scaled_price_offset_bps,
-                    extra_oracle_pubkey: Some(extra_oracle_pubkey),
+                    extra_oracle_pubkey,
                     attributed_borrow_limit_open,
                     attributed_borrow_limit_close,
                 },
