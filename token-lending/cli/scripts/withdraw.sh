@@ -15,11 +15,17 @@ USDT_ATA=2bEeupwb9eC5R9LjCCrfetPm5yLwdGVLYng6XhNtue9H
 BTC_ATA=A6Fu8DtnUqeYpzUMbZnnDpUFE5URnNUd8toZzcNBMkJ4
 
 OBLIGATION_PUBKEY=9XQ18M6VvB9X9QVXxj1bCvKifAW2RWDePEfBwi6fsLhq
-WITHDRAW_RESERVE=$SOL_RESERVE
+WITHDRAW_RESERVE=$USDC_RESERVE
 COLLATERAL_AMOUNT=1000
 
 
-cargo run withdraw-collateral \
+cargo run -- \
+  withdraw-collateral \
   --obligation $OBLIGATION_PUBKEY \
   --withdraw-reserve $WITHDRAW_RESERVE \
   --withdraw-amount $COLLATERAL_AMOUNT \
+
+# cargo run -- \
+#   redeem-collateral \
+#   --redeem-reserve $WITHDRAW_RESERVE \
+#   --redeem-amount $COLLATERAL_AMOUNT \
