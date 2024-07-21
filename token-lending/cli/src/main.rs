@@ -1026,7 +1026,6 @@ fn main() {
                         .value_name("RESERVE_TYPE")
                         .takes_value(true)
                         .required(false)
-                        .default_value("Regular")
                         .help("Reserve type"),
                 )
                 .arg(
@@ -1959,7 +1958,7 @@ fn command_set_lending_market_owner_and_config(
 fn command_update_reserve(
     config: &mut Config,
     reserve_config: PartialReserveConfig,
-    pyth_product_pubkey: Option<Pubkey>,
+    _pyth_product_pubkey: Option<Pubkey>,
     pyth_price_pubkey: Option<Pubkey>,
     switchboard_feed_pubkey: Option<Pubkey>,
     reserve_pubkey: Pubkey,
@@ -2213,7 +2212,7 @@ fn command_update_reserve(
     }
 
     let mut new_pyth_product_pubkey = solend_sdk::NULL_PUBKEY;
-    if pyth_price_pubkey.is_some() {
+    if pyth_price_pubkey.is_some() && reserve.liquidity.pyth_oracle_pubkey != pyth_price_pubkey.unwrap() {
         no_change = false;
         println!(
             "Updating pyth oracle pubkey from {} to {}",
@@ -2221,7 +2220,7 @@ fn command_update_reserve(
             pyth_price_pubkey.unwrap(),
         );
         reserve.liquidity.pyth_oracle_pubkey = pyth_price_pubkey.unwrap();
-        new_pyth_product_pubkey = pyth_product_pubkey.unwrap();
+        new_pyth_product_pubkey = solend_sdk::NULL_PUBKEY;
     }
 
     if switchboard_feed_pubkey.is_some() {
