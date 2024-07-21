@@ -1,5 +1,5 @@
 use lending_state::SolendState;
-use reqwest::blocking::Client;
+
 use serde_json::Value;
 use solana_account_decoder::UiAccountEncoding;
 use solana_client::rpc_config::{RpcProgramAccountsConfig, RpcSendTransactionConfig};
@@ -35,7 +35,8 @@ use {
     },
     solana_client::rpc_client::RpcClient,
     solana_program::{
-        message::Message, native_token::lamports_to_sol, program_pack::Pack, pubkey::Pubkey, hash::Hash
+        hash::Hash, message::Message, native_token::lamports_to_sol, program_pack::Pack,
+        pubkey::Pubkey,
     },
     solana_sdk::{
         commitment_config::CommitmentConfig,
@@ -1515,7 +1516,7 @@ fn command_redeem_collateral(
                     *redeem_reserve_pubkey,
                     redeem_reserve.liquidity.pyth_oracle_pubkey,
                     redeem_reserve.liquidity.switchboard_oracle_pubkey,
-                    None
+                    None,
                 ),
                 redeem_reserve_collateral(
                     config.lending_program_id,
@@ -1562,7 +1563,7 @@ fn command_withdraw_collateral(
 
     let instructions = solend_state.withdraw(&withdraw_reserve_pubkey, collateral_amount);
     let recent_blockhash = config.rpc_client.get_latest_blockhash()?;
-    let transaction = Transaction::new(
+    let _transaction = Transaction::new(
         &vec![config.fee_payer.as_ref()],
         Message::new_with_blockhash(
             &instructions,
@@ -1808,7 +1809,7 @@ fn command_add_reserve(
                 Token::LEN as u64,
                 &spl_token::id(),
             ),
-        ],        
+        ],
         Some(&config.fee_payer.pubkey()),
         &recent_blockhash,
     );
@@ -1875,7 +1876,6 @@ fn command_add_reserve(
         &recent_blockhash,
     );
 
-
     // send_transaction_to_jito(config, ixes)?;
 
     check_fee_payer_balance(
@@ -1920,7 +1920,7 @@ fn command_add_reserve(
     );
     // send_transaction(config, transaction_3)?;
     let mut transactions = vec![transaction_1, transaction_2, transaction_3];
-    send_transactions_to_jito(config, &mut transactions , recent_blockhash)?;
+    send_transactions_to_jito(config, &mut transactions, recent_blockhash)?;
     Ok(())
 }
 
@@ -2505,15 +2505,15 @@ fn send_transactions_to_jito(
 
     let tip_message = Message::new_with_blockhash(
         &[system_instruction::transfer(
-                    &config.fee_payer.pubkey(),
-                    &tip_account,
-                    100_000,
-                )],
+            &config.fee_payer.pubkey(),
+            &tip_account,
+            100_000,
+        )],
         Some(&config.fee_payer.pubkey()),
         &blockhash,
     );
     let tip_transaction =
-                    Transaction::new(&vec![config.fee_payer.as_ref()], tip_message, blockhash);
+        Transaction::new(&vec![config.fee_payer.as_ref()], tip_message, blockhash);
     transactions.push(tip_transaction);
     if config.dry_run {
         return Ok(());
@@ -2521,8 +2521,8 @@ fn send_transactions_to_jito(
         let url = "https://mainnet.block-engine.jito.wtf/api/v1/bundles";
 
         let encoded_txns = transactions
-            .into_iter()
-            .map(|mut transaction| {
+            .iter_mut()
+            .map(|transaction| {
                 let serialized = bincode::serialize(&transaction).unwrap();
                 bs58::encode(serialized).into_string()
             })
