@@ -11,7 +11,7 @@ on:
 
 jobs:
   all_github_action_checks:
-    runs-on: ubuntu-latest
+    runs-on: blacksmith-4vcpu-ubuntu-2204
     needs:
       - rustfmt
       - clippy
@@ -20,7 +20,7 @@ jobs:
       - run: echo "Done"
 
   rustfmt:
-    runs-on: ubuntu-latest
+    runs-on: blacksmith-4vcpu-ubuntu-2204
     steps:
       - uses: actions/checkout@v2
 
@@ -43,7 +43,7 @@ jobs:
           args: --all -- --check
 
   clippy:
-    runs-on: ubuntu-latest
+    runs-on: blacksmith-4vcpu-ubuntu-2204
     steps:
       - uses: actions/checkout@v2
 
@@ -59,7 +59,7 @@ jobs:
           profile: minimal
           components: clippy
 
-      - uses: actions/cache@v2
+      - uses: useblacksmith/cache@v5
         with:
           path: |
             ~/.cargo/registry
@@ -79,7 +79,7 @@ jobs:
           args: --workspace --all-targets -- --deny=warnings
 
   cargo-build-test:
-    runs-on: ubuntu-latest
+    runs-on: blacksmith-4vcpu-ubuntu-2204
     steps:
       - uses: actions/checkout@v2
 
@@ -96,7 +96,7 @@ jobs:
           override: true
           profile: minimal
 
-      - uses: actions/cache@v2
+      - uses: useblacksmith/cache@v5
         with:
           path: |
             ~/.cargo/registry
@@ -104,13 +104,13 @@ jobs:
             # target # Removed due to build dependency caching conflicts
           key: cargo-build-${{ hashFiles('**/Cargo.lock') }}-${{ env.RUST_STABLE}}
 
-      - uses: actions/cache@v2
+      - uses: useblacksmith/cache@v5
         with:
           path: |
             ~/.cargo/bin/rustfilt
           key: cargo-bpf-bins-${{ runner.os }}
 
-      - uses: actions/cache@v2
+      - uses: useblacksmith/cache@v5
         with:
           path: |
             ~/.cache
@@ -126,7 +126,7 @@ jobs:
         run: ./ci/cargo-build-test.sh
 
   cargo-coverage:
-    runs-on: ubuntu-latest-16-cores
+    runs-on: blacksmith-16vcpu-ubuntu-2204
     steps:
       - uses: actions/checkout@v2
 
@@ -143,7 +143,7 @@ jobs:
           override: true
           profile: minimal
 
-      - uses: actions/cache@v2
+      - uses: useblacksmith/cache@v5
         with:
           path: |
             ~/.cargo/registry

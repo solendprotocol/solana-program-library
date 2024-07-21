@@ -13,7 +13,7 @@ on:
 
 jobs:
   cargo-test-bpf:
-    runs-on: ubuntu-latest-16-cores
+    runs-on: blacksmith-16vcpu-ubuntu-2204
     steps:
       - uses: actions/checkout@v2
 
@@ -30,20 +30,20 @@ jobs:
           override: true
           profile: minimal
 
-      - uses: actions/cache@v2
+      - uses: useblacksmith/cache@v5
         with:
           path: |
             ~/.cargo/registry
             ~/.cargo/git
           key: cargo-build-${{ hashFiles('**/Cargo.lock') }}-${{ env.RUST_STABLE}}
 
-      - uses: actions/cache@v2
+      - uses: useblacksmith/cache@v5
         with:
           path: |
             ~/.cargo/bin/rustfilt
           key: cargo-bpf-bins-${{ runner.os }}
 
-      - uses: actions/cache@v2
+      - uses: useblacksmith/cache@v5
         with:
           path: |
             ~/.cache
