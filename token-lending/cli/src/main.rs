@@ -1,7 +1,11 @@
 use lending_state::SolendState;
+
+use serde_json::Value;
 use solana_account_decoder::UiAccountEncoding;
 use solana_client::rpc_config::{RpcProgramAccountsConfig, RpcSendTransactionConfig};
 use solana_client::{rpc_config::RpcAccountInfoConfig, rpc_filter::RpcFilterType};
+use solana_sdk::bs58;
+use solana_sdk::instruction::Instruction;
 use solana_sdk::{commitment_config::CommitmentLevel, compute_budget::ComputeBudgetInstruction};
 use solend_program::{
     instruction::set_lending_market_owner_and_config,
@@ -31,7 +35,8 @@ use {
     },
     solana_client::rpc_client::RpcClient,
     solana_program::{
-        message::Message, native_token::lamports_to_sol, program_pack::Pack, pubkey::Pubkey,
+        hash::Hash, message::Message, native_token::lamports_to_sol, program_pack::Pack,
+        pubkey::Pubkey,
     },
     solana_sdk::{
         commitment_config::CommitmentConfig,
@@ -111,6 +116,15 @@ struct PartialReserveConfig {
     pub added_borrow_weight_bps: Option<u64>,
     /// Type of the reseerve (Regular, Isolated)
     pub reserve_type: Option<ReserveType>,
+    /// scaled price offset in basis points. Exclusively used to calculate a more reliable asset price for
+    /// staked assets (mSOL, stETH). Not used on extra oracle
+    pub scaled_price_offset_bps: Option<i64>,
+    /// Extra oracle. Only used to limit borrows and withdrawals.
+    pub extra_oracle_pubkey: Option<Option<Pubkey>>,
+    /// Open Attributed Borrow limit in USD
+    pub attributed_borrow_limit_open: Option<u64>,
+    /// Close Attributed Borrow limit in USD
+    pub attributed_borrow_limit_close: Option<u64>,
 }
 
 /// Reserve Fees with optional fields
@@ -649,6 +663,44 @@ fn main() {
                         .default_value("Regular")
                         .help("Reserve type"),
                 )
+                .arg(
+                    Arg::with_name("scaled_price_offset_bps")
+                        .long("scaled-price-offset-bps")
+                        .validator(is_parsable::<i64>)
+                        .value_name("INTEGER")
+                        .takes_value(true)
+                        .required(false)
+                        .default_value("0")
+                        .help("Scaled price offset in basis points"),
+                )
+                .arg(
+                    Arg::with_name("extra_oracle_pubkey")
+                        .long("extra-oracle-pubkey")
+                        .value_name("PUBKEY")
+                        .takes_value(true)
+                        .required(false)
+                        .help("Extra oracle account"),
+                )
+                .arg(
+                    Arg::with_name("attributed_borrow_limit_open")
+                        .long("attributed-borrow-limit-open")
+                        .validator(is_parsable::<u64>)
+                        .value_name("INTEGER")
+                        .takes_value(true)
+                        .required(false)
+                        .default_value("0")
+                        .help("Open Attributed Borrow limit in USD"),
+                )
+                .arg(
+                    Arg::with_name("attributed_borrow_limit_close")
+                        .long("attributed-borrow-limit-close")
+                        .validator(is_parsable::<u64>)
+                        .value_name("INTEGER")
+                        .takes_value(true)
+                        .required(false)
+                        .default_value("0")
+                        .help("Close Attributed Borrow limit in USD"),
+                )
         )
         .subcommand(
             SubCommand::with_name("set-lending-market-owner-and-config")
@@ -979,8 +1031,42 @@ fn main() {
                         .value_name("RESERVE_TYPE")
                         .takes_value(true)
                         .required(false)
-                        .default_value("Regular")
                         .help("Reserve type"),
+                )
+                .arg(
+                    Arg::with_name("scaled_price_offset_bps")
+                        .long("scaled-price-offset-bps")
+                        .validator(is_parsable::<i64>)
+                        .value_name("INTEGER")
+                        .takes_value(true)
+                        .required(false)
+                        .help("Scaled price offset in basis points"),
+                )
+                .arg(
+                    Arg::with_name("extra_oracle_pubkey")
+                        .long("extra-oracle-pubkey")
+                        .value_name("PUBKEY")
+                        .takes_value(true)
+                        .required(false)
+                        .help("Extra oracle account"),
+                )
+                .arg(
+                    Arg::with_name("attributed_borrow_limit_open")
+                        .long("attributed-borrow-limit-open")
+                        .validator(is_parsable::<u64>)
+                        .value_name("INTEGER")
+                        .takes_value(true)
+                        .required(false)
+                        .help("Open Attributed Borrow limit in USD"),
+                )
+                .arg(
+                    Arg::with_name("attributed_borrow_limit_close")
+                        .long("attributed-borrow-limit-close")
+                        .validator(is_parsable::<u64>)
+                        .value_name("INTEGER")
+                        .takes_value(true)
+                        .required(false)
+                        .help("Close Attributed Borrow limit in USD"),
                 )
         )
         .get_matches();
@@ -1142,7 +1228,7 @@ fn main() {
             let added_borrow_weight_bps = value_of(arg_matches, "added_borrow_weight_bps").unwrap();
             let reserve_type = value_of(arg_matches, "reserve_type").unwrap();
             let scaled_price_offset_bps = value_of(arg_matches, "scaled_price_offset_bps").unwrap();
-            let extra_oracle_pubkey = pubkey_of(arg_matches, "extra_oracle_pubkey").unwrap();
+            let extra_oracle_pubkey = pubkey_of(arg_matches, "extra_oracle_pubkey");
             let attributed_borrow_limit_open =
                 value_of(arg_matches, "attributed_borrow_limit_open").unwrap();
             let attributed_borrow_limit_close =
@@ -1201,7 +1287,7 @@ fn main() {
                     added_borrow_weight_bps,
                     reserve_type,
                     scaled_price_offset_bps,
-                    extra_oracle_pubkey: Some(extra_oracle_pubkey),
+                    extra_oracle_pubkey,
                     attributed_borrow_limit_open,
                     attributed_borrow_limit_close,
                 },
@@ -1270,6 +1356,12 @@ fn main() {
             let rate_limiter_max_outflow = value_of(arg_matches, "rate_limiter_max_outflow");
             let added_borrow_weight_bps = value_of(arg_matches, "added_borrow_weight_bps");
             let reserve_type = value_of(arg_matches, "reserve_type");
+            let scaled_price_offset_bps = value_of(arg_matches, "scaled_price_offset_bps");
+            let extra_oracle_pubkey = pubkey_of(arg_matches, "extra_oracle_pubkey");
+            let attributed_borrow_limit_open =
+                value_of(arg_matches, "attributed_borrow_limit_open");
+            let attributed_borrow_limit_close =
+                value_of(arg_matches, "attributed_borrow_limit_close");
 
             let borrow_fee_wad = borrow_fee.map(|fee| (fee * WAD as f64) as u64);
             let flash_loan_fee_wad = flash_loan_fee.map(|fee| (fee * WAD as f64) as u64);
@@ -1302,6 +1394,14 @@ fn main() {
                     rate_limiter_max_outflow,
                     added_borrow_weight_bps,
                     reserve_type,
+                    scaled_price_offset_bps,
+                    extra_oracle_pubkey: if arg_matches.is_present("extra_oracle_pubkey") {
+                        Some(extra_oracle_pubkey)
+                    } else {
+                        None
+                    },
+                    attributed_borrow_limit_open,
+                    attributed_borrow_limit_close,
                 },
                 pyth_product_pubkey,
                 pyth_price_pubkey,
@@ -1410,17 +1510,26 @@ fn command_redeem_collateral(
     let transaction = Transaction::new(
         &vec![config.fee_payer.as_ref()],
         Message::new_with_blockhash(
-            &[redeem_reserve_collateral(
-                config.lending_program_id,
-                collateral_amount,
-                source_ata,
-                dest_ata,
-                *redeem_reserve_pubkey,
-                redeem_reserve.collateral.mint_pubkey,
-                redeem_reserve.liquidity.supply_pubkey,
-                redeem_reserve.lending_market,
-                config.fee_payer.pubkey(),
-            )],
+            &[
+                refresh_reserve(
+                    config.lending_program_id,
+                    *redeem_reserve_pubkey,
+                    redeem_reserve.liquidity.pyth_oracle_pubkey,
+                    redeem_reserve.liquidity.switchboard_oracle_pubkey,
+                    None,
+                ),
+                redeem_reserve_collateral(
+                    config.lending_program_id,
+                    collateral_amount,
+                    source_ata,
+                    dest_ata,
+                    *redeem_reserve_pubkey,
+                    redeem_reserve.collateral.mint_pubkey,
+                    redeem_reserve.liquidity.supply_pubkey,
+                    redeem_reserve.lending_market,
+                    config.fee_payer.pubkey(),
+                ),
+            ],
             Some(&config.fee_payer.pubkey()),
             &recent_blockhash,
         ),
@@ -1454,7 +1563,7 @@ fn command_withdraw_collateral(
 
     let instructions = solend_state.withdraw(&withdraw_reserve_pubkey, collateral_amount);
     let recent_blockhash = config.rpc_client.get_latest_blockhash()?;
-    let transaction = Transaction::new(
+    let _transaction = Transaction::new(
         &vec![config.fee_payer.as_ref()],
         Message::new_with_blockhash(
             &instructions,
@@ -1464,7 +1573,8 @@ fn command_withdraw_collateral(
         recent_blockhash,
     );
 
-    send_transaction(config, transaction)?;
+    // send_transaction(config, transaction)?;
+    send_transaction_to_jito(config, vec![instructions])?;
 
     Ok(())
 }
@@ -1766,6 +1876,8 @@ fn command_add_reserve(
         &recent_blockhash,
     );
 
+    // send_transaction_to_jito(config, ixes)?;
+
     check_fee_payer_balance(
         config,
         total_balance
@@ -1785,7 +1897,7 @@ fn command_add_reserve(
         message_1,
         recent_blockhash,
     );
-    send_transaction(config, transaction_1)?;
+    // send_transaction(config, transaction_1)?;
     let transaction_2 = Transaction::new(
         &vec![
             config.fee_payer.as_ref(),
@@ -1795,7 +1907,7 @@ fn command_add_reserve(
         message_2,
         recent_blockhash,
     );
-    send_transaction(config, transaction_2)?;
+    // send_transaction(config, transaction_2)?;
     let transaction_3 = Transaction::new(
         &vec![
             config.fee_payer.as_ref(),
@@ -1806,7 +1918,9 @@ fn command_add_reserve(
         message_3,
         recent_blockhash,
     );
-    send_transaction(config, transaction_3)?;
+    // send_transaction(config, transaction_3)?;
+    let mut transactions = vec![transaction_1, transaction_2, transaction_3];
+    send_transactions_to_jito(config, &mut transactions, recent_blockhash)?;
     Ok(())
 }
 
@@ -1863,7 +1977,7 @@ fn command_set_lending_market_owner_and_config(
 fn command_update_reserve(
     config: &mut Config,
     reserve_config: PartialReserveConfig,
-    pyth_product_pubkey: Option<Pubkey>,
+    _pyth_product_pubkey: Option<Pubkey>,
     pyth_price_pubkey: Option<Pubkey>,
     switchboard_feed_pubkey: Option<Pubkey>,
     reserve_pubkey: Pubkey,
@@ -2117,7 +2231,9 @@ fn command_update_reserve(
     }
 
     let mut new_pyth_product_pubkey = solend_sdk::NULL_PUBKEY;
-    if pyth_price_pubkey.is_some() {
+    if pyth_price_pubkey.is_some()
+        && reserve.liquidity.pyth_oracle_pubkey != pyth_price_pubkey.unwrap()
+    {
         no_change = false;
         println!(
             "Updating pyth oracle pubkey from {} to {}",
@@ -2125,7 +2241,7 @@ fn command_update_reserve(
             pyth_price_pubkey.unwrap(),
         );
         reserve.liquidity.pyth_oracle_pubkey = pyth_price_pubkey.unwrap();
-        new_pyth_product_pubkey = pyth_product_pubkey.unwrap();
+        new_pyth_product_pubkey = solend_sdk::NULL_PUBKEY;
     }
 
     if switchboard_feed_pubkey.is_some() {
@@ -2189,6 +2305,58 @@ fn command_update_reserve(
         reserve.config.reserve_type = reserve_config.reserve_type.unwrap();
     }
 
+    if reserve_config.scaled_price_offset_bps.is_some()
+        && reserve.config.scaled_price_offset_bps != reserve_config.scaled_price_offset_bps.unwrap()
+    {
+        no_change = false;
+        println!(
+            "Updating scaled_price_offset_bps from {} to {}",
+            reserve.config.scaled_price_offset_bps,
+            reserve_config.scaled_price_offset_bps.unwrap(),
+        );
+        reserve.config.scaled_price_offset_bps = reserve_config.scaled_price_offset_bps.unwrap();
+    }
+
+    if reserve_config.extra_oracle_pubkey.is_some()
+        && reserve.config.extra_oracle_pubkey != reserve_config.extra_oracle_pubkey.unwrap()
+    {
+        no_change = false;
+        println!(
+            "Updating extra_oracle_pubkey from {:?} to {:?}",
+            reserve.config.extra_oracle_pubkey,
+            reserve_config.extra_oracle_pubkey.unwrap(),
+        );
+        reserve.config.extra_oracle_pubkey = reserve_config.extra_oracle_pubkey.unwrap();
+    }
+
+    if reserve_config.attributed_borrow_limit_open.is_some()
+        && reserve.config.attributed_borrow_limit_open
+            != reserve_config.attributed_borrow_limit_open.unwrap()
+    {
+        no_change = false;
+        println!(
+            "Updating attributed_borrow_limit_open from {} to {}",
+            reserve.config.attributed_borrow_limit_open,
+            reserve_config.attributed_borrow_limit_open.unwrap(),
+        );
+        reserve.config.attributed_borrow_limit_open =
+            reserve_config.attributed_borrow_limit_open.unwrap();
+    }
+
+    if reserve_config.attributed_borrow_limit_close.is_some()
+        && reserve.config.attributed_borrow_limit_close
+            != reserve_config.attributed_borrow_limit_close.unwrap()
+    {
+        no_change = false;
+        println!(
+            "Updating attributed_borrow_limit_close from {} to {}",
+            reserve.config.attributed_borrow_limit_close,
+            reserve_config.attributed_borrow_limit_close.unwrap(),
+        );
+        reserve.config.attributed_borrow_limit_close =
+            reserve_config.attributed_borrow_limit_close.unwrap();
+    }
+
     if validate_reserve_config(reserve.config).is_err() {
         println!("Error: invalid reserve config");
         return Err("Error: invalid reserve config".into());
@@ -2202,20 +2370,23 @@ fn command_update_reserve(
     let recent_blockhash = config.rpc_client.get_latest_blockhash()?;
 
     let message = Message::new_with_blockhash(
-        &[update_reserve_config(
-            config.lending_program_id,
-            reserve.config,
-            RateLimiterConfig {
-                window_duration: reserve.rate_limiter.config.window_duration,
-                max_outflow: reserve.rate_limiter.config.max_outflow,
-            },
-            reserve_pubkey,
-            lending_market_pubkey,
-            lending_market_owner_keypair.pubkey(),
-            new_pyth_product_pubkey,
-            reserve.liquidity.pyth_oracle_pubkey,
-            reserve.liquidity.switchboard_oracle_pubkey,
-        )],
+        &[
+            ComputeBudgetInstruction::set_compute_unit_price(30101),
+            update_reserve_config(
+                config.lending_program_id,
+                reserve.config,
+                RateLimiterConfig {
+                    window_duration: reserve.rate_limiter.config.window_duration,
+                    max_outflow: reserve.rate_limiter.config.max_outflow,
+                },
+                reserve_pubkey,
+                lending_market_pubkey,
+                lending_market_owner_keypair.pubkey(),
+                new_pyth_product_pubkey,
+                reserve.liquidity.pyth_oracle_pubkey,
+                reserve.liquidity.switchboard_oracle_pubkey,
+            ),
+        ],
         Some(&config.fee_payer.pubkey()),
         &recent_blockhash,
     );
@@ -2247,6 +2418,155 @@ fn check_fee_payer_balance(config: &Config, required_balance: u64) -> Result<(),
     }
 }
 
+fn send_transaction_to_jito(
+    config: &Config,
+    ixes: Vec<Vec<Instruction>>,
+) -> solana_client::client_error::Result<()> {
+    let blockhash = config.rpc_client.get_latest_blockhash()?;
+    let tip_account = Pubkey::from_str("ADaUMid9yfUytqMBgopwjb2DTLSokTSzL1zt6iGPaS49").unwrap();
+
+    if config.dry_run {
+        return Ok(());
+    } else {
+        let url = "https://mainnet.block-engine.jito.wtf/api/v1/bundles";
+
+        let encoded_txns = ixes
+            .into_iter()
+            .map(|mut ixes| {
+                ixes.push(system_instruction::transfer(
+                    &config.fee_payer.pubkey(),
+                    &tip_account,
+                    1_000_000,
+                ));
+
+                let message = Message::new_with_blockhash(
+                    &ixes,
+                    Some(&config.fee_payer.pubkey()),
+                    &blockhash,
+                );
+
+                let transaction =
+                    Transaction::new(&vec![config.fee_payer.as_ref()], message, blockhash);
+
+                // config
+                //     .rpc_client
+                //     .simulate_transaction(&transaction)
+                //     .unwrap();
+
+                let serialized = bincode::serialize(&transaction).unwrap();
+                bs58::encode(serialized).into_string()
+            })
+            .collect::<Vec<String>>();
+
+        let request_body = serde_json::json!({
+            "jsonrpc": "2.0",
+            "id": 1,
+            "method": "sendBundle",
+            "params": [encoded_txns]
+        });
+
+        let client = reqwest::blocking::Client::new();
+        let response = client.post(url).json(&request_body).send().unwrap();
+
+        println!("Status: {}", response.status());
+        let response_text: Value = response.json().unwrap();
+        println!("Response: {}", response_text);
+        let bundle_id = response_text["result"].as_str().unwrap();
+
+        let url = "https://mainnet.block-engine.jito.wtf/api/v1/bundles";
+        let request_body = serde_json::json!({
+            "jsonrpc": "2.0",
+            "id": 1,
+            "method": "getBundleStatuses",
+            "params": [[
+                bundle_id
+            ]]
+        });
+
+        for _ in 0..100 {
+            let response = client.post(url).json(&request_body).send().unwrap();
+            let response_text: Value = response.json().unwrap();
+            println!("Response: {:#?}", response_text);
+            let status = response_text["result"]["value"][0].get("confirmation_status");
+            println!("Status: {:#?}", status);
+            if status.is_some() {
+                break;
+            }
+        }
+    }
+    Ok(())
+}
+fn send_transactions_to_jito(
+    config: &Config,
+    transactions: &mut Vec<Transaction>,
+    blockhash: Hash,
+) -> solana_client::client_error::Result<()> {
+    let tip_account = Pubkey::from_str("ADaUMid9yfUytqMBgopwjb2DTLSokTSzL1zt6iGPaS49").unwrap();
+
+    let tip_message = Message::new_with_blockhash(
+        &[system_instruction::transfer(
+            &config.fee_payer.pubkey(),
+            &tip_account,
+            100_000,
+        )],
+        Some(&config.fee_payer.pubkey()),
+        &blockhash,
+    );
+    let tip_transaction =
+        Transaction::new(&vec![config.fee_payer.as_ref()], tip_message, blockhash);
+    transactions.push(tip_transaction);
+    if config.dry_run {
+        return Ok(());
+    } else {
+        let url = "https://mainnet.block-engine.jito.wtf/api/v1/bundles";
+
+        let encoded_txns = transactions
+            .iter_mut()
+            .map(|transaction| {
+                let serialized = bincode::serialize(&transaction).unwrap();
+                bs58::encode(serialized).into_string()
+            })
+            .collect::<Vec<String>>();
+
+        let request_body = serde_json::json!({
+            "jsonrpc": "2.0",
+            "id": 1,
+            "method": "sendBundle",
+            "params": [encoded_txns]
+        });
+
+        let client = reqwest::blocking::Client::new();
+        let response = client.post(url).json(&request_body).send().unwrap();
+
+        println!("Status: {}", response.status());
+        let response_text: Value = response.json().unwrap();
+        println!("Response: {}", response_text);
+        let bundle_id = response_text["result"].as_str().unwrap();
+
+        let url = "https://mainnet.block-engine.jito.wtf/api/v1/bundles";
+        let request_body = serde_json::json!({
+            "jsonrpc": "2.0",
+            "id": 1,
+            "method": "getBundleStatuses",
+            "params": [[
+                bundle_id
+            ]]
+        });
+
+        for _ in 0..100 {
+            let response = client.post(url).json(&request_body).send().unwrap();
+            let response_text: Value = response.json().unwrap();
+            println!("Response: {:#?}", response_text);
+            let status = response_text["result"]["value"][0].get("confirmation_status");
+            println!("Status: {:#?}", status);
+            if status.is_some() {
+                break;
+            }
+        }
+    }
+    Ok(())
+}
+
 fn send_transaction(
     config: &Config,
     transaction: Transaction,
@@ -2262,7 +2582,7 @@ fn send_transaction(
                 CommitmentConfig::confirmed(),
                 RpcSendTransactionConfig {
                     preflight_commitment: Some(CommitmentLevel::Processed),
-                    skip_preflight: true,
+                    skip_preflight: false,
                     encoding: None,
                     max_retries: None,
                     min_context_slot: None,
