@@ -13,7 +13,7 @@ use solana_program::{
 use solend_sdk::error::LendingError;
 use solend_sdk::math::Decimal;
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub enum OracleType {
     Pyth,
     Switchboard,
