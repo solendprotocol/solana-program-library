@@ -6,6 +6,7 @@ use solana_client::rpc_config::{RpcProgramAccountsConfig, RpcSendTransactionConf
 use solana_client::{rpc_config::RpcAccountInfoConfig, rpc_filter::RpcFilterType};
 use solana_sdk::bs58;
 use solana_sdk::instruction::Instruction;
+use solana_sdk::pubkey;
 use solana_sdk::{commitment_config::CommitmentLevel, compute_budget::ComputeBudgetInstruction};
 use solend_program::{
     instruction::set_lending_market_owner_and_config,
@@ -1237,7 +1238,6 @@ fn main() {
             let borrow_fee_wad = (borrow_fee * WAD as f64) as u64;
             let flash_loan_fee_wad = (flash_loan_fee * WAD as f64) as u64;
 
-            let liquidity_fee_receiver_keypair = Keypair::new();
             let protocol_liquidation_fee =
                 value_of(arg_matches, "protocol_liquidation_fee").unwrap();
             let protocol_take_rate = value_of(arg_matches, "protocol_take_rate").unwrap();
@@ -1254,6 +1254,11 @@ fn main() {
                 .unwrap();
             let source_liquidity_mint =
                 Mint::unpack_from_slice(source_liquidity_mint_account.data.borrow()).unwrap();
+            let fee_receiver = get_or_create_associated_token_address_for_pubkey(
+                &pubkey!("9RuqAN42PTUi9ya59k9suGATrkqzvb9gk2QABJtQzGP5"),
+                &config,
+                &source_liquidity.mint,
+            );
 
             let liquidity_amount = ui_amount_to_amount(ui_amount, source_liquidity_mint.decimals);
             let deposit_limit = ui_amount_to_amount(deposit_limit, source_liquidity_mint.decimals);
@@ -1281,7 +1286,7 @@ fn main() {
                     },
                     deposit_limit,
                     borrow_limit,
-                    fee_receiver: liquidity_fee_receiver_keypair.pubkey(),
+                    fee_receiver,
                     protocol_liquidation_fee,
                     protocol_take_rate,
                     added_borrow_weight_bps,
@@ -1298,7 +1303,6 @@ fn main() {
                 pyth_product_pubkey,
                 pyth_price_pubkey,
                 switchboard_feed_pubkey,
-                liquidity_fee_receiver_keypair,
                 source_liquidity,
             )
         }
@@ -1719,7 +1723,6 @@ fn command_add_reserve(
     pyth_product_pubkey: Pubkey,
     pyth_price_pubkey: Pubkey,
     switchboard_feed_pubkey: Pubkey,
-    liquidity_fee_receiver_keypair: Keypair,
     source_liquidity: Token,
 ) -> CommandResult {
     let reserve_keypair = Keypair::new();
@@ -1742,10 +1745,6 @@ fn command_add_reserve(
         println!(
             "Adding liquidity supply {}",
             liquidity_supply_keypair.pubkey()
-        );
-        println!(
-            "Adding liquidity fee receiver {}",
-            liquidity_fee_receiver_keypair.pubkey()
         );
         println!(
             "Adding user collateral {}",
@@ -1815,22 +1814,13 @@ fn command_add_reserve(
     );
 
     let message_2 = Message::new_with_blockhash(
-        &[
-            create_account(
-                &config.fee_payer.pubkey(),
-                &liquidity_supply_keypair.pubkey(),
-                liquidity_supply_balance,
-                Token::LEN as u64,
-                &spl_token::id(),
-            ),
-            create_account(
-                &config.fee_payer.pubkey(),
-                &liquidity_fee_receiver_keypair.pubkey(),
-                liquidity_fee_receiver_balance,
-                Token::LEN as u64,
-                &spl_token::id(),
-            ),
-        ],
+        &[create_account(
+            &config.fee_payer.pubkey(),
+            &liquidity_supply_keypair.pubkey(),
+            liquidity_supply_balance,
+            Token::LEN as u64,
+            &spl_token::id(),
+        )],
         Some(&config.fee_payer.pubkey()),
         &recent_blockhash,
     );
@@ -1899,11 +1889,7 @@ fn command_add_reserve(
     );
     // send_transaction(config, transaction_1)?;
     let transaction_2 = Transaction::new(
-        &vec![
-            config.fee_payer.as_ref(),
-            &liquidity_supply_keypair,
-            &liquidity_fee_receiver_keypair,
-        ],
+        &vec![config.fee_payer.as_ref(), &liquidity_supply_keypair],
         message_2,
         recent_blockhash,
     );
@@ -2622,6 +2608,38 @@ fn get_or_create_associated_token_address(config: &Config, mint: &Pubkey) -> Pub
                 &[create_associated_token_account(
                     &config.fee_payer.pubkey(),
                     &config.fee_payer.pubkey(),
+                    mint,
+                    &spl_associated_token_account::id(),
+                )],
+                Some(&config.fee_payer.pubkey()),
+                &recent_blockhash,
+            ),
+            recent_blockhash,
+        );
+
+        send_transaction(config, transaction).unwrap();
+    }
+
+    ata
+}
+
+fn get_or_create_associated_token_address_for_pubkey(
+    pubkey: &Pubkey,
+    config: &Config,
+    mint: &Pubkey,
+) -> Pubkey {
+    let ata = get_associated_token_address(pubkey, mint);
+
+    if config.rpc_client.get_account(&ata).is_err() {
+        println!("Creating ATA for mint {:?}", mint);
+
+        let recent_blockhash = config.rpc_client.get_latest_blockhash().unwrap();
+        let transaction = Transaction::new(
+            &vec![config.fee_payer.as_ref()],
+            Message::new_with_blockhash(
+                &[create_associated_token_account(
+                    &config.fee_payer.pubkey(),
+                    pubkey,
                     mint,
                     &spl_associated_token_account::id(),
                 )],
