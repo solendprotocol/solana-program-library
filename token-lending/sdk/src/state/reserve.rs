@@ -751,6 +751,15 @@ impl ReserveLiquidity {
         Ok(())
     }
 
+    /// Add donate_amount to available liquidity and subtract settle amount from total borrows
+    pub fn donate(&mut self, donate_amount: u64) -> ProgramResult {
+        self.available_amount = self
+            .available_amount
+            .checked_add(donate_amount)
+            .ok_or(LendingError::MathOverflow)?;
+        Ok(())
+    }
+
     /// Subtract settle amount from accumulated_protocol_fees_wads and withdraw_amount from available liquidity
     pub fn redeem_fees(&mut self, withdraw_amount: u64) -> ProgramResult {
         self.available_amount = self
