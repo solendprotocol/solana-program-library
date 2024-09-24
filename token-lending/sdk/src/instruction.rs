@@ -782,6 +782,10 @@ impl LendingInstruction {
 
                 Self::SetObligationCloseabilityStatus { closeable }
             }
+            24 => {
+                let (liquidity_amount, _rest) = Self::unpack_u64(rest)?;
+                Self::DonateToReserve { liquidity_amount }
+            }
             _ => {
                 msg!("Instruction cannot be unpacked");
                 return Err(LendingError::InstructionUnpackError.into());
