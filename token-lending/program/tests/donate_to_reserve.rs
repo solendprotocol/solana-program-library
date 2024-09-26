@@ -54,11 +54,12 @@ async fn test_donate_to_reserve() {
         .await
         .unwrap();
 
-    let reserve_post = test
-        .load_account::<Reserve>(reserves[0].pubkey)
-        .await;
+    let reserve_post = test.load_account::<Reserve>(reserves[0].pubkey).await;
 
-    assert_eq!(reserve_post.account.liquidity.available_amount, 200_000 * FRACTIONAL_TO_USDC);
+    assert_eq!(
+        reserve_post.account.liquidity.available_amount,
+        200_000 * FRACTIONAL_TO_USDC
+    );
 
     let (balance_changes, _) = balance_checker.find_balance_changes(&mut test).await;
     let expected_balance_changes = HashSet::from([
