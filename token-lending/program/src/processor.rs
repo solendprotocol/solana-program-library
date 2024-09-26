@@ -3204,6 +3204,7 @@ pub fn process_donate_to_reserve(
     let lending_market_info = next_account_info(account_info_iter)?;
     let user_transfer_authority_info = next_account_info(account_info_iter)?;
     let token_program_id = next_account_info(account_info_iter)?;
+    let clock = &Clock::get()?;
 
     let lending_market = LendingMarket::unpack(&lending_market_info.data.borrow())?;
     if lending_market_info.owner != program_id {
@@ -3231,6 +3232,8 @@ pub fn process_donate_to_reserve(
         return Err(LendingError::InvalidAccountInput.into());
     }
 
+    _refresh_reserve_interest(program_id, reserve_info, clock)?;
+
     reserve.liquidity.donate(liquidity_amount)?;
     spl_token_transfer(TokenTransferParams {
         source: source_liquidity_info.clone(),
@@ -3240,6 +3243,9 @@ pub fn process_donate_to_reserve(
         authority_signer_seeds: &[],
         token_program: token_program_id.clone(),
     })?;
+
+    reserve.last_update.mark_stale();
+    Reserve::pack(*reserve, &mut reserve_info.data.borrow_mut())?;
 
     Ok(())
 }
