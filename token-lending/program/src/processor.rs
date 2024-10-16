@@ -20,6 +20,8 @@ use oracles::pyth::validate_pyth_keys;
 use oracles::switchboard::validate_sb_on_demand_keys;
 use oracles::switchboard::validate_switchboard_keys;
 use oracles::{get_oracle_type, pyth::validate_pyth_price_account_info, OracleType};
+#[cfg(not(feature = "test-bpf"))]
+use solana_program::pubkey;
 use solana_program::{
     account_info::{next_account_info, AccountInfo},
     entrypoint::ProgramResult,
@@ -3229,6 +3231,17 @@ pub fn process_donate_to_reserve(
 
     if &reserve.liquidity.supply_pubkey != destination_liquidity_info.key {
         msg!("Reserve liquidity supply does not match the reserve liquidity supply provided");
+        return Err(LendingError::InvalidAccountInput.into());
+    }
+
+    if &reserve.liquidity.supply_pubkey == source_liquidity_info.key {
+        msg!("Reserve liquidity supply cannot be used as the source liquidity provided");
+        return Err(LendingError::InvalidAccountInput.into());
+    }
+
+    #[cfg(not(feature = "test-bpf"))]
+    if *reserve_info.key != pubkey!("6LRNkS4Aq6VZ9Np36o7RDZ9aztWCePekMgiFgUNDhXXN") {
+        msg!("Donate function is currently limited to JUP pool usdc");
         return Err(LendingError::InvalidAccountInput.into());
     }
 
