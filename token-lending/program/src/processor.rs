@@ -20,6 +20,8 @@ use oracles::pyth::validate_pyth_keys;
 use oracles::switchboard::validate_sb_on_demand_keys;
 use oracles::switchboard::validate_switchboard_keys;
 use oracles::{get_oracle_type, pyth::validate_pyth_price_account_info, OracleType};
+#[cfg(not(feature = "test-bpf"))]
+use solana_program::pubkey;
 use solana_program::{
     account_info::{next_account_info, AccountInfo},
     entrypoint::ProgramResult,
@@ -195,6 +197,10 @@ pub fn process_instruction(
         LendingInstruction::SetObligationCloseabilityStatus { closeable } => {
             msg!("Instruction: Mark Obligation As Closable");
             process_set_obligation_closeability_status(program_id, closeable, accounts)
+        }
+        LendingInstruction::DonateToReserve { liquidity_amount } => {
+            msg!("Instruction: Donate To Reserve");
+            process_donate_to_reserve(program_id, liquidity_amount, accounts)
         }
     }
 }
@@ -3183,6 +3189,76 @@ pub fn process_set_obligation_closeability_status(
     obligation.closeable = closeable;
 
     Obligation::pack(obligation, &mut obligation_info.data.borrow_mut())?;
+
+    Ok(())
+}
+
+/// process donate to reserve
+pub fn process_donate_to_reserve(
+    program_id: &Pubkey,
+    liquidity_amount: u64,
+    accounts: &[AccountInfo],
+) -> ProgramResult {
+    let account_info_iter = &mut accounts.iter();
+    let source_liquidity_info = next_account_info(account_info_iter)?;
+    let destination_liquidity_info = next_account_info(account_info_iter)?;
+    let reserve_info = next_account_info(account_info_iter)?;
+    let lending_market_info = next_account_info(account_info_iter)?;
+    let user_transfer_authority_info = next_account_info(account_info_iter)?;
+    let token_program_id = next_account_info(account_info_iter)?;
+    let clock = &Clock::get()?;
+
+    let lending_market = LendingMarket::unpack(&lending_market_info.data.borrow())?;
+    if lending_market_info.owner != program_id {
+        msg!("Lending market provided is not owned by the lending program");
+        return Err(LendingError::InvalidAccountOwner.into());
+    }
+    if &lending_market.token_program_id != token_program_id.key {
+        msg!("Lending market token program does not match the token program provided");
+        return Err(LendingError::InvalidTokenProgram.into());
+    }
+
+    if reserve_info.owner != program_id {
+        msg!("Lending market provided is not owned by the lending program");
+        return Err(LendingError::InvalidAccountOwner.into());
+    }
+
+    let mut reserve = Box::new(Reserve::unpack(&reserve_info.data.borrow())?);
+    if &reserve.lending_market != lending_market_info.key {
+        msg!("Reserve lending market does not match the lending market provided");
+        return Err(LendingError::InvalidAccountInput.into());
+    }
+
+    if &reserve.liquidity.supply_pubkey != destination_liquidity_info.key {
+        msg!("Reserve liquidity supply does not match the reserve liquidity supply provided");
+        return Err(LendingError::InvalidAccountInput.into());
+    }
+
+    if &reserve.liquidity.supply_pubkey == source_liquidity_info.key {
+        msg!("Reserve liquidity supply cannot be used as the source liquidity provided");
+        return Err(LendingError::InvalidAccountInput.into());
+    }
+
+    #[cfg(not(feature = "test-bpf"))]
+    if *reserve_info.key != pubkey!("6LRNkS4Aq6VZ9Np36o7RDZ9aztWCePekMgiFgUNDhXXN") {
+        msg!("Donate function is currently limited to JUP pool usdc");
+        return Err(LendingError::InvalidAccountInput.into());
+    }
+
+    _refresh_reserve_interest(program_id, reserve_info, clock)?;
+
+    reserve.liquidity.donate(liquidity_amount)?;
+    spl_token_transfer(TokenTransferParams {
+        source: source_liquidity_info.clone(),
+        destination: destination_liquidity_info.clone(),
+        amount: liquidity_amount,
+        authority: user_transfer_authority_info.clone(),
+        authority_signer_seeds: &[],
+        token_program: token_program_id.clone(),
+    })?;
+
+    reserve.last_update.mark_stale();
+    Reserve::pack(*reserve, &mut reserve_info.data.borrow_mut())?;
 
     Ok(())
 }

@@ -862,6 +862,31 @@ impl Info<LendingMarket> {
             .await
     }
 
+    pub async fn donate_to_reserve(
+        &self,
+        test: &mut SolendProgramTest,
+        reserve: &Info<Reserve>,
+        user: &User,
+        liquidity_amount: u64,
+    ) -> Result<(), BanksClientError> {
+        let instructions = [
+            ComputeBudgetInstruction::set_compute_unit_limit(50_000),
+            donate_to_reserve(
+                solend_program::id(),
+                liquidity_amount,
+                user.get_account(&reserve.account.liquidity.mint_pubkey)
+                    .unwrap(),
+                reserve.account.liquidity.supply_pubkey,
+                reserve.pubkey,
+                self.pubkey,
+                user.keypair.pubkey(),
+            ),
+        ];
+
+        test.process_transaction(&instructions, Some(&[&user.keypair]))
+            .await
+    }
+
     pub async fn update_reserve_config(
         &self,
         test: &mut SolendProgramTest,

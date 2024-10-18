@@ -59,7 +59,7 @@ jobs:
         run: ./ci/cargo-test-bpf.sh token-lending
 
       - name: Upload programs
-        uses: actions/upload-artifact@v2
+        uses: actions/upload-artifact@v4
         with:
           name: token-lending-programs
           path: "target/deploy/*.so"

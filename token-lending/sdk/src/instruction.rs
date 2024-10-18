@@ -512,6 +512,22 @@ pub enum LendingInstruction {
         /// Obligation is closable
         closeable: bool,
     },
+
+    // 24
+    /// DonateToReserve
+    ///
+    ///   0. `[writable]` Source liquidity token account.
+    ///                     Minted by repay reserve liquidity mint.
+    ///                     $authority can transfer $liquidity_amount.
+    ///   1. `[writable]` Destination reserve liquidity supply SPL Token account.
+    ///   2. `[writable]` Repay reserve account - refreshed.
+    ///   3. `[]` Lending market account.
+    ///   4. `[signer]` User transfer authority ($authority).
+    ///   5. `[]` Token program id.
+    DonateToReserve {
+        /// amount to donate
+        liquidity_amount: u64,
+    },
 }
 
 impl LendingInstruction {
@@ -765,6 +781,10 @@ impl LendingInstruction {
                 };
 
                 Self::SetObligationCloseabilityStatus { closeable }
+            }
+            24 => {
+                let (liquidity_amount, _rest) = Self::unpack_u64(rest)?;
+                Self::DonateToReserve { liquidity_amount }
             }
             _ => {
                 msg!("Instruction cannot be unpacked");
@@ -1060,6 +1080,10 @@ impl LendingInstruction {
             Self::SetObligationCloseabilityStatus { closeable } => {
                 buf.push(23);
                 buf.extend_from_slice(&(closeable as u8).to_le_bytes());
+            }
+            Self::DonateToReserve { liquidity_amount } => {
+                buf.push(24);
+                buf.extend_from_slice(&liquidity_amount.to_le_bytes());
             }
         }
         buf
@@ -1846,6 +1870,30 @@ pub fn set_obligation_closeability_status(
             AccountMeta::new_readonly(risk_authority, true),
         ],
         data: LendingInstruction::SetObligationCloseabilityStatus { closeable }.pack(),
+    }
+}
+
+/// Creates a `DonateToReserve` instruction
+pub fn donate_to_reserve(
+    program_id: Pubkey,
+    liquidity_amount: u64,
+    source_liquidity_pubkey: Pubkey,
+    destination_liquidity_pubkey: Pubkey,
+    reserve_pubkey: Pubkey,
+    lending_market_pubkey: Pubkey,
+    user_transfer_authority_pubkey: Pubkey,
+) -> Instruction {
+    Instruction {
+        program_id,
+        accounts: vec![
+            AccountMeta::new(source_liquidity_pubkey, false),
+            AccountMeta::new(destination_liquidity_pubkey, false),
+            AccountMeta::new(reserve_pubkey, false),
+            AccountMeta::new_readonly(lending_market_pubkey, false),
+            AccountMeta::new_readonly(user_transfer_authority_pubkey, true),
+            AccountMeta::new_readonly(spl_token::id(), false),
+        ],
+        data: LendingInstruction::DonateToReserve { liquidity_amount }.pack(),
     }
 }
 
