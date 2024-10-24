@@ -280,3 +280,39 @@ async fn test_withdraw_max_rate_limiter() {
 
     assert_eq!(balance_changes, expected_balance_changes);
 }
+
+#[tokio::test]
+async fn test_withdraw_no_borrows() {
+    let (mut test, lending_market, reserves, obligations, users, _) = custom_scenario(
+        &[ReserveArgs {
+            mint: usdc_mint::id(),
+            config: test_reserve_config(),
+            liquidity_amount: 100_000 * FRACTIONAL_TO_USDC,
+            price: PriceArgs {
+                price: 10,
+                conf: 0,
+                expo: -1,
+                ema_price: 10,
+                ema_conf: 1,
+            },
+        }],
+        &[ObligationArgs {
+            deposits: vec![(usdc_mint::id(), 100_000 * FRACTIONAL_TO_USDC)],
+            borrows: vec![],
+        }],
+    )
+    .await;
+
+    test.advance_clock_by_slots(1).await;
+
+    lending_market
+        .withdraw_obligation_collateral_and_redeem_reserve_collateral(
+            &mut test,
+            &reserves[0],
+            &obligations[0],
+            &users[0],
+            100_000 * FRACTIONAL_TO_USDC,
+        )
+        .await
+        .unwrap();
+}

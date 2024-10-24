@@ -964,7 +964,7 @@ impl Info<LendingMarket> {
         collateral_amount: u64,
     ) -> Result<(), BanksClientError> {
         let instructions = [
-            ComputeBudgetInstruction::set_compute_unit_limit(58_000),
+            ComputeBudgetInstruction::set_compute_unit_limit(60_000),
             refresh_reserve(
                 solend_program::id(),
                 reserve.pubkey,
@@ -1345,14 +1345,16 @@ impl Info<LendingMarket> {
     ) -> Result<(), BanksClientError> {
         let obligation = test.load_account::<Obligation>(obligation.pubkey).await;
 
-        let refresh_ixs = self
-            .build_refresh_instructions(test, &obligation, None)
-            .await;
-        test.process_transaction(&refresh_ixs, None).await.unwrap();
+        if !obligation.account.borrows.is_empty() {
+            let refresh_ixs = self
+                .build_refresh_instructions(test, &obligation, None)
+                .await;
+            test.process_transaction(&refresh_ixs, None).await.unwrap();
+        }
 
         test.process_transaction(
             &[
-                ComputeBudgetInstruction::set_compute_unit_limit(110_000),
+                ComputeBudgetInstruction::set_compute_unit_limit(120_000),
                 withdraw_obligation_collateral_and_redeem_reserve_collateral(
                     solend_program::id(),
                     collateral_amount,
