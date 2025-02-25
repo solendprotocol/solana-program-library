@@ -1228,13 +1228,15 @@ impl IsInitialized for Reserve {
     }
 }
 
-const RESERVE_LEN: usize = 619; // 1 + 8 + 1 + 32 + 32 + 1 + 32 + 32 + 32 + 8 + 16 + 16 + 16 + 32 + 8 + 32 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 8 + 8 + 1 + 8 + 8 + 32 + 1 + 1 + 16 + 230
+/// This is the size of the account _before_ LM feature was added.
+const RESERVE_LEN_V1: usize = 619; // 1 + 8 + 1 + 32 + 32 + 1 + 32 + 32 + 32 + 8 + 16 + 16 + 16 + 32 + 8 + 32 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 8 + 8 + 1 + 8 + 8 + 32 + 1 + 1 + 16 + 230
 impl Pack for Reserve {
-    const LEN: usize = RESERVE_LEN;
+    const LEN: usize = RESERVE_LEN_V1;
 
     // @TODO: break this up by reserve / liquidity / collateral / config https://git.io/JOCca
+    // @v2.1.0 TODO: pack deposits_pool_reward_manager and borrows_pool_reward_manager
     fn pack_into_slice(&self, output: &mut [u8]) {
-        let output = array_mut_ref![output, 0, RESERVE_LEN];
+        let output = array_mut_ref![output, 0, RESERVE_LEN_V1];
         #[allow(clippy::ptr_offset_with_cast)]
         let (
             version,
@@ -1422,9 +1424,12 @@ impl Pack for Reserve {
         pack_decimal(self.attributed_borrow_value, attributed_borrow_value);
     }
 
-    /// Unpacks a byte buffer into a [ReserveInfo](struct.ReserveInfo.html).
+    /// Unpacks a byte buffer into a [Reserve].
+    // @v2.1.0 TODO: unpack deposits_pool_reward_manager and borrows_pool_reward_manager
+    //       but default them if they are not present, this is part of the
+    //       migration process
     fn unpack_from_slice(input: &[u8]) -> Result<Self, ProgramError> {
-        let input = array_ref![input, 0, RESERVE_LEN];
+        let input = array_ref![input, 0, RESERVE_LEN_V1];
         #[allow(clippy::ptr_offset_with_cast)]
         let (
             version,

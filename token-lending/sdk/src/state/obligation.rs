@@ -65,6 +65,15 @@ pub struct Obligation {
     pub closeable: bool,
 }
 
+/// These are the two foundational user interactions in a borrow-lending protocol.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum PositionKind {
+    /// User is providing liquidity.
+    Deposit = 0,
+    /// User is owing liquidity.
+    Borrow = 1,
+}
+
 impl Obligation {
     /// Create a new obligation
     pub fn new(params: InitObligationParams) -> Self {
@@ -414,13 +423,14 @@ impl ObligationLiquidity {
 
 const OBLIGATION_COLLATERAL_LEN: usize = 88; // 32 + 8 + 16 + 32
 const OBLIGATION_LIQUIDITY_LEN: usize = 112; // 32 + 16 + 16 + 16 + 32
-const OBLIGATION_LEN: usize = 1300; // 1 + 8 + 1 + 32 + 32 + 16 + 16 + 16 + 16 + 64 + 1 + 1 + (88 * 1) + (112 * 9)
-                                    // @TODO: break this up by obligation / collateral / liquidity https://git.io/JOCca
+const OBLIGATION_LEN_V1: usize = 1300; // 1 + 8 + 1 + 32 + 32 + 16 + 16 + 16 + 16 + 64 + 1 + 1 + (88 * 1) + (112 * 9)
+                                       // @TODO: break this up by obligation / collateral / liquidity https://git.io/JOCca
 impl Pack for Obligation {
-    const LEN: usize = OBLIGATION_LEN;
+    const LEN: usize = OBLIGATION_LEN_V1;
 
+    // @v2.1.0 TODO: pack vec of user reward managers
     fn pack_into_slice(&self, dst: &mut [u8]) {
-        let output = array_mut_ref![dst, 0, OBLIGATION_LEN];
+        let output = array_mut_ref![dst, 0, OBLIGATION_LEN_V1];
         #[allow(clippy::ptr_offset_with_cast)]
         let (
             version,
@@ -527,9 +537,10 @@ impl Pack for Obligation {
         }
     }
 
-    /// Unpacks a byte buffer into an [ObligationInfo](struct.ObligationInfo.html).
+    /// Unpacks a byte buffer into an [Obligation].
+    // @v2.1.0 TODO: unpack vector of optional user reward managers
     fn unpack_from_slice(src: &[u8]) -> Result<Self, ProgramError> {
-        let input = array_ref![src, 0, OBLIGATION_LEN];
+        let input = array_ref![src, 0, OBLIGATION_LEN_V1];
         #[allow(clippy::ptr_offset_with_cast)]
         let (
             version,
@@ -693,7 +704,7 @@ mod test {
                 closeable: rng.gen(),
             };
 
-            let mut packed = [0u8; OBLIGATION_LEN];
+            let mut packed = [0u8; OBLIGATION_LEN_V1];
             Obligation::pack(obligation.clone(), &mut packed).unwrap();
             let unpacked = Obligation::unpack(&packed).unwrap();
             assert_eq!(obligation, unpacked);
