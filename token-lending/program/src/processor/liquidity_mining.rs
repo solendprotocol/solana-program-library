@@ -242,7 +242,6 @@ mod add_pool_reward {
     /// Use [Self::new] to validate the parameters.
     #[derive(Debug, Clone, Copy, PartialEq, Eq)]
     pub(super) struct AddPoolRewardParams {
-        _priv: (),
         pub(super) position_kind: PositionKind,
         /// At least the current timestamp.
         pub(super) start_time_secs: u64,
@@ -250,13 +249,14 @@ mod add_pool_reward {
         pub(super) duration_secs: u32,
         /// Larger than zero.
         pub(super) reward_token_amount: u64,
+
+        _priv: (),
     }
 
     /// Use [Self::from_unchecked_iter] to validate the accounts except for
     /// * `reward_token_vault_info`
     /// * `rent_info`
     pub(super) struct AddPoolRewardAccounts<'a, 'info> {
-        _priv: (),
         /// ✅ belongs to this program
         /// ✅ unpacks
         /// ✅ belongs to `lending_market_info`
@@ -269,6 +269,8 @@ mod add_pool_reward {
         pub(super) reward_token_source_info: &'a AccountInfo<'info>,
         /// ✅ seed of `lending_market_info`, `reserve_info`, `reward_mint_info`
         pub(super) reward_authority_info: &'a AccountInfo<'info>,
+        /// ✅ belongs to the token program
+        /// ✅ has no data
         /// ❓ we don't yet know whether it's rent exempt
         pub(super) reward_token_vault_info: &'a AccountInfo<'info>,
         /// ✅ belongs to this program
@@ -285,6 +287,8 @@ mod add_pool_reward {
         pub(super) token_program_info: &'a AccountInfo<'info>,
 
         pub(super) reserve: Box<Reserve>,
+
+        _priv: (),
     }
 
     impl AddPoolRewardParams {
@@ -322,12 +326,12 @@ mod add_pool_reward {
             }
 
             Ok(Self {
-                _priv: (),
-
                 position_kind,
                 start_time_secs,
                 duration_secs,
                 reward_token_amount,
+
+                _priv: (),
             })
         }
     }
@@ -377,9 +381,16 @@ mod add_pool_reward {
                 return Err(LendingError::InvalidAccountInput.into());
             }
 
-            Ok(Self {
-                _priv: (),
+            if reward_token_vault_info.owner != token_program_info.key {
+                msg!("Reward token vault provided must be owned by the token program");
+                return Err(LendingError::InvalidTokenOwner.into());
+            }
+            if !reward_token_vault_info.data.borrow().is_empty() {
+                msg!("Reward token vault provided must be empty");
+                return Err(LendingError::InvalidAccountInput.into());
+            }
 
+            Ok(Self {
                 reserve_info,
                 reward_mint_info,
                 reward_token_source_info,
@@ -391,6 +402,8 @@ mod add_pool_reward {
                 token_program_info,
 
                 reserve,
+
+                _priv: (),
             })
         }
     }
@@ -400,16 +413,14 @@ mod cancel_pool_reward {
     use super::*;
 
     pub(super) struct CancelPoolRewardParams {
-        _priv: (),
-
         position_kind: PositionKind,
         pool_reward_index: u64,
+
+        _priv: (),
     }
 
     /// Use [Self::from_unchecked_iter] to validate the accounts.
     pub(super) struct CancelPoolRewardAccounts<'a, 'info> {
-        _priv: (),
-
         /// ✅ belongs to this program
         /// ✅ unpacks
         /// ✅ belongs to `lending_market_info`
@@ -433,6 +444,8 @@ mod cancel_pool_reward {
         pub(super) token_program_info: &'a AccountInfo<'info>,
 
         pub(super) reserve: Box<Reserve>,
+
+        _priv: (),
     }
 
     impl<'a, 'info> CancelPoolRewardAccounts<'a, 'info> {
@@ -498,10 +511,10 @@ mod cancel_pool_reward {
     impl CancelPoolRewardParams {
         pub(super) fn new(position_kind: PositionKind, pool_reward_index: u64) -> Self {
             Self {
-                _priv: (),
-
                 position_kind,
                 pool_reward_index,
+
+                _priv: (),
             }
         }
     }
@@ -511,10 +524,10 @@ mod close_pool_reward {
     use super::*;
 
     pub(super) struct ClosePoolRewardParams {
-        _priv: (),
-
         position_kind: PositionKind,
         pool_reward_index: u64,
+
+        _priv: (),
     }
 
     /// Use [Self::from_unchecked_iter] to validate the accounts.
@@ -590,8 +603,6 @@ mod close_pool_reward {
             }
 
             Ok(Self {
-                _priv: (),
-
                 reserve_info,
                 reward_mint_info,
                 reward_token_destination_info,
@@ -602,6 +613,8 @@ mod close_pool_reward {
                 token_program_info,
 
                 reserve,
+
+                _priv: (),
             })
         }
     }
@@ -609,10 +622,10 @@ mod close_pool_reward {
     impl ClosePoolRewardParams {
         pub(super) fn new(position_kind: PositionKind, pool_reward_index: u64) -> Self {
             Self {
-                _priv: (),
-
                 position_kind,
                 pool_reward_index,
+
+                _priv: (),
             }
         }
     }
