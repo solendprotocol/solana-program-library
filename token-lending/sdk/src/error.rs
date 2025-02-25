@@ -209,6 +209,9 @@ pub enum LendingError {
     /// Borrow Attribution Limit Not Exceeded
     #[error("Borrow Attribution Limit Not Exceeded")]
     BorrowAttributionLimitNotExceeded,
+    /// Pool rewards have a hard coded minimum length in seconds.
+    #[error("Pool reward too short")]
+    PoolRewardTooShort,
 }
 
 impl From<LendingError> for ProgramError {

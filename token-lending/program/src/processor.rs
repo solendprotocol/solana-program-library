@@ -1,5 +1,7 @@
 //! Program state processor
 
+mod liquidity_mining;
+
 use crate::state::Bonus;
 use crate::{
     self as solend_program,
@@ -201,6 +203,46 @@ pub fn process_instruction(
         LendingInstruction::DonateToReserve { liquidity_amount } => {
             msg!("Instruction: Donate To Reserve");
             process_donate_to_reserve(program_id, liquidity_amount, accounts)
+        }
+        LendingInstruction::AddPoolReward {
+            position_kind,
+            start_time_secs,
+            end_time_secs,
+            token_amount,
+        } => {
+            msg!("Instruction: Add Pool Reward");
+            liquidity_mining::process_add_pool_reward(
+                program_id,
+                position_kind,
+                start_time_secs,
+                end_time_secs,
+                token_amount,
+                accounts,
+            )
+        }
+        LendingInstruction::CancelPoolReward {
+            position_kind,
+            pool_reward_index,
+        } => {
+            msg!("Instruction: Cancel Pool Reward");
+            liquidity_mining::process_cancel_pool_reward(
+                program_id,
+                position_kind,
+                pool_reward_index,
+                accounts,
+            )
+        }
+        LendingInstruction::ClosePoolReward {
+            position_kind,
+            pool_reward_index,
+        } => {
+            msg!("Instruction: Close Pool Reward");
+            liquidity_mining::process_close_pool_reward(
+                program_id,
+                position_kind,
+                pool_reward_index,
+                accounts,
+            )
         }
     }
 }
@@ -3436,6 +3478,31 @@ fn spl_token_burn(params: TokenBurnParams<'_, '_>) -> ProgramResult {
     result.map_err(|_| LendingError::TokenBurnFailed.into())
 }
 
+/// Issue a spl_token `CloseAccount` instruction.
+#[inline(always)]
+fn spl_token_close_account(params: TokenCloseAccountParams<'_, '_>) -> ProgramResult {
+    let TokenCloseAccountParams {
+        account,
+        destination,
+        authority,
+        token_program,
+        authority_signer_seeds,
+    } = params;
+    let result = invoke_optionally_signed(
+        &spl_token::instruction::close_account(
+            token_program.key,
+            account.key,
+            destination.key,
+            authority.key,
+            &[],
+        )?,
+        &[account, destination, authority, token_program],
+        authority_signer_seeds,
+    );
+
+    result.map_err(|_| LendingError::TokenTransferFailed.into())
+}
+
 fn is_cpi_call(
     program_id: &Pubkey,
     current_index: usize,
@@ -3503,6 +3570,14 @@ struct TokenBurnParams<'a: 'b, 'b> {
     mint: AccountInfo<'a>,
     source: AccountInfo<'a>,
     amount: u64,
+    authority: AccountInfo<'a>,
+    authority_signer_seeds: &'b [&'b [u8]],
+    token_program: AccountInfo<'a>,
+}
+
+struct TokenCloseAccountParams<'a: 'b, 'b> {
+    account: AccountInfo<'a>,
+    destination: AccountInfo<'a>,
     authority: AccountInfo<'a>,
     authority_signer_seeds: &'b [&'b [u8]],
     token_program: AccountInfo<'a>,
