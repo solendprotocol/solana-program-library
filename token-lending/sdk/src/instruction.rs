@@ -543,7 +543,8 @@ pub enum LendingInstruction {
     ///         * b"RewardVaultAuthority"
     ///         * Lending market account pubkey
     ///         * Reserve account pubkey
-    ///    `[]` Uninitialized rent-exempt account that will hold reward tokens.
+    ///         * Reward mint pubkey
+    ///    `[writable]` Uninitialized rent-exempt account that will hold reward tokens.
     ///    `[]` Lending market account.
     ///    `[signer]` Lending market owner.
     ///    `[]` Rent sysvar.
@@ -565,6 +566,20 @@ pub enum LendingInstruction {
     /// * Admin only instruction.
     /// * Can only be called if reward period is over.
     /// * Can only be called if all users claimed rewards.
+    ///
+    ///    `[writable]` Reserve account.
+    ///    `[]` Reward mint.
+    ///    `[writable]` Reward token account owned by signer
+    ///    `[]` Derived reserve pool reward authority. Seed:
+    ///         * b"RewardVaultAuthority"
+    ///         * Lending market account pubkey
+    ///         * Reserve account pubkey
+    ///         * Reward mint pubkey
+    ///    `[writable]` Reward vault token account.
+    ///    `[]` Lending market account.
+    ///    `[signer]` Lending market owner.
+    ///    `[]` Rent sysvar.
+    ///    `[]` Token program.
     ClosePoolReward {
         /// Whether this reward applies to deposits or borrows
         position_kind: PositionKind,
@@ -578,6 +593,20 @@ pub enum LendingInstruction {
     /// * Admin only instruction.
     /// * Changed the endtime of the reward to the current time.
     /// * Claims unallocated rewards to the admin signer.
+    ///
+    ///    `[writable]` Reserve account.
+    ///    `[]` Reward mint.
+    ///    `[writable]` Reward token account owned by signer
+    ///    `[]` Derived reserve pool reward authority. Seed:
+    ///         * b"RewardVaultAuthority"
+    ///         * Lending market account pubkey
+    ///         * Reserve account pubkey
+    ///         * Reward mint pubkey
+    ///    `[writable]` Reward vault token account.
+    ///    `[]` Lending market account.
+    ///    `[signer]` Lending market owner.
+    ///    `[]` Rent sysvar.
+    ///    `[]` Token program.
     CancelPoolReward {
         /// Whether this reward applies to deposits or borrows
         position_kind: PositionKind,
