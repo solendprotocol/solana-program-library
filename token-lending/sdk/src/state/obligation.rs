@@ -655,6 +655,18 @@ impl Pack for Obligation {
     }
 }
 
+impl TryFrom<u8> for PositionKind {
+    type Error = ProgramError;
+
+    fn try_from(value: u8) -> Result<Self, Self::Error> {
+        match value {
+            0 => Ok(PositionKind::Deposit),
+            1 => Ok(PositionKind::Borrow),
+            _ => Err(LendingError::InstructionUnpackError.into()),
+        }
+    }
+}
+
 #[cfg(test)]
 mod test {
     use super::*;

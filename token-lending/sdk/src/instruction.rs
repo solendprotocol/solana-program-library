@@ -872,11 +872,7 @@ impl LendingInstruction {
                 Self::DonateToReserve { liquidity_amount }
             }
             25 => {
-                let (position_kind, rest) = match Self::unpack_u8(rest)? {
-                    (0, rest) => (PositionKind::Deposit, rest),
-                    (1, rest) => (PositionKind::Borrow, rest),
-                    _ => return Err(LendingError::InstructionUnpackError.into()),
-                };
+                let (position_kind, rest) = Self::unpack_try_from_u8(rest)?;
                 let (start_time_secs, rest) = Self::unpack_u64(rest)?;
                 let (end_time_secs, rest) = Self::unpack_u64(rest)?;
                 let (token_amount, _rest) = Self::unpack_u64(rest)?;
@@ -888,11 +884,7 @@ impl LendingInstruction {
                 }
             }
             26 => {
-                let (position_kind, rest) = match Self::unpack_u8(rest)? {
-                    (0, rest) => (PositionKind::Deposit, rest),
-                    (1, rest) => (PositionKind::Borrow, rest),
-                    _ => return Err(LendingError::InstructionUnpackError.into()),
-                };
+                let (position_kind, rest) = Self::unpack_try_from_u8(rest)?;
                 let (pool_reward_index, _rest) = Self::unpack_u64(rest)?;
                 Self::ClosePoolReward {
                     position_kind,
@@ -900,11 +892,7 @@ impl LendingInstruction {
                 }
             }
             27 => {
-                let (position_kind, rest) = match Self::unpack_u8(rest)? {
-                    (0, rest) => (PositionKind::Deposit, rest),
-                    (1, rest) => (PositionKind::Borrow, rest),
-                    _ => return Err(LendingError::InstructionUnpackError.into()),
-                };
+                let (position_kind, rest) = Self::unpack_try_from_u8(rest)?;
                 let (pool_reward_index, _rest) = Self::unpack_u64(rest)?;
                 Self::CancelPoolReward {
                     position_kind,
@@ -958,6 +946,25 @@ impl LendingInstruction {
             .map(u8::from_le_bytes)
             .ok_or(LendingError::InstructionUnpackError)?;
         Ok((value, rest))
+    }
+
+    fn unpack_try_from_u8<T>(input: &[u8]) -> Result<(T, &[u8]), ProgramError>
+    where
+        T: TryFrom<u8>,
+        ProgramError: From<<T as TryFrom<u8>>::Error>,
+    {
+        if input.is_empty() {
+            msg!("u8 cannot be unpacked");
+            return Err(LendingError::InstructionUnpackError.into());
+        }
+        let (bytes, rest) = input.split_at(1);
+        let value = bytes
+            .get(..1)
+            .and_then(|slice| slice.try_into().ok())
+            .map(u8::from_le_bytes)
+            .ok_or(LendingError::InstructionUnpackError)?;
+
+        Ok((T::try_from(value)?, rest))
     }
 
     fn unpack_bytes32(input: &[u8]) -> Result<(&[u8; 32], &[u8]), ProgramError> {

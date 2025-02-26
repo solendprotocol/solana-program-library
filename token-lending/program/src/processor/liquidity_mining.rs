@@ -223,7 +223,7 @@ fn reward_vault_authority(
     )
 }
 
-fn reward_vault_authority_seeds<'a, 'keys>(
+fn reward_vault_authority_seeds<'keys>(
     lending_market_key: &'keys Pubkey,
     reserve_key: &'keys Pubkey,
     reward_mint_key: &'keys Pubkey,
