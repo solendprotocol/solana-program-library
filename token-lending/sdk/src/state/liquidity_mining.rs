@@ -21,6 +21,15 @@ pub struct PoolRewardManager {
 ///
 /// This helps us distinguish between two distinct rewards in the same array
 /// index across time.
+///
+/// # Wrapping
+/// There are two strategies to handle wrapping:
+/// 1. Consider the associated slot locked forever
+/// 2. Go back to 0.
+///
+/// Given that one reward lasts at least 1 hour we've got about half a
+/// million years before we need to worry about wrapping in a single slot.
+/// I'd call that someone elses problem.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub struct PoolRewardId(pub u32);
 
