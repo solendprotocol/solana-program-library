@@ -423,6 +423,7 @@ impl ObligationLiquidity {
 
 const OBLIGATION_COLLATERAL_LEN: usize = 88; // 32 + 8 + 16 + 32
 const OBLIGATION_LIQUIDITY_LEN: usize = 112; // 32 + 16 + 16 + 16 + 32
+/// This is the size of the account _before_ LM feature was added.
 const OBLIGATION_LEN_V1: usize = 1300; // 1 + 8 + 1 + 32 + 32 + 16 + 16 + 16 + 16 + 64 + 1 + 1 + (88 * 1) + (112 * 9)
                                        // @TODO: break this up by obligation / collateral / liquidity https://git.io/JOCca
 impl Pack for Obligation {

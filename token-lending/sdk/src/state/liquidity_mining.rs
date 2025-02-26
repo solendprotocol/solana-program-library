@@ -2,6 +2,7 @@ use crate::math::Decimal;
 use solana_program::pubkey::Pubkey;
 
 /// Determines the size of [PoolRewardManager]
+/// TODO: This should be configured when we're dealing with migrations later but we should aim for 50.
 const MAX_REWARDS: usize = 44;
 
 /// Each reserve has two managers:
@@ -27,9 +28,9 @@ pub struct PoolRewardManager {
 /// 1. Consider the associated slot locked forever
 /// 2. Go back to 0.
 ///
-/// Given that one reward lasts at least 1 hour we've got about half a
+/// Given that one reward lasts at least 1 hour we've got at least half a
 /// million years before we need to worry about wrapping in a single slot.
-/// I'd call that someone elses problem.
+/// I'd call that someone else's problem.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub struct PoolRewardId(pub u32);
 
