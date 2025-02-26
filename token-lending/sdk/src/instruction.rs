@@ -953,18 +953,8 @@ impl LendingInstruction {
         T: TryFrom<u8>,
         ProgramError: From<<T as TryFrom<u8>>::Error>,
     {
-        if input.is_empty() {
-            msg!("u8 cannot be unpacked");
-            return Err(LendingError::InstructionUnpackError.into());
-        }
-        let (bytes, rest) = input.split_at(1);
-        let value = bytes
-            .get(..1)
-            .and_then(|slice| slice.try_into().ok())
-            .map(u8::from_le_bytes)
-            .ok_or(LendingError::InstructionUnpackError)?;
-
-        Ok((T::try_from(value)?, rest))
+        let (byte, rest) = Self::unpack_u8(input)?;
+        Ok((T::try_from(byte)?, rest))
     }
 
     fn unpack_bytes32(input: &[u8]) -> Result<(&[u8; 32], &[u8]), ProgramError> {
