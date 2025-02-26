@@ -1,3 +1,18 @@
+//! Liquidity mining is a feature where depositors and borrowers are rewarded
+//! for using the protocol.
+//! The rewards are in the form of tokens that a lending market owner can attach
+//! to each reserve.
+//!
+//! The feature is built with reference to the [Suilend][suilend-lm]
+//! implementation of the same feature.
+//!
+//! There are three admin-only ixs:
+//! - [add_pool_reward]
+//! - [cancel_pool_reward]
+//! - [close_pool_reward]
+//!
+//! [suilend-lm]: https://github.com/solendprotocol/suilend/blob/dc53150416f352053ac3acbb320ee143409c4a5d/contracts/suilend/sources/liquidity_mining.move#L2
+
 use crate::processor::{
     assert_rent_exempt, spl_token_close_account, spl_token_init_account, spl_token_transfer,
     TokenCloseAccountParams, TokenInitializeAccountParams, TokenTransferParams,
