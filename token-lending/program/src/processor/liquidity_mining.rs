@@ -38,9 +38,6 @@ use solend_sdk::{
 use spl_token::state::Account as TokenAccount;
 use std::convert::TryInto;
 
-/// Cannot create a reward shorter than this.
-const MIN_REWARD_PERIOD_SECS: u64 = 3_600;
-
 /// # Accounts
 ///
 /// See [add_pool_reward::AddPoolRewardAccounts::from_unchecked_iter] for a list
@@ -252,6 +249,8 @@ fn reward_vault_authority_seeds<'keys>(
 }
 
 mod add_pool_reward {
+    use solend_sdk::state::MIN_REWARD_PERIOD_SECS;
+
     use super::*;
 
     /// Use [Self::new] to validate the parameters.
