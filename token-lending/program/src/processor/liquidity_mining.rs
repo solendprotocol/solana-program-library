@@ -332,7 +332,7 @@ mod add_pool_reward {
             };
             if MIN_REWARD_PERIOD_SECS > duration_secs as u64 {
                 msg!("Pool reward duration must be at least {MIN_REWARD_PERIOD_SECS} secs");
-                return Err(LendingError::PoolRewardTooShort.into());
+                return Err(LendingError::PoolRewardPeriodTooShort.into());
             }
 
             if reward_token_amount == 0 {
