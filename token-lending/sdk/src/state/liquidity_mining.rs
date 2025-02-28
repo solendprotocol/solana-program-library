@@ -167,8 +167,8 @@ impl PoolRewardManager {
                 .checked_sub(reward.start_time_secs.max(last_update_time_secs))
                 .ok_or(LendingError::MathOverflow)?;
 
-            // We assert that a reward has been running for at least [MIN_REWARD_PERIOD_SECS].
-            // This won't error on division by zero.
+            // When adding a reward we assert that a reward lasts for at least [MIN_REWARD_PERIOD_SECS].
+            // Hence this won't error on overflow nor on division by zero.
             let unlocked_rewards = Decimal::from(reward.total_rewards)
                 .try_mul(Decimal::from(time_passed_secs))?
                 .try_div(Decimal::from(end_time_secs - reward.start_time_secs))?;
@@ -186,7 +186,8 @@ impl PoolRewardManager {
     }
 }
 
-enum CreatingNewRewardManager {
+enum CreatingNewUserRewardManager {
+    /// If we are creating a [UserRewardManager] then we want to populate it.
     Yes,
     No,
 }
@@ -201,14 +202,16 @@ impl UserRewardManager {
         &mut self,
         pool_reward_manager: &mut PoolRewardManager,
         clock: &Clock,
-        creating_new_reward_manager: CreatingNewRewardManager,
+        creating_new_reward_manager: CreatingNewUserRewardManager,
     ) -> Result<(), ProgramError> {
         pool_reward_manager.update(clock)?;
 
         let curr_unix_timestamp_secs = clock.unix_timestamp as u64;
 
-        if matches!(creating_new_reward_manager, CreatingNewRewardManager::No)
-            && curr_unix_timestamp_secs == self.last_update_time_secs
+        if matches!(
+            creating_new_reward_manager,
+            CreatingNewUserRewardManager::No
+        ) && curr_unix_timestamp_secs == self.last_update_time_secs
         {
             return Ok(());
         }
@@ -243,12 +246,13 @@ impl UserRewardManager {
                         } else {
                             debug_assert!(matches!(
                                 creating_new_reward_manager,
-                                CreatingNewRewardManager::Yes
+                                CreatingNewUserRewardManager::Yes
                             ));
                             Decimal::zero()
                         },
                     };
 
+                    // we resized this vector to match the pool rewards
                     self.rewards[reward_index] = Some(new_user_reward);
 
                     pool_reward.num_user_reward_managers += 1;
