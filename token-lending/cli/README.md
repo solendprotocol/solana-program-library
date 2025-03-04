@@ -5,8 +5,23 @@ A basic command line interface for initializing lending markets and reserves for
 See https://spl.solana.com/token-lending for more details
 
 ## Install the CLI
+
+Compile the Rust code manually and access the CLI from the `target/debug` folder.
+
+### Compilation Steps
 ```shell
-cargo install solend-program-cli
+# Clone the repository
+git clone https://github.com/solendprotocol/solana-program-library.git
+cd token-lending/cli
+
+# Build the cli
+cargo build
+
+# Navigate to the target/debug folder
+cd ../../target/debug
+
+# Run the CLI
+solend-cli --help
 ```
 
 ## Deploy a lending program (optional)
@@ -23,7 +38,7 @@ The lending market owner must sign to add reserves.
 
 ### Usage
 ```shell
-solend-program \
+solend-cli \
   --program      PUBKEY \
   --fee-payer    SIGNER \
   create-market \
@@ -33,11 +48,11 @@ solend-program \
 - `--fee-payer` will sign to pay transaction fees.
 - `--market-owner` is the lending market owner pubkey.
 
-Run `solend-program create-market --help` for more details and options.
+Run `solend-cli create-market --help` for more details and options.
 
 ### Example
 ```shell
-solend-program \
+solend-cli \
   --program      6TvznH3B2e3p2mbhufNBpgSrLx6UkgvxtVQvopEZ2kuH \
   --fee-payer    owner.json \
   create-market \
@@ -54,17 +69,18 @@ A reserve is a liquidity pool that can be deposited into, borrowed from, and opt
 
 ### Usage
 ```shell
-solend-program \
-  --program      PUBKEY \
-  --fee-payer    SIGNER \
+solend-cli \
+  --program           PUBKEY \
+  --fee-payer         SIGNER \
   add-reserve \
-  --market-owner SIGNER \
-  --source-owner SIGNER \
-  --market       PUBKEY \
-  --source       PUBKEY \
-  --amount       DECIMAL_AMOUNT \
-  --pyth-product PUBKEY \
-  --pyth-price   PUBKEY
+  --market-owner      SIGNER \
+  --source-owner      SIGNER \
+  --market            PUBKEY \
+  --source            PUBKEY \
+  --amount            DECIMAL_AMOUNT \
+  --pyth-product      PUBKEY \
+  --pyth-price        PUBKEY \
+  --switchboard-feed  PUBKEY
 ```
 - `--program` is the lending program ID.
 - `--fee-payer` will sign to pay transaction fees.
@@ -75,22 +91,24 @@ solend-program \
 - `--amount` is the amount of tokens to deposit.
 - `--pyth-product` and `--pyth-price` are oracle
   accounts [provided by Pyth](https://pyth.network/developers/consumers/accounts).
+- --switchboard-feed is an oracle feed [provided by Switchboard](https://ondemand.switchboard.xyz/solana/devnet).
 
-Run `solend-program add-reserve --help` for more details and options.
+Run `solend-cli add-reserve --help` for more details and options.
 
 ### Example
 ```shell
-solend-program \
-  --program      6TvznH3B2e3p2mbhufNBpgSrLx6UkgvxtVQvopEZ2kuH \
-  --fee-payer    owner.json \
+solend-cli \
+  --program           6TvznH3B2e3p2mbhufNBpgSrLx6UkgvxtVQvopEZ2kuH \
+  --fee-payer         owner.json \
   add-reserve \
-  --market-owner owner.json \
-  --source-owner owner.json \
-  --market       7uX9ywsk1X2j6wLoywMDVQLNWAqhDpVqZzL4qm4CuMMT \
-  --source       AJ2sgpgj6ZeQazPPiDyTYqN9vbj58QMaZQykB9Sr6XY \
-  --amount       5.0  \
-  --pyth-product 8yrQMUyJRnCJ72NWwMiPV9dNGw465Z8bKUvnUC8P5L6F \
-  --pyth-price   BdgHsXrH1mXqhdosXavYxZgX6bGqTdj5mh2sxDhF8bJy
+  --market-owner      owner.json \
+  --source-owner      owner.json \
+  --market            7uX9ywsk1X2j6wLoywMDVQLNWAqhDpVqZzL4qm4CuMMT \
+  --source            AJ2sgpgj6ZeQazPPiDyTYqN9vbj58QMaZQykB9Sr6XY \
+  --amount            5.0  \
+  --pyth-product      8yrQMUyJRnCJ72NWwMiPV9dNGw465Z8bKUvnUC8P5L6F \
+  --pyth-price        BdgHsXrH1mXqhdosXavYxZgX6bGqTdj5mh2sxDhF8bJy \
+  --switchboard-feed  3dX4VwH3JfkxjZMzXPToXx45GfbY7LJFA5Tf1L6Wv8s9
 
 # Adding reserve 69BwFhpQBzZfcp9MCj9V8TLvdv9zGfQQPQbb8dUHsaEa
 # Signature: 2yKHnmBSqBpbGdsxW75nnmZMys1bZMbHiczdZitMeQHYdpis4eVhuMWGE29hhgtHpNDjdPj5YVbqkWoAEBw1WaU
