@@ -2,18 +2,19 @@ use crate::{
     error::LendingError,
     math::{Decimal, TryAdd, TryDiv, TryMul, TrySub},
 };
+use solana_program::program_pack::{Pack, Sealed};
 use solana_program::{clock::Clock, program_error::ProgramError, pubkey::Pubkey};
-
-/// Cannot create a reward shorter than this.
-pub const MIN_REWARD_PERIOD_SECS: u64 = 3_600;
 
 /// Determines the size of [PoolRewardManager]
 /// TODO: This should be configured when we're dealing with migrations later but we should aim for 50.
-const MAX_REWARDS: usize = 44;
+const MAX_REWARDS: usize = 50;
+/// Cannot create a reward shorter than this.
+pub const MIN_REWARD_PERIOD_SECS: u64 = 3_600;
 
 /// Each reserve has two managers:
 /// - one for deposits
 /// - one for borrows
+#[derive(Clone, Debug, PartialEq)]
 pub struct PoolRewardManager {
     /// Is updated when we change user shares in the reserve.
     pub total_shares: u64,
@@ -46,6 +47,7 @@ pub struct PoolRewardId(pub u32);
 /// reward is vacant or not to save space.
 ///
 /// If the pubkey is eq to default pubkey then slot is vacant.
+#[derive(Clone, Debug, PartialEq)]
 pub enum PoolRewardSlot {
     /// New reward can be added to this slot.
     Vacant {
@@ -57,6 +59,16 @@ pub enum PoolRewardSlot {
 }
 
 /// Tracks rewards in a specific mint over some period of time.
+///
+/// # Reward cancellation
+/// In Suilend we also store the amount of rewards that have been made available
+/// to users already.
+/// We keep adding `(total_rewards * time_passed) / (total_time)` every
+/// time someone interacts with the manager.
+/// This value is used to transfer the unallocated rewards to the admin.
+/// However, this can be calculated dynamically which avoids storing extra
+/// [Decimal] on each [PoolReward].
+#[derive(Clone, Debug, Default, PartialEq)]
 pub struct PoolReward {
     /// Unique ID for this slot that has never been used before, and will never
     /// be used again.
@@ -77,12 +89,6 @@ pub struct PoolReward {
     /// There's a permission-less ix with which user rewards can be distributed
     /// that's used for cranking remaining rewards.
     pub num_user_reward_managers: u64,
-    /// Amount of rewards that have been made available to users.
-    ///
-    /// We keep adding `(total_rewards * time_passed) / (total_time)` every
-    /// time someone interacts with the manager
-    /// ([update_pool_reward_manager]).
-    pub allocated_rewards: Decimal,
     /// We keep adding `(unlocked_rewards) / (total_shares)` every time
     /// someone interacts with the manager ([update_pool_reward_manager])
     /// where
@@ -172,8 +178,6 @@ impl PoolRewardManager {
             let unlocked_rewards = Decimal::from(reward.total_rewards)
                 .try_mul(Decimal::from(time_passed_secs))?
                 .try_div(Decimal::from(end_time_secs - reward.start_time_secs))?;
-
-            reward.allocated_rewards = reward.allocated_rewards.try_add(unlocked_rewards)?;
 
             reward.cumulative_rewards_per_share = reward
                 .cumulative_rewards_per_share
@@ -278,6 +282,35 @@ impl UserRewardManager {
 
         Ok(())
     }
+}
+
+impl PoolReward {
+    const LEN: usize = std::mem::size_of::<Self>();
+}
+
+impl Default for PoolRewardManager {
+    fn default() -> Self {
+        Self {
+            total_shares: 0,
+            last_update_time_secs: 0,
+            pool_rewards: std::array::from_fn(|_| PoolRewardSlot::default()),
+        }
+    }
+}
+
+impl Default for PoolRewardSlot {
+    fn default() -> Self {
+        Self::Vacant {
+            last_pool_reward_id: PoolRewardId(0),
+        }
+    }
+}
+
+impl Sealed for PoolRewardManager {}
+
+impl Pack for PoolRewardManager {
+    /// total_shares + last_update_time_secs + pool_rewards.
+    const LEN: usize = 8 + 8 + MAX_REWARDS * PoolReward::LEN;
 }
 
 #[cfg(test)]

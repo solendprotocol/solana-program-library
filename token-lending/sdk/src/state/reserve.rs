@@ -60,6 +60,14 @@ pub struct Reserve {
     pub rate_limiter: RateLimiter,
     /// Attributed borrows in USD
     pub attributed_borrow_value: Decimal,
+    /// Contains liquidity mining rewards for deposits.
+    ///
+    /// Added @v2.1.0
+    pub deposits_pool_reward_manager: PoolRewardManager,
+    /// Contains liquidity mining rewards for borrows.
+    ///
+    /// Added @v2.1.0
+    pub borrows_pool_reward_manager: PoolRewardManager,
 }
 
 impl Reserve {
@@ -1229,14 +1237,18 @@ impl IsInitialized for Reserve {
 }
 
 /// This is the size of the account _before_ LM feature was added.
-const RESERVE_LEN_V1: usize = 619; // 1 + 8 + 1 + 32 + 32 + 1 + 32 + 32 + 32 + 8 + 16 + 16 + 16 + 32 + 8 + 32 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 8 + 8 + 1 + 8 + 8 + 32 + 1 + 1 + 16 + 230
+const RESERVE_LEN_V2_0_2: usize = 619; // 1 + 8 + 1 + 32 + 32 + 1 + 32 + 32 + 32 + 8 + 16 + 16 + 16 + 32 + 8 + 32 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 8 + 8 + 1 + 8 + 8 + 32 + 1 + 1 + 16 + 230
+/// This is the size of the account _after_ LM feature was added.
+const RESERVE_LEN_v2_1_0: usize = RESERVE_LEN_V2_0_2 + PoolRewardManager::LEN * 2;
+
 impl Pack for Reserve {
-    const LEN: usize = RESERVE_LEN_V1;
+    const LEN: usize = RESERVE_LEN_V2_0_2;
 
     // @TODO: break this up by reserve / liquidity / collateral / config https://git.io/JOCca
     // @v2.1.0 TODO: pack deposits_pool_reward_manager and borrows_pool_reward_manager
+    // @v2.1.0 TODO: add discriminator
     fn pack_into_slice(&self, output: &mut [u8]) {
-        let output = array_mut_ref![output, 0, RESERVE_LEN_V1];
+        let output = array_mut_ref![output, 0, RESERVE_LEN_V2_0_2];
         #[allow(clippy::ptr_offset_with_cast)]
         let (
             version,
@@ -1429,7 +1441,7 @@ impl Pack for Reserve {
     //       but default them if they are not present, this is part of the
     //       migration process
     fn unpack_from_slice(input: &[u8]) -> Result<Self, ProgramError> {
-        let input = array_ref![input, 0, RESERVE_LEN_V1];
+        let input_v2_0_2 = array_ref![input, 0, RESERVE_LEN_V2_0_2];
         #[allow(clippy::ptr_offset_with_cast)]
         let (
             version,
@@ -1481,7 +1493,7 @@ impl Pack for Reserve {
             config_attributed_borrow_limit_close,
             _padding,
         ) = array_refs![
-            input,
+            input_v2_0_2,
             1,
             8,
             1,
@@ -1553,110 +1565,118 @@ impl Pack for Reserve {
             u8::from_le_bytes(*config_max_liquidation_threshold),
         );
 
+        let last_update = LastUpdate {
+            slot: u64::from_le_bytes(*last_update_slot),
+            stale: unpack_bool(last_update_stale)?,
+        };
+
+        let liquidity = ReserveLiquidity {
+            mint_pubkey: Pubkey::new_from_array(*liquidity_mint_pubkey),
+            mint_decimals: u8::from_le_bytes(*liquidity_mint_decimals),
+            supply_pubkey: Pubkey::new_from_array(*liquidity_supply_pubkey),
+            pyth_oracle_pubkey: Pubkey::new_from_array(*liquidity_pyth_oracle_pubkey),
+            switchboard_oracle_pubkey: Pubkey::new_from_array(*liquidity_switchboard_oracle_pubkey),
+            available_amount: u64::from_le_bytes(*liquidity_available_amount),
+            borrowed_amount_wads: unpack_decimal(liquidity_borrowed_amount_wads),
+            cumulative_borrow_rate_wads: unpack_decimal(liquidity_cumulative_borrow_rate_wads),
+            accumulated_protocol_fees_wads: unpack_decimal(
+                liquidity_accumulated_protocol_fees_wads,
+            ),
+            market_price: unpack_decimal(liquidity_market_price),
+            smoothed_market_price: unpack_decimal(liquidity_smoothed_market_price),
+            extra_market_price: match liquidity_extra_market_price_flag[0] {
+                0 => None,
+                1 => Some(unpack_decimal(liquidity_extra_market_price)),
+                _ => {
+                    msg!("Invalid extra market price flag");
+                    return Err(ProgramError::InvalidAccountData);
+                }
+            },
+        };
+
+        let collateral = ReserveCollateral {
+            mint_pubkey: Pubkey::new_from_array(*collateral_mint_pubkey),
+            mint_total_supply: u64::from_le_bytes(*collateral_mint_total_supply),
+            supply_pubkey: Pubkey::new_from_array(*collateral_supply_pubkey),
+        };
+
+        let config = ReserveConfig {
+            optimal_utilization_rate,
+            max_utilization_rate: max(
+                optimal_utilization_rate,
+                u8::from_le_bytes(*config_max_utilization_rate),
+            ),
+            loan_to_value_ratio: u8::from_le_bytes(*config_loan_to_value_ratio),
+            liquidation_bonus,
+            max_liquidation_bonus,
+            liquidation_threshold,
+            max_liquidation_threshold,
+            min_borrow_rate: u8::from_le_bytes(*config_min_borrow_rate),
+            optimal_borrow_rate: u8::from_le_bytes(*config_optimal_borrow_rate),
+            max_borrow_rate,
+            super_max_borrow_rate: max(
+                max_borrow_rate as u64,
+                u64::from_le_bytes(*config_super_max_borrow_rate),
+            ),
+            fees: ReserveFees {
+                borrow_fee_wad: u64::from_le_bytes(*config_fees_borrow_fee_wad),
+                flash_loan_fee_wad: u64::from_le_bytes(*config_fees_flash_loan_fee_wad),
+                host_fee_percentage: u8::from_le_bytes(*config_fees_host_fee_percentage),
+            },
+            deposit_limit: u64::from_le_bytes(*config_deposit_limit),
+            borrow_limit: u64::from_le_bytes(*config_borrow_limit),
+            fee_receiver: Pubkey::new_from_array(*config_fee_receiver),
+            protocol_liquidation_fee: min(
+                u8::from_le_bytes(*config_protocol_liquidation_fee),
+                // the behaviour of this variable changed in v2.0.2 and now represents a
+                // fraction of the total liquidation value that the protocol receives as
+                // a bonus. Prior to v2.0.2, this variable used to represent a percentage of of
+                // the liquidator's bonus that would be sent to the protocol. For safety, we
+                // cap the value here to MAX_PROTOCOL_LIQUIDATION_FEE_DECA_BPS.
+                MAX_PROTOCOL_LIQUIDATION_FEE_DECA_BPS,
+            ),
+            protocol_take_rate: u8::from_le_bytes(*config_protocol_take_rate),
+            added_borrow_weight_bps: u64::from_le_bytes(*config_added_borrow_weight_bps),
+            reserve_type: ReserveType::from_u8(config_asset_type[0]).unwrap(),
+            scaled_price_offset_bps: i64::from_le_bytes(*config_scaled_price_offset_bps),
+            extra_oracle_pubkey: if config_extra_oracle_pubkey == &[0; 32] {
+                None
+            } else {
+                Some(Pubkey::new_from_array(*config_extra_oracle_pubkey))
+            },
+            // this field is added in v2.0.3 and we will never set it to zero. only time it'll
+            // the following two fields are added in v2.0.3 and we will never set it to zero. only time they will
+            // be zero is when we upgrade from v2.0.2 to v2.0.3. in that case, the correct
+            // thing to do is set the value to u64::MAX.
+            attributed_borrow_limit_open: {
+                let value = u64::from_le_bytes(*config_attributed_borrow_limit_open);
+                if value == 0 {
+                    u64::MAX
+                } else {
+                    value
+                }
+            },
+            attributed_borrow_limit_close: {
+                let value = u64::from_le_bytes(*config_attributed_borrow_limit_close);
+                if value == 0 {
+                    u64::MAX
+                } else {
+                    value
+                }
+            },
+        };
+
         Ok(Self {
             version,
-            last_update: LastUpdate {
-                slot: u64::from_le_bytes(*last_update_slot),
-                stale: unpack_bool(last_update_stale)?,
-            },
+            last_update,
             lending_market: Pubkey::new_from_array(*lending_market),
-            liquidity: ReserveLiquidity {
-                mint_pubkey: Pubkey::new_from_array(*liquidity_mint_pubkey),
-                mint_decimals: u8::from_le_bytes(*liquidity_mint_decimals),
-                supply_pubkey: Pubkey::new_from_array(*liquidity_supply_pubkey),
-                pyth_oracle_pubkey: Pubkey::new_from_array(*liquidity_pyth_oracle_pubkey),
-                switchboard_oracle_pubkey: Pubkey::new_from_array(
-                    *liquidity_switchboard_oracle_pubkey,
-                ),
-                available_amount: u64::from_le_bytes(*liquidity_available_amount),
-                borrowed_amount_wads: unpack_decimal(liquidity_borrowed_amount_wads),
-                cumulative_borrow_rate_wads: unpack_decimal(liquidity_cumulative_borrow_rate_wads),
-                accumulated_protocol_fees_wads: unpack_decimal(
-                    liquidity_accumulated_protocol_fees_wads,
-                ),
-                market_price: unpack_decimal(liquidity_market_price),
-                smoothed_market_price: unpack_decimal(liquidity_smoothed_market_price),
-                extra_market_price: match liquidity_extra_market_price_flag[0] {
-                    0 => None,
-                    1 => Some(unpack_decimal(liquidity_extra_market_price)),
-                    _ => {
-                        msg!("Invalid extra market price flag");
-                        return Err(ProgramError::InvalidAccountData);
-                    }
-                },
-            },
-            collateral: ReserveCollateral {
-                mint_pubkey: Pubkey::new_from_array(*collateral_mint_pubkey),
-                mint_total_supply: u64::from_le_bytes(*collateral_mint_total_supply),
-                supply_pubkey: Pubkey::new_from_array(*collateral_supply_pubkey),
-            },
-            config: ReserveConfig {
-                optimal_utilization_rate,
-                max_utilization_rate: max(
-                    optimal_utilization_rate,
-                    u8::from_le_bytes(*config_max_utilization_rate),
-                ),
-                loan_to_value_ratio: u8::from_le_bytes(*config_loan_to_value_ratio),
-                liquidation_bonus,
-                max_liquidation_bonus,
-                liquidation_threshold,
-                max_liquidation_threshold,
-                min_borrow_rate: u8::from_le_bytes(*config_min_borrow_rate),
-                optimal_borrow_rate: u8::from_le_bytes(*config_optimal_borrow_rate),
-                max_borrow_rate,
-                super_max_borrow_rate: max(
-                    max_borrow_rate as u64,
-                    u64::from_le_bytes(*config_super_max_borrow_rate),
-                ),
-                fees: ReserveFees {
-                    borrow_fee_wad: u64::from_le_bytes(*config_fees_borrow_fee_wad),
-                    flash_loan_fee_wad: u64::from_le_bytes(*config_fees_flash_loan_fee_wad),
-                    host_fee_percentage: u8::from_le_bytes(*config_fees_host_fee_percentage),
-                },
-                deposit_limit: u64::from_le_bytes(*config_deposit_limit),
-                borrow_limit: u64::from_le_bytes(*config_borrow_limit),
-                fee_receiver: Pubkey::new_from_array(*config_fee_receiver),
-                protocol_liquidation_fee: min(
-                    u8::from_le_bytes(*config_protocol_liquidation_fee),
-                    // the behaviour of this variable changed in v2.0.2 and now represents a
-                    // fraction of the total liquidation value that the protocol receives as
-                    // a bonus. Prior to v2.0.2, this variable used to represent a percentage of of
-                    // the liquidator's bonus that would be sent to the protocol. For safety, we
-                    // cap the value here to MAX_PROTOCOL_LIQUIDATION_FEE_DECA_BPS.
-                    MAX_PROTOCOL_LIQUIDATION_FEE_DECA_BPS,
-                ),
-                protocol_take_rate: u8::from_le_bytes(*config_protocol_take_rate),
-                added_borrow_weight_bps: u64::from_le_bytes(*config_added_borrow_weight_bps),
-                reserve_type: ReserveType::from_u8(config_asset_type[0]).unwrap(),
-                scaled_price_offset_bps: i64::from_le_bytes(*config_scaled_price_offset_bps),
-                extra_oracle_pubkey: if config_extra_oracle_pubkey == &[0; 32] {
-                    None
-                } else {
-                    Some(Pubkey::new_from_array(*config_extra_oracle_pubkey))
-                },
-                // this field is added in v2.0.3 and we will never set it to zero. only time it'll
-                // the following two fields are added in v2.0.3 and we will never set it to zero. only time they will
-                // be zero is when we upgrade from v2.0.2 to v2.0.3. in that case, the correct
-                // thing to do is set the value to u64::MAX.
-                attributed_borrow_limit_open: {
-                    let value = u64::from_le_bytes(*config_attributed_borrow_limit_open);
-                    if value == 0 {
-                        u64::MAX
-                    } else {
-                        value
-                    }
-                },
-                attributed_borrow_limit_close: {
-                    let value = u64::from_le_bytes(*config_attributed_borrow_limit_close);
-                    if value == 0 {
-                        u64::MAX
-                    } else {
-                        value
-                    }
-                },
-            },
+            liquidity,
+            collateral,
+            config,
             rate_limiter: RateLimiter::unpack_from_slice(rate_limiter)?,
             attributed_borrow_value: unpack_decimal(attributed_borrow_value),
+            borrows_pool_reward_manager: Default::default(), // TODO
+            deposits_pool_reward_manager: Default::default(), // TODO
         })
     }
 }
@@ -1750,6 +1770,8 @@ mod test {
                 },
                 rate_limiter: rand_rate_limiter(),
                 attributed_borrow_value: rand_decimal(),
+                borrows_pool_reward_manager: Default::default(), // TODO
+                deposits_pool_reward_manager: Default::default(), // TODO
             };
 
             let mut packed = [0u8; Reserve::LEN];
