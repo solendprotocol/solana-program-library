@@ -3500,7 +3500,7 @@ fn spl_token_close_account(params: TokenCloseAccountParams<'_, '_>) -> ProgramRe
         authority_signer_seeds,
     );
 
-    result.map_err(|_| LendingError::TokenTransferFailed.into())
+    result.map_err(|_| LendingError::CloseTokenAccountFailed.into())
 }
 
 fn is_cpi_call(
