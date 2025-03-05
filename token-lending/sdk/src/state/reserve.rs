@@ -60,14 +60,14 @@ pub struct Reserve {
     pub rate_limiter: RateLimiter,
     /// Attributed borrows in USD
     pub attributed_borrow_value: Decimal,
-    /// Contains liquidity mining rewards for deposits.
-    ///
-    /// Added @v2.1.0
-    pub deposits_pool_reward_manager: PoolRewardManager,
     /// Contains liquidity mining rewards for borrows.
     ///
     /// Added @v2.1.0
     pub borrows_pool_reward_manager: PoolRewardManager,
+    /// Contains liquidity mining rewards for deposits.
+    ///
+    /// Added @v2.1.0
+    pub deposits_pool_reward_manager: PoolRewardManager,
 }
 
 impl Reserve {
@@ -1239,16 +1239,16 @@ impl IsInitialized for Reserve {
 /// This is the size of the account _before_ LM feature was added.
 const RESERVE_LEN_V2_0_2: usize = 619; // 1 + 8 + 1 + 32 + 32 + 1 + 32 + 32 + 32 + 8 + 16 + 16 + 16 + 32 + 8 + 32 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 8 + 8 + 1 + 8 + 8 + 32 + 1 + 1 + 16 + 230
 /// This is the size of the account _after_ LM feature was added.
-const RESERVE_LEN_v2_1_0: usize = RESERVE_LEN_V2_0_2 + PoolRewardManager::LEN * 2;
+const RESERVE_LEN_V2_1_0: usize = RESERVE_LEN_V2_0_2 + PoolRewardManager::LEN * 2;
 
 impl Pack for Reserve {
-    const LEN: usize = RESERVE_LEN_V2_0_2;
+    const LEN: usize = RESERVE_LEN_V2_1_0;
 
     // @TODO: break this up by reserve / liquidity / collateral / config https://git.io/JOCca
     // @v2.1.0 TODO: pack deposits_pool_reward_manager and borrows_pool_reward_manager
     // @v2.1.0 TODO: add discriminator
     fn pack_into_slice(&self, output: &mut [u8]) {
-        let output = array_mut_ref![output, 0, RESERVE_LEN_V2_0_2];
+        let output = array_mut_ref![output, 0, Reserve::LEN];
         #[allow(clippy::ptr_offset_with_cast)]
         let (
             version,
@@ -1298,7 +1298,9 @@ impl Pack for Reserve {
             attributed_borrow_value,
             config_attributed_borrow_limit_open,
             config_attributed_borrow_limit_close,
-            _padding,
+            _padding, // TODO: use some of this for discriminator
+            output_for_borrows_pool_reward_manager,
+            output_for_deposits_pool_reward_manager,
         ) = mut_array_refs![
             output,
             1,
@@ -1348,7 +1350,9 @@ impl Pack for Reserve {
             16,
             8,
             8,
-            49
+            49,
+            PoolRewardManager::LEN,
+            PoolRewardManager::LEN
         ];
 
         // reserve
@@ -1434,6 +1438,16 @@ impl Pack for Reserve {
             self.config.attributed_borrow_limit_close.to_le_bytes();
 
         pack_decimal(self.attributed_borrow_value, attributed_borrow_value);
+
+        Pack::pack_into_slice(
+            &self.borrows_pool_reward_manager,
+            output_for_borrows_pool_reward_manager,
+        );
+
+        Pack::pack_into_slice(
+            &self.deposits_pool_reward_manager,
+            output_for_deposits_pool_reward_manager,
+        );
     }
 
     /// Unpacks a byte buffer into a [Reserve].
@@ -1441,7 +1455,7 @@ impl Pack for Reserve {
     //       but default them if they are not present, this is part of the
     //       migration process
     fn unpack_from_slice(input: &[u8]) -> Result<Self, ProgramError> {
-        let input_v2_0_2 = array_ref![input, 0, RESERVE_LEN_V2_0_2];
+        let input_v2_0_2 = array_ref![input, 0, RESERVE_LEN_V2_1_0];
         #[allow(clippy::ptr_offset_with_cast)]
         let (
             version,
@@ -1492,6 +1506,8 @@ impl Pack for Reserve {
             config_attributed_borrow_limit_open,
             config_attributed_borrow_limit_close,
             _padding,
+            input_for_borrows_pool_reward_manager,
+            input_for_deposits_pool_reward_manager,
         ) = array_refs![
             input_v2_0_2,
             1,
@@ -1541,7 +1557,9 @@ impl Pack for Reserve {
             16,
             8,
             8,
-            49
+            49,
+            PoolRewardManager::LEN,
+            PoolRewardManager::LEN
         ];
 
         let version = u8::from_le_bytes(*version);
@@ -1666,6 +1684,11 @@ impl Pack for Reserve {
             },
         };
 
+        let borrows_pool_reward_manager =
+            PoolRewardManager::unpack_from_slice(input_for_borrows_pool_reward_manager)?;
+        let deposits_pool_reward_manager =
+            PoolRewardManager::unpack_from_slice(input_for_deposits_pool_reward_manager)?;
+
         Ok(Self {
             version,
             last_update,
@@ -1675,8 +1698,8 @@ impl Pack for Reserve {
             config,
             rate_limiter: RateLimiter::unpack_from_slice(rate_limiter)?,
             attributed_borrow_value: unpack_decimal(attributed_borrow_value),
-            borrows_pool_reward_manager: Default::default(), // TODO
-            deposits_pool_reward_manager: Default::default(), // TODO
+            borrows_pool_reward_manager,
+            deposits_pool_reward_manager,
         })
     }
 }
