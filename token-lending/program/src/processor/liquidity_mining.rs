@@ -37,6 +37,7 @@ use solend_sdk::{
 };
 use spl_token::state::Account as TokenAccount;
 use std::convert::TryInto;
+use upgrade_reserve::UpgradeReserveAccounts;
 
 /// # Accounts
 ///
@@ -213,6 +214,73 @@ pub(crate) fn process_close_pool_reward(
         *accounts.reserve,
         &mut accounts.reserve_info.data.borrow_mut(),
     )?;
+
+    Ok(())
+}
+
+/// Temporary ix to upgrade a reserve to LM feature added in @v2.0.2.
+/// Fails if reserve was not sized as @v2.0.2.
+///
+/// # Accounts
+///
+/// See [upgrade_reserve::UpgradeReserveAccounts::from_unchecked_iter] for a list
+/// of accounts and their constraints.
+///
+/// # Effects
+///
+/// 1. Takes payer's lamports and pays for the rent increase.
+/// 2. Reallocates the reserve account to the latest size.
+/// 3. Repacks the reserve account.
+pub(crate) fn upgrade_reserve(program_id: &Pubkey, accounts: &[AccountInfo]) -> ProgramResult {
+    let accounts = UpgradeReserveAccounts::from_unchecked_iter(program_id, &mut accounts.iter())?;
+
+    //
+    // 1.
+    //
+
+    let current_rent = accounts.reserve_info.lamports();
+    let new_rent = Rent::get()?.minimum_balance(Reserve::LEN);
+
+    if current_rent < new_rent {
+        // this will always be the case unless Solana goes UBI
+        let extra_rent = new_rent - current_rent;
+
+        let mut payer_lamports = accounts.payer.try_borrow_mut_lamports()?;
+
+        if **payer_lamports < extra_rent {
+            msg!("Payer does not have enough lamports to cover the rent increase");
+            return Err(ProgramError::InsufficientFunds);
+        }
+
+        **payer_lamports -= extra_rent;
+        accounts
+            .reserve_info
+            .try_borrow_mut_lamports()?
+            .checked_add(extra_rent)
+            .ok_or(LendingError::MathOverflow)?;
+    }
+
+    //
+    // 2.
+    //
+
+    // From the [AccountInfo::realloc] docs:
+    //
+    // > Memory used to grow is already zero-initialized upon program entrypoint
+    // > and re-zeroing it wastes compute units. If within the same call a program
+    // > reallocs from larger to smaller and back to larger again the new space
+    // > could contain stale data. Pass true for zero_init in this case,
+    // > otherwise compute units will be wasted re-zero-initializing.
+    let zero_init = false;
+    accounts.reserve_info.realloc(Reserve::LEN, zero_init)?;
+
+    //
+    // 3.
+    //
+
+    // sanity checks that pack and unpack reserves ok
+    let reserve = Reserve::unpack(&accounts.reserve_info.data.borrow())?;
+    Reserve::pack(reserve, &mut accounts.reserve_info.data.borrow_mut())?;
 
     Ok(())
 }
@@ -641,6 +709,57 @@ mod close_pool_reward {
 
                 _priv: (),
             }
+        }
+    }
+}
+
+mod upgrade_reserve {
+    use solend_sdk::state::RESERVE_LEN_V2_0_2;
+
+    use super::*;
+
+    pub(super) struct UpgradeReserveAccounts<'a, 'info> {
+        /// The pool fella who pays for this.
+        ///
+        /// ✅ is a signer
+        pub(super) payer: &'a AccountInfo<'info>,
+        /// Reserve sized as v2.0.2.
+        ///
+        /// ✅ belongs to this program
+        /// ✅ is sized [RESERVE_LEN_V2_0_2], ie. for sure [Reserve] account
+        pub(super) reserve_info: &'a AccountInfo<'info>,
+
+        _priv: (),
+    }
+
+    impl<'a, 'info> UpgradeReserveAccounts<'a, 'info> {
+        pub(super) fn from_unchecked_iter(
+            program_id: &Pubkey,
+            iter: &mut impl Iterator<Item = &'a AccountInfo<'info>>,
+        ) -> Result<UpgradeReserveAccounts<'a, 'info>, ProgramError> {
+            let payer = next_account_info(iter)?;
+            let reserve_info = next_account_info(iter)?;
+
+            if !payer.is_signer {
+                msg!("Payer provided must be a signer");
+                return Err(LendingError::InvalidSigner.into());
+            }
+
+            if reserve_info.owner != program_id {
+                msg!("Reserve provided must be owned by the lending program");
+                return Err(LendingError::InvalidAccountOwner.into());
+            }
+
+            if reserve_info.data_len() != RESERVE_LEN_V2_0_2 {
+                msg!("Reserve provided must be sized as v2.0.2");
+                return Err(LendingError::InvalidAccountInput.into());
+            }
+
+            Ok(Self {
+                payer,
+                reserve_info,
+                _priv: (),
+            })
         }
     }
 }

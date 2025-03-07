@@ -63,11 +63,17 @@ pub struct Reserve {
     /// Contains liquidity mining rewards for borrows.
     ///
     /// Added @v2.1.0
-    pub borrows_pool_reward_manager: PoolRewardManager,
+    ///
+    /// TODO: measure compute units for packing/unpacking and if significant
+    ///       then consider packing/unpacking on demand
+    pub borrows_pool_reward_manager: Box<PoolRewardManager>,
     /// Contains liquidity mining rewards for deposits.
     ///
     /// Added @v2.1.0
-    pub deposits_pool_reward_manager: PoolRewardManager,
+    ///
+    /// TODO: measure compute units for packing/unpacking and if significant
+    ///       then consider packing/unpacking on demand
+    pub deposits_pool_reward_manager: Box<PoolRewardManager>,
 }
 
 impl Reserve {
@@ -1237,7 +1243,7 @@ impl IsInitialized for Reserve {
 }
 
 /// This is the size of the account _before_ LM feature was added.
-const RESERVE_LEN_V2_0_2: usize = 619; // 1 + 8 + 1 + 32 + 32 + 1 + 32 + 32 + 32 + 8 + 16 + 16 + 16 + 32 + 8 + 32 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 8 + 8 + 1 + 8 + 8 + 32 + 1 + 1 + 16 + 230
+pub const RESERVE_LEN_V2_0_2: usize = 619; // 1 + 8 + 1 + 32 + 32 + 1 + 32 + 32 + 32 + 8 + 16 + 16 + 16 + 32 + 8 + 32 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 8 + 8 + 1 + 8 + 8 + 32 + 1 + 1 + 16 + 230
 /// This is the size of the account _after_ LM feature was added.
 const RESERVE_LEN_V2_1_0: usize = RESERVE_LEN_V2_0_2 + PoolRewardManager::LEN * 2;
 
@@ -1440,12 +1446,12 @@ impl Pack for Reserve {
         pack_decimal(self.attributed_borrow_value, attributed_borrow_value);
 
         Pack::pack_into_slice(
-            &self.borrows_pool_reward_manager,
+            &*self.borrows_pool_reward_manager,
             output_for_borrows_pool_reward_manager,
         );
 
         Pack::pack_into_slice(
-            &self.deposits_pool_reward_manager,
+            &*self.deposits_pool_reward_manager,
             output_for_deposits_pool_reward_manager,
         );
     }
@@ -1682,10 +1688,12 @@ impl Pack for Reserve {
             },
         };
 
-        let borrows_pool_reward_manager =
-            PoolRewardManager::unpack_from_slice(input_for_borrows_pool_reward_manager)?;
-        let deposits_pool_reward_manager =
-            PoolRewardManager::unpack_from_slice(input_for_deposits_pool_reward_manager)?;
+        let borrows_pool_reward_manager = Box::new(PoolRewardManager::unpack_from_slice(
+            input_for_borrows_pool_reward_manager,
+        )?);
+        let deposits_pool_reward_manager = Box::new(PoolRewardManager::unpack_from_slice(
+            input_for_deposits_pool_reward_manager,
+        )?);
 
         Ok(Self {
             version,
@@ -1791,8 +1799,8 @@ mod test {
                 },
                 rate_limiter: rand_rate_limiter(),
                 attributed_borrow_value: rand_decimal(),
-                borrows_pool_reward_manager: PoolRewardManager::new_rand(&mut rng),
-                deposits_pool_reward_manager: PoolRewardManager::new_rand(&mut rng),
+                borrows_pool_reward_manager: Box::new(PoolRewardManager::new_rand(&mut rng)),
+                deposits_pool_reward_manager: Box::new(PoolRewardManager::new_rand(&mut rng)),
             };
 
             let mut packed = [0u8; Reserve::LEN];

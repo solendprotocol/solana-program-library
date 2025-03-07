@@ -63,7 +63,9 @@ pub enum PoolRewardSlot {
         last_pool_reward_id: PoolRewardId,
     },
     /// Reward has not been closed yet.
-    Occupied(PoolReward),
+    ///
+    /// We box the [PoolReward] to avoid stack overflow.
+    Occupied(Box<PoolReward>),
 }
 
 /// Tracks rewards in a specific mint over some period of time.
@@ -366,7 +368,7 @@ impl Pack for PoolRewardManager {
                 PoolRewardSlot::Vacant {
                     last_pool_reward_id,
                 } => (
-                    last_pool_reward_id,
+                    *last_pool_reward_id,
                     Pubkey::default(),
                     0u64,
                     0u32,
@@ -374,22 +376,14 @@ impl Pack for PoolRewardManager {
                     0u64,
                     Decimal::zero(),
                 ),
-                PoolRewardSlot::Occupied(PoolReward {
-                    id,
-                    vault,
-                    start_time_secs,
-                    duration_secs,
-                    total_rewards,
-                    num_user_reward_managers,
-                    cumulative_rewards_per_share,
-                }) => (
-                    id,
-                    *vault,
-                    *start_time_secs,
-                    *duration_secs,
-                    *total_rewards,
-                    *num_user_reward_managers,
-                    *cumulative_rewards_per_share,
+                PoolRewardSlot::Occupied(pool_reward) => (
+                    pool_reward.id,
+                    pool_reward.vault,
+                    pool_reward.start_time_secs,
+                    pool_reward.duration_secs,
+                    pool_reward.total_rewards,
+                    pool_reward.num_user_reward_managers,
+                    pool_reward.cumulative_rewards_per_share,
                 ),
             };
 
@@ -445,7 +439,7 @@ impl Pack for PoolRewardManager {
                     last_pool_reward_id: pool_reward_id,
                 }
             } else {
-                PoolRewardSlot::Occupied(PoolReward {
+                PoolRewardSlot::Occupied(Box::new(PoolReward {
                     id: pool_reward_id,
                     vault,
                     start_time_secs: u64::from_le_bytes(*src_start_time_secs),
@@ -455,7 +449,7 @@ impl Pack for PoolRewardManager {
                     cumulative_rewards_per_share: unpack_decimal(
                         src_cumulative_rewards_per_share_wads,
                     ),
-                })
+                }))
             };
         }
 
@@ -468,10 +462,9 @@ mod tests {
     //! TODO: Rewrite these tests from their Suilend counterparts.
     //! TODO: Calculate test coverage and add tests for missing branches.
 
-    use rand::Rng;
-
     use super::*;
     use proptest::prelude::*;
+    use rand::Rng;
 
     fn pool_reward_manager_strategy() -> impl Strategy<Value = PoolRewardManager> {
         (0..100u32).prop_perturb(|_, mut rng| PoolRewardManager::new_rand(&mut rng))
@@ -492,11 +485,23 @@ mod tests {
         let packed = vec![0u8; PoolRewardManager::LEN];
         let unpacked = PoolRewardManager::unpack_from_slice(&packed).unwrap();
         assert_eq!(unpacked, PoolRewardManager::default());
+
+        // sanity check that everything starts at 0
+        let all_rewards_are_empty = unpacked.pool_rewards.iter().all(|pool_reward| {
+            matches!(
+                pool_reward,
+                PoolRewardSlot::Vacant {
+                    last_pool_reward_id: PoolRewardId(0)
+                }
+            )
+        });
+
+        assert!(all_rewards_are_empty);
     }
 
     #[test]
     fn it_fits_reserve_realloc_into_single_ix() {
-        const MAX_REALLOC: usize = 10 * 1024;
+        const MAX_REALLOC: usize = solana_program::entrypoint::MAX_PERMITTED_DATA_INCREASE;
 
         let size_of_discriminant = 1;
         let required_realloc = size_of_discriminant * PoolRewardManager::LEN;
@@ -546,7 +551,7 @@ mod tests {
                             last_pool_reward_id: PoolRewardId(rng.gen()),
                         }
                     } else {
-                        PoolRewardSlot::Occupied(PoolReward {
+                        PoolRewardSlot::Occupied(Box::new(PoolReward {
                             id: PoolRewardId(rng.gen()),
                             vault: Pubkey::new_unique(),
                             start_time_secs: rng.gen(),
@@ -554,7 +559,7 @@ mod tests {
                             total_rewards: rng.gen(),
                             cumulative_rewards_per_share: Decimal::from_scaled_val(rng.gen()),
                             num_user_reward_managers: rng.gen(),
-                        })
+                        }))
                     }
                 }),
             }
