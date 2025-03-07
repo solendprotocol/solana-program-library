@@ -468,7 +468,31 @@ mod tests {
     //! TODO: Rewrite these tests from their Suilend counterparts.
     //! TODO: Calculate test coverage and add tests for missing branches.
 
+    use rand::Rng;
+
     use super::*;
+    use proptest::prelude::*;
+
+    fn pool_reward_manager_strategy() -> impl Strategy<Value = PoolRewardManager> {
+        (0..100u32).prop_perturb(|_, mut rng| PoolRewardManager::new_rand(&mut rng))
+    }
+
+    proptest! {
+        #[test]
+        fn it_packs_and_unpacks(pool_reward_manager in pool_reward_manager_strategy()) {
+            let mut packed = vec![0u8; PoolRewardManager::LEN];
+            Pack::pack_into_slice(&pool_reward_manager, &mut packed);
+            let unpacked = PoolRewardManager::unpack_from_slice(&packed).unwrap();
+            prop_assert_eq!(pool_reward_manager, unpacked);
+        }
+    }
+
+    #[test]
+    fn it_unpacks_empty_bytes_as_default() {
+        let packed = vec![0u8; PoolRewardManager::LEN];
+        let unpacked = PoolRewardManager::unpack_from_slice(&packed).unwrap();
+        assert_eq!(unpacked, PoolRewardManager::default());
+    }
 
     #[test]
     fn it_fits_reserve_realloc_into_single_ix() {
@@ -507,5 +531,33 @@ mod tests {
     #[test]
     fn it_tests_pool_reward_manager_cancel_and_close_regression() {
         // TODO: rewrite Suilend "test_pool_reward_manager_cancel_and_close_regression"
+    }
+
+    impl PoolRewardManager {
+        pub(crate) fn new_rand(rng: &mut impl Rng) -> Self {
+            Self {
+                total_shares: rng.gen(),
+                last_update_time_secs: rng.gen(),
+                pool_rewards: std::array::from_fn(|_| {
+                    let is_vacant = rng.gen_bool(0.5);
+
+                    if is_vacant {
+                        PoolRewardSlot::Vacant {
+                            last_pool_reward_id: PoolRewardId(rng.gen()),
+                        }
+                    } else {
+                        PoolRewardSlot::Occupied(PoolReward {
+                            id: PoolRewardId(rng.gen()),
+                            vault: Pubkey::new_unique(),
+                            start_time_secs: rng.gen(),
+                            duration_secs: rng.gen(),
+                            total_rewards: rng.gen(),
+                            cumulative_rewards_per_share: Decimal::from_scaled_val(rng.gen()),
+                            num_user_reward_managers: rng.gen(),
+                        })
+                    }
+                }),
+            }
+        }
     }
 }

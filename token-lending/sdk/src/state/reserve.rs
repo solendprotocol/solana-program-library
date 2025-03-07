@@ -1245,7 +1245,7 @@ impl Pack for Reserve {
     const LEN: usize = RESERVE_LEN_V2_1_0;
 
     // @TODO: break this up by reserve / liquidity / collateral / config https://git.io/JOCca
-    // @v2.1.0 TODO: pack deposits_pool_reward_manager and borrows_pool_reward_manager
+    // @v2.1.0: packs deposits_pool_reward_manager and borrows_pool_reward_manager
     // @v2.1.0 TODO: add discriminator
     fn pack_into_slice(&self, output: &mut [u8]) {
         let output = array_mut_ref![output, 0, Reserve::LEN];
@@ -1451,9 +1451,7 @@ impl Pack for Reserve {
     }
 
     /// Unpacks a byte buffer into a [Reserve].
-    // @v2.1.0 TODO: unpack deposits_pool_reward_manager and borrows_pool_reward_manager
-    //       but default them if they are not present, this is part of the
-    //       migration process
+    // @v2.1.0 unpacks deposits_pool_reward_manager and borrows_pool_reward_manager
     fn unpack_from_slice(input: &[u8]) -> Result<Self, ProgramError> {
         let input_v2_0_2 = array_ref![input, 0, RESERVE_LEN_V2_1_0];
         #[allow(clippy::ptr_offset_with_cast)]
@@ -1793,8 +1791,8 @@ mod test {
                 },
                 rate_limiter: rand_rate_limiter(),
                 attributed_borrow_value: rand_decimal(),
-                borrows_pool_reward_manager: Default::default(), // TODO
-                deposits_pool_reward_manager: Default::default(), // TODO
+                borrows_pool_reward_manager: PoolRewardManager::new_rand(&mut rng),
+                deposits_pool_reward_manager: PoolRewardManager::new_rand(&mut rng),
             };
 
             let mut packed = [0u8; Reserve::LEN];
