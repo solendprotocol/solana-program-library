@@ -323,6 +323,13 @@ impl Default for PoolRewardSlot {
     }
 }
 
+impl PoolRewardManager {
+    #[inline(never)]
+    pub(crate) fn unpack_to_box(input: &[u8]) -> Result<Box<Self>, ProgramError> {
+        Ok(Box::new(PoolRewardManager::unpack_from_slice(input)?))
+    }
+}
+
 impl Sealed for PoolRewardManager {}
 
 impl Pack for PoolRewardManager {
@@ -400,6 +407,7 @@ impl Pack for PoolRewardManager {
         }
     }
 
+    #[inline(never)]
     fn unpack_from_slice(input: &[u8]) -> Result<Self, ProgramError> {
         let mut pool_reward_manager = PoolRewardManager {
             total_shares: u64::from_le_bytes(*array_ref![input, 0, 8]),

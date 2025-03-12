@@ -26,9 +26,11 @@ use solana_program::{
     clock::Clock,
     entrypoint::ProgramResult,
     msg,
+    program::invoke,
     program_error::ProgramError,
     pubkey::Pubkey,
     rent::Rent,
+    system_instruction,
     sysvar::Sysvar,
 };
 use solend_sdk::{
@@ -221,6 +223,9 @@ pub(crate) fn process_close_pool_reward(
 /// Temporary ix to upgrade a reserve to LM feature added in @v2.0.2.
 /// Fails if reserve was not sized as @v2.0.2.
 ///
+/// Until this ix is called for a [Reserve] account, all other ixs that try to
+/// unpack the [Reserve] will fail due to size mismatch.
+///
 /// # Accounts
 ///
 /// See [upgrade_reserve::UpgradeReserveAccounts::from_unchecked_iter] for a list
@@ -241,23 +246,21 @@ pub(crate) fn upgrade_reserve(program_id: &Pubkey, accounts: &[AccountInfo]) -> 
     let current_rent = accounts.reserve_info.lamports();
     let new_rent = Rent::get()?.minimum_balance(Reserve::LEN);
 
-    if current_rent < new_rent {
+    if let Some(extra_rent) = new_rent.checked_sub(current_rent) {
         // this will always be the case unless Solana goes UBI
-        let extra_rent = new_rent - current_rent;
 
-        let mut payer_lamports = accounts.payer.try_borrow_mut_lamports()?;
-
-        if **payer_lamports < extra_rent {
-            msg!("Payer does not have enough lamports to cover the rent increase");
-            return Err(ProgramError::InsufficientFunds);
-        }
-
-        **payer_lamports -= extra_rent;
-        accounts
-            .reserve_info
-            .try_borrow_mut_lamports()?
-            .checked_add(extra_rent)
-            .ok_or(LendingError::MathOverflow)?;
+        invoke(
+            &system_instruction::transfer(
+                accounts.payer.key,
+                accounts.reserve_info.key,
+                extra_rent,
+            ),
+            &[
+                accounts.payer.clone(),
+                accounts.reserve_info.clone(),
+                accounts.system_program.clone(),
+            ],
+        )?;
     }
 
     //
@@ -278,7 +281,7 @@ pub(crate) fn upgrade_reserve(program_id: &Pubkey, accounts: &[AccountInfo]) -> 
     // 3.
     //
 
-    // sanity checks that pack and unpack reserves ok
+    // sanity checks pack and unpack reserves is ok
     let reserve = Reserve::unpack(&accounts.reserve_info.data.borrow())?;
     Reserve::pack(reserve, &mut accounts.reserve_info.data.borrow_mut())?;
 
@@ -719,15 +722,19 @@ mod upgrade_reserve {
     use super::*;
 
     pub(super) struct UpgradeReserveAccounts<'a, 'info> {
-        /// The pool fella who pays for this.
-        ///
-        /// ✅ is a signer
-        pub(super) payer: &'a AccountInfo<'info>,
         /// Reserve sized as v2.0.2.
         ///
         /// ✅ belongs to this program
         /// ✅ is sized [RESERVE_LEN_V2_0_2], ie. for sure [Reserve] account
         pub(super) reserve_info: &'a AccountInfo<'info>,
+        /// The pool fella who pays for this.
+        ///
+        /// ✅ is a signer
+        pub(super) payer: &'a AccountInfo<'info>,
+        /// The system program.
+        ///
+        /// ✅ is the system program
+        pub(super) system_program: &'a AccountInfo<'info>,
 
         _priv: (),
     }
@@ -737,8 +744,9 @@ mod upgrade_reserve {
             program_id: &Pubkey,
             iter: &mut impl Iterator<Item = &'a AccountInfo<'info>>,
         ) -> Result<UpgradeReserveAccounts<'a, 'info>, ProgramError> {
-            let payer = next_account_info(iter)?;
             let reserve_info = next_account_info(iter)?;
+            let payer = next_account_info(iter)?;
+            let system_program = next_account_info(iter)?;
 
             if !payer.is_signer {
                 msg!("Payer provided must be a signer");
@@ -755,9 +763,15 @@ mod upgrade_reserve {
                 return Err(LendingError::InvalidAccountInput.into());
             }
 
+            if system_program.key != &solana_program::system_program::id() {
+                msg!("System program provided must be the system program");
+                return Err(LendingError::InvalidAccountInput.into());
+            }
+
             Ok(Self {
                 payer,
                 reserve_info,
+                system_program,
                 _priv: (),
             })
         }

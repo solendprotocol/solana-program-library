@@ -1457,9 +1457,10 @@ impl Pack for Reserve {
     }
 
     /// Unpacks a byte buffer into a [Reserve].
+    ///
     // @v2.1.0 unpacks deposits_pool_reward_manager and borrows_pool_reward_manager
     fn unpack_from_slice(input: &[u8]) -> Result<Self, ProgramError> {
-        let input_v2_0_2 = array_ref![input, 0, RESERVE_LEN_V2_1_0];
+        let input_v2_0_2 = array_ref![input, 0, RESERVE_LEN_V2_0_2];
         #[allow(clippy::ptr_offset_with_cast)]
         let (
             version,
@@ -1510,8 +1511,6 @@ impl Pack for Reserve {
             config_attributed_borrow_limit_open,
             config_attributed_borrow_limit_close,
             _padding,
-            input_for_borrows_pool_reward_manager,
-            input_for_deposits_pool_reward_manager,
         ) = array_refs![
             input_v2_0_2,
             1,
@@ -1561,9 +1560,7 @@ impl Pack for Reserve {
             16,
             8,
             8,
-            49,
-            PoolRewardManager::LEN,
-            PoolRewardManager::LEN
+            49
         ];
 
         let version = u8::from_le_bytes(*version);
@@ -1688,12 +1685,15 @@ impl Pack for Reserve {
             },
         };
 
-        let borrows_pool_reward_manager = Box::new(PoolRewardManager::unpack_from_slice(
-            input_for_borrows_pool_reward_manager,
-        )?);
-        let deposits_pool_reward_manager = Box::new(PoolRewardManager::unpack_from_slice(
-            input_for_deposits_pool_reward_manager,
-        )?);
+        let input_v2_1_0 = array_ref![input, RESERVE_LEN_V2_0_2, PoolRewardManager::LEN * 2];
+        let (input_for_borrows_pool_reward_manager, input_for_deposits_pool_reward_manager) =
+            array_refs![input_v2_1_0, PoolRewardManager::LEN, PoolRewardManager::LEN];
+
+        let borrows_pool_reward_manager =
+            PoolRewardManager::unpack_to_box(input_for_borrows_pool_reward_manager)?;
+
+        let deposits_pool_reward_manager =
+            PoolRewardManager::unpack_to_box(input_for_deposits_pool_reward_manager)?;
 
         Ok(Self {
             version,
