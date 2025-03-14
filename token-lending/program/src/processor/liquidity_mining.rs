@@ -247,7 +247,7 @@ pub(crate) fn upgrade_reserve(program_id: &Pubkey, accounts: &[AccountInfo]) -> 
     let new_rent = Rent::get()?.minimum_balance(Reserve::LEN);
 
     if let Some(extra_rent) = new_rent.checked_sub(current_rent) {
-        // this will always be the case unless Solana goes UBI
+        // some reserves have more rent than necessary
 
         invoke(
             &system_instruction::transfer(
