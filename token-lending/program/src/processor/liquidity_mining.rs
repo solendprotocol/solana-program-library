@@ -247,7 +247,8 @@ pub(crate) fn upgrade_reserve(program_id: &Pubkey, accounts: &[AccountInfo]) -> 
     let new_rent = Rent::get()?.minimum_balance(Reserve::LEN);
 
     if let Some(extra_rent) = new_rent.checked_sub(current_rent) {
-        // some reserves have more rent than necessary
+        // some reserves have more rent than necessary, let's not assume that
+        // the payer always needs to add more rent
 
         invoke(
             &system_instruction::transfer(

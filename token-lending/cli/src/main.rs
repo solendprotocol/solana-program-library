@@ -2625,7 +2625,7 @@ fn send_transaction(
                 CommitmentConfig::confirmed(),
                 RpcSendTransactionConfig {
                     preflight_commitment: Some(CommitmentLevel::Processed),
-                    skip_preflight: true, // TODO
+                    skip_preflight: false,
                     encoding: None,
                     max_retries: None,
                     min_context_slot: None,

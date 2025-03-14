@@ -7,6 +7,9 @@ members = [
   "token-lending/oracles",
 ]
 
+[workspace.package]
+version = "2.1.0"
+
 [profile.dev]
 split-debuginfo = "unpacked"
 

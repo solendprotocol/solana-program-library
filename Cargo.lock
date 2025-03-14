@@ -5412,7 +5412,7 @@ dependencies = [
 
 [[package]]
 name = "solend-program"
-version = "2.0.2"
+version = "2.1.0"
 dependencies = [
  "anchor-lang 0.28.0",
  "assert_matches",
@@ -5441,7 +5441,7 @@ dependencies = [
 
 [[package]]
 name = "solend-program-cli"
-version = "2.0.2"
+version = "2.1.0"
 dependencies = [
  "bincode",
  "clap 2.34.0",
@@ -5462,7 +5462,7 @@ dependencies = [
 
 [[package]]
 name = "solend-sdk"
-version = "2.0.2"
+version = "2.1.0"
 dependencies = [
  "arrayref",
  "assert_matches",

@@ -2064,7 +2064,6 @@ pub fn donate_to_reserve(
 }
 
 /// Creates a `UpgradeReserveToV2_1_0` instruction.
-/// Be careful, it's expensive $_$
 pub fn upgrade_reserve_to_v2_1_0(
     program_id: Pubkey,
     reserve_pubkey: Pubkey,
