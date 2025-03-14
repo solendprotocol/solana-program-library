@@ -3,8 +3,12 @@ members = [
   "token-lending/cli",
   "token-lending/program",
   "token-lending/sdk",
-  "token-lending/brick"
-, "token-lending/oracles"]
+  "token-lending/brick",
+  "token-lending/oracles",
+]
+
+[workspace.package]
+version = "2.1.0"
 
 [profile.dev]
 split-debuginfo = "unpacked"

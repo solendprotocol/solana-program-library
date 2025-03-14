@@ -244,6 +244,12 @@ pub fn process_instruction(
                 accounts,
             )
         }
+
+        // temporary ix for upgrade
+        LendingInstruction::UpgradeReserveToV2_1_0 => {
+            msg!("Instruction: Upgrade Reserve to v2.1.0");
+            liquidity_mining::upgrade_reserve(program_id, accounts)
+        }
     }
 }
 

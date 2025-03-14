@@ -1,6 +1,6 @@
 [package]
 name = "solend-program"
-version = "2.0.2"
+version.workspace = true
 description = "Solend Program"
 authors = ["Solend Maintainers <maintainers@solend.fi>"]
 repository = "https://github.com/solendprotocol/solana-program-library"
@@ -18,7 +18,7 @@ bytemuck = "1.5.1"
 solana-program = "=1.16.20"
 solend-sdk = { path = "../sdk" }
 oracles = { path = "../oracles" }
-spl-token = { version = "3.3.0", features=["no-entrypoint"] }
+spl-token = { version = "3.3.0", features = ["no-entrypoint"] }
 static_assertions = "1.1.0"
 
 [dev-dependencies]

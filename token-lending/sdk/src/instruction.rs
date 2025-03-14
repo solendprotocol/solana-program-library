@@ -613,6 +613,18 @@ pub enum LendingInstruction {
         /// Identifies a reward within a reserve's deposits/borrows rewards.
         pool_reward_index: u64,
     },
+
+    // 255
+    /// UpgradeReserveToV2_1_0
+    ///
+    /// Temporary ix which upgrades reserves from @2.0.2 to @2.1.0 with
+    /// liquidity mining feature.
+    /// Once all reserves are upgraded this ix is not necessary any more.
+    ///
+    ///    `[writable]` Reserve account.
+    ///    `[writable, signer]` Fee payer.
+    ///    `[]` System program.
+    UpgradeReserveToV2_1_0,
 }
 
 impl LendingInstruction {
@@ -899,6 +911,7 @@ impl LendingInstruction {
                     pool_reward_index,
                 }
             }
+            255 => Self::UpgradeReserveToV2_1_0,
             _ => {
                 msg!("Instruction cannot be unpacked");
                 return Err(LendingError::InstructionUnpackError.into());
@@ -1234,6 +1247,9 @@ impl LendingInstruction {
                 buf.push(27);
                 buf.extend_from_slice(&(position_kind as u8).to_le_bytes());
                 buf.extend_from_slice(&pool_reward_index.to_le_bytes());
+            }
+            Self::UpgradeReserveToV2_1_0 => {
+                buf.push(255);
             }
         }
         buf
@@ -2044,6 +2060,23 @@ pub fn donate_to_reserve(
             AccountMeta::new_readonly(spl_token::id(), false),
         ],
         data: LendingInstruction::DonateToReserve { liquidity_amount }.pack(),
+    }
+}
+
+/// Creates a `UpgradeReserveToV2_1_0` instruction.
+pub fn upgrade_reserve_to_v2_1_0(
+    program_id: Pubkey,
+    reserve_pubkey: Pubkey,
+    fee_payer: Pubkey,
+) -> Instruction {
+    Instruction {
+        program_id,
+        accounts: vec![
+            AccountMeta::new(reserve_pubkey, false),
+            AccountMeta::new(fee_payer, true),
+            AccountMeta::new_readonly(system_program::id(), false),
+        ],
+        data: LendingInstruction::UpgradeReserveToV2_1_0.pack(),
     }
 }
 

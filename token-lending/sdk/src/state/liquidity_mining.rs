@@ -1,19 +1,28 @@
 use crate::{
     error::LendingError,
     math::{Decimal, TryAdd, TryDiv, TryMul, TrySub},
+    state::unpack_decimal,
 };
-use solana_program::{clock::Clock, program_error::ProgramError, pubkey::Pubkey};
+use arrayref::{array_mut_ref, array_ref, array_refs, mut_array_refs};
+use solana_program::program_pack::{Pack, Sealed};
+use solana_program::{
+    clock::Clock,
+    program_error::ProgramError,
+    pubkey::{Pubkey, PUBKEY_BYTES},
+};
+
+use super::pack_decimal;
+
+/// Determines the size of [PoolRewardManager]
+const MAX_REWARDS: usize = 50;
 
 /// Cannot create a reward shorter than this.
 pub const MIN_REWARD_PERIOD_SECS: u64 = 3_600;
 
-/// Determines the size of [PoolRewardManager]
-/// TODO: This should be configured when we're dealing with migrations later but we should aim for 50.
-const MAX_REWARDS: usize = 44;
-
 /// Each reserve has two managers:
 /// - one for deposits
 /// - one for borrows
+#[derive(Clone, Debug, PartialEq)]
 pub struct PoolRewardManager {
     /// Is updated when we change user shares in the reserve.
     pub total_shares: u64,
@@ -46,6 +55,7 @@ pub struct PoolRewardId(pub u32);
 /// reward is vacant or not to save space.
 ///
 /// If the pubkey is eq to default pubkey then slot is vacant.
+#[derive(Clone, Debug, PartialEq)]
 pub enum PoolRewardSlot {
     /// New reward can be added to this slot.
     Vacant {
@@ -53,10 +63,22 @@ pub enum PoolRewardSlot {
         last_pool_reward_id: PoolRewardId,
     },
     /// Reward has not been closed yet.
-    Occupied(PoolReward),
+    ///
+    /// We box the [PoolReward] to avoid stack overflow.
+    Occupied(Box<PoolReward>),
 }
 
 /// Tracks rewards in a specific mint over some period of time.
+///
+/// # Reward cancellation
+/// In Suilend we also store the amount of rewards that have been made available
+/// to users already.
+/// We keep adding `(total_rewards * time_passed) / (total_time)` every
+/// time someone interacts with the manager.
+/// This value is used to transfer the unallocated rewards to the admin.
+/// However, this can be calculated dynamically which avoids storing extra
+/// [Decimal] on each [PoolReward].
+#[derive(Clone, Debug, Default, PartialEq)]
 pub struct PoolReward {
     /// Unique ID for this slot that has never been used before, and will never
     /// be used again.
@@ -77,16 +99,13 @@ pub struct PoolReward {
     /// There's a permission-less ix with which user rewards can be distributed
     /// that's used for cranking remaining rewards.
     pub num_user_reward_managers: u64,
-    /// Amount of rewards that have been made available to users.
-    ///
-    /// We keep adding `(total_rewards * time_passed) / (total_time)` every
-    /// time someone interacts with the manager
-    /// ([update_pool_reward_manager]).
-    pub allocated_rewards: Decimal,
     /// We keep adding `(unlocked_rewards) / (total_shares)` every time
     /// someone interacts with the manager ([update_pool_reward_manager])
     /// where
     /// `unlocked_rewards = (total_rewards * time_passed) / (total_time)`
+    ///
+    /// # (Un)Packing
+    /// We only store 16 most significant digits.
     pub cumulative_rewards_per_share: Decimal,
 }
 
@@ -172,8 +191,6 @@ impl PoolRewardManager {
             let unlocked_rewards = Decimal::from(reward.total_rewards)
                 .try_mul(Decimal::from(time_passed_secs))?
                 .try_div(Decimal::from(end_time_secs - reward.start_time_secs))?;
-
-            reward.allocated_rewards = reward.allocated_rewards.try_add(unlocked_rewards)?;
 
             reward.cumulative_rewards_per_share = reward
                 .cumulative_rewards_per_share
@@ -280,24 +297,222 @@ impl UserRewardManager {
     }
 }
 
+impl PoolReward {
+    const LEN: usize = PoolRewardId::LEN + PUBKEY_BYTES + 8 + 4 + 8 + 8 + 16;
+}
+
+impl PoolRewardId {
+    const LEN: usize = std::mem::size_of::<Self>();
+}
+
+impl Default for PoolRewardManager {
+    fn default() -> Self {
+        Self {
+            total_shares: 0,
+            last_update_time_secs: 0,
+            pool_rewards: std::array::from_fn(|_| PoolRewardSlot::default()),
+        }
+    }
+}
+
+impl Default for PoolRewardSlot {
+    fn default() -> Self {
+        Self::Vacant {
+            last_pool_reward_id: PoolRewardId(0),
+        }
+    }
+}
+
+impl PoolRewardManager {
+    #[inline(never)]
+    pub(crate) fn unpack_to_box(input: &[u8]) -> Result<Box<Self>, ProgramError> {
+        Ok(Box::new(PoolRewardManager::unpack_from_slice(input)?))
+    }
+}
+
+impl Sealed for PoolRewardManager {}
+
+impl Pack for PoolRewardManager {
+    /// total_shares + last_update_time_secs + pool_rewards.
+    const LEN: usize = 8 + 8 + MAX_REWARDS * PoolReward::LEN;
+
+    fn pack_into_slice(&self, output: &mut [u8]) {
+        output[0..8].copy_from_slice(&self.total_shares.to_le_bytes());
+        output[8..16].copy_from_slice(&self.last_update_time_secs.to_le_bytes());
+
+        for (index, pool_reward_slot) in self.pool_rewards.iter().enumerate() {
+            let offset = 16 + index * PoolReward::LEN;
+            let raw_pool_reward = array_mut_ref![output, offset, PoolReward::LEN];
+
+            let (
+                dst_id,
+                dst_vault,
+                dst_start_time_secs,
+                dst_duration_secs,
+                dst_total_rewards,
+                dst_num_user_reward_managers,
+                dst_cumulative_rewards_per_share_wads,
+            ) = mut_array_refs![
+                raw_pool_reward,
+                PoolRewardId::LEN,
+                PUBKEY_BYTES,
+                8,  // start_time_secs
+                4,  // duration_secs
+                8,  // total_rewards
+                8,  // num_user_reward_managers
+                16  // cumulative_rewards_per_share
+            ];
+
+            let (
+                id,
+                vault,
+                start_time_secs,
+                duration_secs,
+                total_rewards,
+                num_user_reward_managers,
+                cumulative_rewards_per_share,
+            ) = match pool_reward_slot {
+                PoolRewardSlot::Vacant {
+                    last_pool_reward_id,
+                } => (
+                    *last_pool_reward_id,
+                    Pubkey::default(),
+                    0u64,
+                    0u32,
+                    0u64,
+                    0u64,
+                    Decimal::zero(),
+                ),
+                PoolRewardSlot::Occupied(pool_reward) => (
+                    pool_reward.id,
+                    pool_reward.vault,
+                    pool_reward.start_time_secs,
+                    pool_reward.duration_secs,
+                    pool_reward.total_rewards,
+                    pool_reward.num_user_reward_managers,
+                    pool_reward.cumulative_rewards_per_share,
+                ),
+            };
+
+            dst_id.copy_from_slice(&id.0.to_le_bytes());
+            dst_vault.copy_from_slice(vault.as_ref());
+            *dst_start_time_secs = start_time_secs.to_le_bytes();
+            *dst_duration_secs = duration_secs.to_le_bytes();
+            *dst_total_rewards = total_rewards.to_le_bytes();
+            *dst_num_user_reward_managers = num_user_reward_managers.to_le_bytes();
+            pack_decimal(
+                cumulative_rewards_per_share,
+                dst_cumulative_rewards_per_share_wads,
+            );
+        }
+    }
+
+    #[inline(never)]
+    fn unpack_from_slice(input: &[u8]) -> Result<Self, ProgramError> {
+        let mut pool_reward_manager = PoolRewardManager {
+            total_shares: u64::from_le_bytes(*array_ref![input, 0, 8]),
+            last_update_time_secs: u64::from_le_bytes(*array_ref![input, 8, 8]),
+            ..Default::default()
+        };
+
+        for index in 0..MAX_REWARDS {
+            let offset = 8 + 8 + index * PoolReward::LEN;
+            let raw_pool_reward = array_ref![input, offset, PoolReward::LEN];
+
+            let (
+                src_id,
+                src_vault,
+                src_start_time_secs,
+                src_duration_secs,
+                src_total_rewards,
+                src_num_user_reward_managers,
+                src_cumulative_rewards_per_share_wads,
+            ) = array_refs![
+                raw_pool_reward,
+                PoolRewardId::LEN,
+                PUBKEY_BYTES,
+                8,  // start_time_secs
+                4,  // duration_secs
+                8,  // total_rewards
+                8,  // num_user_reward_managers
+                16  // cumulative_rewards_per_share
+            ];
+
+            let vault = Pubkey::new_from_array(*src_vault);
+            let pool_reward_id = PoolRewardId(u32::from_le_bytes(*src_id));
+
+            // SAFETY: ok to assign because we know the index is less than length
+            pool_reward_manager.pool_rewards[index] = if vault == Pubkey::default() {
+                PoolRewardSlot::Vacant {
+                    last_pool_reward_id: pool_reward_id,
+                }
+            } else {
+                PoolRewardSlot::Occupied(Box::new(PoolReward {
+                    id: pool_reward_id,
+                    vault,
+                    start_time_secs: u64::from_le_bytes(*src_start_time_secs),
+                    duration_secs: u32::from_le_bytes(*src_duration_secs),
+                    total_rewards: u64::from_le_bytes(*src_total_rewards),
+                    num_user_reward_managers: u64::from_le_bytes(*src_num_user_reward_managers),
+                    cumulative_rewards_per_share: unpack_decimal(
+                        src_cumulative_rewards_per_share_wads,
+                    ),
+                }))
+            };
+        }
+
+        Ok(pool_reward_manager)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     //! TODO: Rewrite these tests from their Suilend counterparts.
     //! TODO: Calculate test coverage and add tests for missing branches.
 
     use super::*;
+    use proptest::prelude::*;
+    use rand::Rng;
+
+    fn pool_reward_manager_strategy() -> impl Strategy<Value = PoolRewardManager> {
+        (0..100u32).prop_perturb(|_, mut rng| PoolRewardManager::new_rand(&mut rng))
+    }
+
+    proptest! {
+        #[test]
+        fn it_packs_and_unpacks(pool_reward_manager in pool_reward_manager_strategy()) {
+            let mut packed = vec![0u8; PoolRewardManager::LEN];
+            Pack::pack_into_slice(&pool_reward_manager, &mut packed);
+            let unpacked = PoolRewardManager::unpack_from_slice(&packed).unwrap();
+            prop_assert_eq!(pool_reward_manager, unpacked);
+        }
+    }
+
+    #[test]
+    fn it_unpacks_empty_bytes_as_default() {
+        let packed = vec![0u8; PoolRewardManager::LEN];
+        let unpacked = PoolRewardManager::unpack_from_slice(&packed).unwrap();
+        assert_eq!(unpacked, PoolRewardManager::default());
+
+        // sanity check that everything starts at 0
+        let all_rewards_are_empty = unpacked.pool_rewards.iter().all(|pool_reward| {
+            matches!(
+                pool_reward,
+                PoolRewardSlot::Vacant {
+                    last_pool_reward_id: PoolRewardId(0)
+                }
+            )
+        });
+
+        assert!(all_rewards_are_empty);
+    }
 
     #[test]
     fn it_fits_reserve_realloc_into_single_ix() {
-        const MAX_REALLOC: usize = 10 * 1024;
+        const MAX_REALLOC: usize = solana_program::entrypoint::MAX_PERMITTED_DATA_INCREASE;
 
         let size_of_discriminant = 1;
-        let const_size_of_pool_manager = 8 + 8;
-        let required_realloc = size_of_discriminant
-            + const_size_of_pool_manager
-            + 2 * MAX_REWARDS * std::mem::size_of::<PoolReward>();
-
-        println!("assert {required_realloc} <= {MAX_REALLOC}");
+        let required_realloc = size_of_discriminant * PoolRewardManager::LEN;
         assert!(required_realloc <= MAX_REALLOC);
     }
 
@@ -329,5 +544,33 @@ mod tests {
     #[test]
     fn it_tests_pool_reward_manager_cancel_and_close_regression() {
         // TODO: rewrite Suilend "test_pool_reward_manager_cancel_and_close_regression"
+    }
+
+    impl PoolRewardManager {
+        pub(crate) fn new_rand(rng: &mut impl Rng) -> Self {
+            Self {
+                total_shares: rng.gen(),
+                last_update_time_secs: rng.gen(),
+                pool_rewards: std::array::from_fn(|_| {
+                    let is_vacant = rng.gen_bool(0.5);
+
+                    if is_vacant {
+                        PoolRewardSlot::Vacant {
+                            last_pool_reward_id: PoolRewardId(rng.gen()),
+                        }
+                    } else {
+                        PoolRewardSlot::Occupied(Box::new(PoolReward {
+                            id: PoolRewardId(rng.gen()),
+                            vault: Pubkey::new_unique(),
+                            start_time_secs: rng.gen(),
+                            duration_secs: rng.gen(),
+                            total_rewards: rng.gen(),
+                            cumulative_rewards_per_share: Decimal::from_scaled_val(rng.gen()),
+                            num_user_reward_managers: rng.gen(),
+                        }))
+                    }
+                }),
+            }
+        }
     }
 }

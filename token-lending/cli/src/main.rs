@@ -11,6 +11,7 @@ use solend_program::{
     instruction::set_lending_market_owner_and_config,
     state::{validate_reserve_config, RateLimiterConfig},
 };
+use solend_sdk::instruction::upgrade_reserve_to_v2_1_0;
 use solend_sdk::{
     instruction::{
         liquidate_obligation_and_redeem_reserve_collateral, redeem_reserve_collateral,
@@ -769,6 +770,20 @@ fn main() {
                 )
         )
         .subcommand(
+            SubCommand::with_name("upgrade-reserve")
+                .about("Migrate reserve to version 2.1.0")
+                .arg(
+                    Arg::with_name("reserve")
+                        .long("reserve")
+                        .validator(is_pubkey)
+                        .value_name("PUBKEY")
+                        .takes_value(true)
+                        .required(true)
+                        .help("Reserve address"),
+                )
+
+        )
+        .subcommand(
             SubCommand::with_name("update-reserve")
                 .about("Update a reserve config")
                 .arg(
@@ -1323,6 +1338,11 @@ fn main() {
                 whitelisted_liquidator_pubkey,
                 risk_authority_pubkey,
             )
+        }
+        ("upgrade-reserve", Some(arg_matches)) => {
+            let reserve_pubkey = pubkey_of(arg_matches, "reserve").unwrap();
+
+            command_upgrade_reserve_to_v2_1_0(&mut config, reserve_pubkey)
         }
         ("update-reserve", Some(arg_matches)) => {
             let reserve_pubkey = pubkey_of(arg_matches, "reserve").unwrap();
@@ -1970,6 +1990,29 @@ fn command_set_lending_market_owner_and_config(
     );
 
     send_transaction(config, transaction)?;
+    Ok(())
+}
+
+fn command_upgrade_reserve_to_v2_1_0(config: &mut Config, reserve_pubkey: Pubkey) -> CommandResult {
+    let recent_blockhash = config.rpc_client.get_latest_blockhash()?;
+
+    let message = Message::new_with_blockhash(
+        &[
+            ComputeBudgetInstruction::set_compute_unit_price(30101),
+            upgrade_reserve_to_v2_1_0(
+                config.lending_program_id,
+                reserve_pubkey,
+                config.fee_payer.pubkey(),
+            ),
+        ],
+        Some(&config.fee_payer.pubkey()),
+        &recent_blockhash,
+    );
+
+    let transaction = Transaction::new(&vec![config.fee_payer.as_ref()], message, recent_blockhash);
+
+    send_transaction(config, transaction)?;
+
     Ok(())
 }
 
