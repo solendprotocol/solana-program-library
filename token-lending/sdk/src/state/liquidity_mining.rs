@@ -1,5 +1,11 @@
-use crate::math::Decimal;
-use solana_program::pubkey::Pubkey;
+use crate::{
+    error::LendingError,
+    math::{Decimal, TryAdd, TryDiv, TryMul, TrySub},
+};
+use solana_program::{clock::Clock, program_error::ProgramError, pubkey::Pubkey};
+
+/// Cannot create a reward shorter than this.
+pub const MIN_REWARD_PERIOD_SECS: u64 = 3_600;
 
 /// Determines the size of [PoolRewardManager]
 /// TODO: This should be configured when we're dealing with migrations later but we should aim for 50.
@@ -28,8 +34,8 @@ pub struct PoolRewardManager {
 /// 1. Consider the associated slot locked forever
 /// 2. Go back to 0.
 ///
-/// Given that one reward lasts at least 1 hour we've got at least half a
-/// million years before we need to worry about wrapping in a single slot.
+/// Given that one reward lasts at [MIN_REWARD_PERIOD_SECS] we've got at least
+/// half a million years before we need to worry about wrapping in a single slot.
 /// I'd call that someone else's problem.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub struct PoolRewardId(pub u32);
@@ -127,8 +133,158 @@ pub struct UserReward {
     pub cumulative_rewards_per_share: Decimal,
 }
 
+impl PoolRewardManager {
+    /// Should be updated before any interaction with rewards.
+    fn update(&mut self, clock: &Clock) -> Result<(), ProgramError> {
+        let curr_unix_timestamp_secs = clock.unix_timestamp as u64;
+
+        if self.last_update_time_secs >= curr_unix_timestamp_secs {
+            return Ok(());
+        }
+
+        if self.total_shares == 0 {
+            self.last_update_time_secs = curr_unix_timestamp_secs;
+            return Ok(());
+        }
+
+        let last_update_time_secs = self.last_update_time_secs;
+
+        // get rewards that started already and did not finish yet
+        let running_rewards = self
+            .pool_rewards
+            .iter_mut()
+            .filter_map(|r| match r {
+                PoolRewardSlot::Occupied(reward) => Some(reward),
+                _ => None,
+            })
+            .filter(|r| curr_unix_timestamp_secs > r.start_time_secs)
+            .filter(|r| last_update_time_secs < (r.start_time_secs + r.duration_secs as u64));
+
+        for reward in running_rewards {
+            let end_time_secs = reward.start_time_secs + reward.duration_secs as u64;
+            let time_passed_secs = curr_unix_timestamp_secs
+                .min(end_time_secs)
+                .checked_sub(reward.start_time_secs.max(last_update_time_secs))
+                .ok_or(LendingError::MathOverflow)?;
+
+            // When adding a reward we assert that a reward lasts for at least [MIN_REWARD_PERIOD_SECS].
+            // Hence this won't error on overflow nor on division by zero.
+            let unlocked_rewards = Decimal::from(reward.total_rewards)
+                .try_mul(Decimal::from(time_passed_secs))?
+                .try_div(Decimal::from(end_time_secs - reward.start_time_secs))?;
+
+            reward.allocated_rewards = reward.allocated_rewards.try_add(unlocked_rewards)?;
+
+            reward.cumulative_rewards_per_share = reward
+                .cumulative_rewards_per_share
+                .try_add(unlocked_rewards.try_div(Decimal::from(self.total_shares))?)?;
+        }
+
+        self.last_update_time_secs = curr_unix_timestamp_secs;
+
+        Ok(())
+    }
+}
+
+enum CreatingNewUserRewardManager {
+    /// If we are creating a [UserRewardManager] then we want to populate it.
+    Yes,
+    No,
+}
+
+impl UserRewardManager {
+    /// Should be updated before any interaction with rewards.
+    ///
+    /// # Assumption
+    /// Invoker has checked that this [PoolRewardManager] matches the
+    /// [UserRewardManager].
+    fn update(
+        &mut self,
+        pool_reward_manager: &mut PoolRewardManager,
+        clock: &Clock,
+        creating_new_reward_manager: CreatingNewUserRewardManager,
+    ) -> Result<(), ProgramError> {
+        pool_reward_manager.update(clock)?;
+
+        let curr_unix_timestamp_secs = clock.unix_timestamp as u64;
+
+        if matches!(
+            creating_new_reward_manager,
+            CreatingNewUserRewardManager::No
+        ) && curr_unix_timestamp_secs == self.last_update_time_secs
+        {
+            return Ok(());
+        }
+
+        self.rewards
+            .resize_with(pool_reward_manager.pool_rewards.len(), || None);
+
+        for (reward_index, pool_reward) in pool_reward_manager.pool_rewards.iter_mut().enumerate() {
+            let PoolRewardSlot::Occupied(pool_reward) = pool_reward else {
+                // no reward to track
+                continue;
+            };
+
+            let end_time_secs = pool_reward.start_time_secs + pool_reward.duration_secs as u64;
+
+            match self.rewards.get_mut(reward_index) {
+                None => unreachable!("We've just resized the rewards."),
+                Some(None) if self.last_update_time_secs > end_time_secs => {
+                    // reward period ended, skip
+                }
+                Some(None) => {
+                    // user did not yet start accruing rewards
+
+                    let new_user_reward = UserReward {
+                        pool_reward_id: pool_reward.id,
+                        cumulative_rewards_per_share: pool_reward.cumulative_rewards_per_share,
+                        earned_rewards: if self.last_update_time_secs <= pool_reward.start_time_secs
+                        {
+                            pool_reward
+                                .cumulative_rewards_per_share
+                                .try_mul(Decimal::from(self.share))?
+                        } else {
+                            debug_assert!(matches!(
+                                creating_new_reward_manager,
+                                CreatingNewUserRewardManager::Yes
+                            ));
+                            Decimal::zero()
+                        },
+                    };
+
+                    // we resized this vector to match the pool rewards
+                    self.rewards[reward_index] = Some(new_user_reward);
+
+                    pool_reward.num_user_reward_managers += 1;
+                }
+                Some(Some(user_reward)) => {
+                    // user is already accruing rewards, add the difference
+
+                    let new_reward_amount = pool_reward
+                        .cumulative_rewards_per_share
+                        .try_sub(user_reward.cumulative_rewards_per_share)?
+                        .try_mul(Decimal::from(self.share))?;
+
+                    user_reward.earned_rewards =
+                        user_reward.earned_rewards.try_add(new_reward_amount)?;
+
+                    user_reward.cumulative_rewards_per_share =
+                        pool_reward.cumulative_rewards_per_share;
+                }
+            }
+        }
+
+        self.last_update_time_secs = curr_unix_timestamp_secs;
+
+        Ok(())
+    }
+}
+
 #[cfg(test)]
 mod tests {
+    //! TODO: Rewrite these tests from their Suilend counterparts.
+    //! TODO: Calculate test coverage and add tests for missing branches.
+
     use super::*;
 
     #[test]
@@ -143,5 +299,35 @@ mod tests {
 
         println!("assert {required_realloc} <= {MAX_REALLOC}");
         assert!(required_realloc <= MAX_REALLOC);
+    }
+
+    #[test]
+    fn it_tests_pool_reward_manager_basic() {
+        // TODO: rewrite Suilend "test_pool_reward_manager_basic" test
+    }
+
+    #[test]
+    fn it_tests_pool_reward_manager_multiple_rewards() {
+        // TODO: rewrite Suilend "test_pool_reward_manager_multiple_rewards"
+    }
+
+    #[test]
+    fn it_tests_pool_reward_zero_share() {
+        // TODO: rewrite Suilend "test_pool_reward_manager_zero_share"
+    }
+
+    #[test]
+    fn it_tests_pool_reward_manager_auto_farm() {
+        // TODO: rewrite Suilend "test_pool_reward_manager_auto_farm"
+    }
+
+    #[test]
+    fn it_tests_add_too_many_pool_rewards() {
+        // TODO: rewrite Suilend "test_add_too_many_pool_rewards"
+    }
+
+    #[test]
+    fn it_tests_pool_reward_manager_cancel_and_close_regression() {
+        // TODO: rewrite Suilend "test_pool_reward_manager_cancel_and_close_regression"
     }
 }
