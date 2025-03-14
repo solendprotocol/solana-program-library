@@ -1,6 +1,6 @@
 //! Instruction types
 
-use crate::state::{LendingMarketMetadata, ReserveType};
+use crate::state::{LendingMarketMetadata, PositionKind, ReserveType};
 use crate::{
     error::LendingError,
     state::{RateLimiterConfig, ReserveConfig, ReserveFees},
@@ -528,6 +528,91 @@ pub enum LendingInstruction {
         /// amount to donate
         liquidity_amount: u64,
     },
+
+    // 25
+    /// AddPoolReward
+    ///
+    /// * Admin only instruction.
+    /// * Duration is ceiled to granularity of 1 second.
+    /// * Can last at most 49,710 days.
+    ///
+    ///    `[writable]` Reserve account.
+    ///    `[]` Reward mint.
+    ///    `[writable]` Reward token account owned by signer
+    ///    `[]` Derived reserve pool reward authority. Seed:
+    ///         * b"RewardVaultAuthority"
+    ///         * Lending market account pubkey
+    ///         * Reserve account pubkey
+    ///         * Reward mint pubkey
+    ///    `[writable]` Uninitialized rent-exempt account that will hold reward tokens.
+    ///    `[]` Lending market account.
+    ///    `[signer]` Lending market owner.
+    ///    `[]` Rent sysvar.
+    ///    `[]` Token program.
+    AddPoolReward {
+        /// Whether this reward applies to deposits or borrows
+        position_kind: PositionKind,
+        /// If in the past according to the Clock sysvar then started immediately.
+        start_time_secs: u64,
+        /// Must be larger than start.
+        end_time_secs: u64,
+        /// Must have at least this many tokens in the source account.
+        token_amount: u64,
+    },
+
+    // 26
+    /// ClosePoolReward
+    ///
+    /// * Admin only instruction.
+    /// * Can only be called if reward period is over.
+    /// * Can only be called if all users claimed rewards.
+    ///
+    ///    `[writable]` Reserve account.
+    ///    `[]` Reward mint.
+    ///    `[writable]` Reward token account owned by signer
+    ///    `[]` Derived reserve pool reward authority. Seed:
+    ///         * b"RewardVaultAuthority"
+    ///         * Lending market account pubkey
+    ///         * Reserve account pubkey
+    ///         * Reward mint pubkey
+    ///    `[writable]` Reward vault token account.
+    ///    `[]` Lending market account.
+    ///    `[signer]` Lending market owner.
+    ///    `[]` Rent sysvar.
+    ///    `[]` Token program.
+    ClosePoolReward {
+        /// Whether this reward applies to deposits or borrows
+        position_kind: PositionKind,
+        /// Identifies a reward within a reserve's deposits/borrows rewards.
+        pool_reward_index: u64,
+    },
+
+    // 27
+    /// CancelPoolReward
+    ///
+    /// * Admin only instruction.
+    /// * Changed the endtime of the reward to the current time.
+    /// * Claims unallocated rewards to the admin signer.
+    ///
+    ///    `[writable]` Reserve account.
+    ///    `[]` Reward mint.
+    ///    `[writable]` Reward token account owned by signer
+    ///    `[]` Derived reserve pool reward authority. Seed:
+    ///         * b"RewardVaultAuthority"
+    ///         * Lending market account pubkey
+    ///         * Reserve account pubkey
+    ///         * Reward mint pubkey
+    ///    `[writable]` Reward vault token account.
+    ///    `[]` Lending market account.
+    ///    `[signer]` Lending market owner.
+    ///    `[]` Rent sysvar.
+    ///    `[]` Token program.
+    CancelPoolReward {
+        /// Whether this reward applies to deposits or borrows
+        position_kind: PositionKind,
+        /// Identifies a reward within a reserve's deposits/borrows rewards.
+        pool_reward_index: u64,
+    },
 }
 
 impl LendingInstruction {
@@ -786,6 +871,34 @@ impl LendingInstruction {
                 let (liquidity_amount, _rest) = Self::unpack_u64(rest)?;
                 Self::DonateToReserve { liquidity_amount }
             }
+            25 => {
+                let (position_kind, rest) = Self::unpack_try_from_u8(rest)?;
+                let (start_time_secs, rest) = Self::unpack_u64(rest)?;
+                let (end_time_secs, rest) = Self::unpack_u64(rest)?;
+                let (token_amount, _rest) = Self::unpack_u64(rest)?;
+                Self::AddPoolReward {
+                    position_kind,
+                    start_time_secs,
+                    end_time_secs,
+                    token_amount,
+                }
+            }
+            26 => {
+                let (position_kind, rest) = Self::unpack_try_from_u8(rest)?;
+                let (pool_reward_index, _rest) = Self::unpack_u64(rest)?;
+                Self::ClosePoolReward {
+                    position_kind,
+                    pool_reward_index,
+                }
+            }
+            27 => {
+                let (position_kind, rest) = Self::unpack_try_from_u8(rest)?;
+                let (pool_reward_index, _rest) = Self::unpack_u64(rest)?;
+                Self::CancelPoolReward {
+                    position_kind,
+                    pool_reward_index,
+                }
+            }
             _ => {
                 msg!("Instruction cannot be unpacked");
                 return Err(LendingError::InstructionUnpackError.into());
@@ -833,6 +946,15 @@ impl LendingInstruction {
             .map(u8::from_le_bytes)
             .ok_or(LendingError::InstructionUnpackError)?;
         Ok((value, rest))
+    }
+
+    fn unpack_try_from_u8<T>(input: &[u8]) -> Result<(T, &[u8]), ProgramError>
+    where
+        T: TryFrom<u8>,
+        ProgramError: From<<T as TryFrom<u8>>::Error>,
+    {
+        let (byte, rest) = Self::unpack_u8(input)?;
+        Ok((T::try_from(byte)?, rest))
     }
 
     fn unpack_bytes32(input: &[u8]) -> Result<(&[u8; 32], &[u8]), ProgramError> {
@@ -1084,6 +1206,34 @@ impl LendingInstruction {
             Self::DonateToReserve { liquidity_amount } => {
                 buf.push(24);
                 buf.extend_from_slice(&liquidity_amount.to_le_bytes());
+            }
+            Self::AddPoolReward {
+                position_kind,
+                start_time_secs,
+                end_time_secs,
+                token_amount,
+            } => {
+                buf.push(25);
+                buf.extend_from_slice(&(position_kind as u8).to_le_bytes());
+                buf.extend_from_slice(&start_time_secs.to_le_bytes());
+                buf.extend_from_slice(&end_time_secs.to_le_bytes());
+                buf.extend_from_slice(&token_amount.to_le_bytes());
+            }
+            Self::ClosePoolReward {
+                position_kind,
+                pool_reward_index,
+            } => {
+                buf.push(26);
+                buf.extend_from_slice(&(position_kind as u8).to_le_bytes());
+                buf.extend_from_slice(&pool_reward_index.to_le_bytes());
+            }
+            Self::CancelPoolReward {
+                position_kind,
+                pool_reward_index,
+            } => {
+                buf.push(27);
+                buf.extend_from_slice(&(position_kind as u8).to_le_bytes());
+                buf.extend_from_slice(&pool_reward_index.to_le_bytes());
             }
         }
         buf

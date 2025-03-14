@@ -209,6 +209,14 @@ pub enum LendingError {
     /// Borrow Attribution Limit Not Exceeded
     #[error("Borrow Attribution Limit Not Exceeded")]
     BorrowAttributionLimitNotExceeded,
+    /// Pool rewards have a hard coded minimum length in seconds.
+    #[error("Pool reward too short")]
+    PoolRewardPeriodTooShort,
+
+    // 60
+    /// Cannot close token account
+    #[error("Cannot close token account")]
+    CloseTokenAccountFailed,
 }
 
 impl From<LendingError> for ProgramError {
