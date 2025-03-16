@@ -182,6 +182,8 @@ async fn test_success() {
             config: reserve_config,
             rate_limiter: RateLimiter::new(RateLimiterConfig::default(), 1001),
             attributed_borrow_value: Decimal::zero(),
+            borrows_pool_reward_manager: Default::default(),
+            deposits_pool_reward_manager: Default::default(),
         }
     );
 }
