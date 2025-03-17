@@ -31,7 +31,7 @@ use solend_program::state::RateLimiter;
 use solend_program::state::Reserve;
 use solend_program::state::ReserveCollateral;
 use solend_program::state::ReserveLiquidity;
-use solend_program::state::PROGRAM_VERSION;
+use solend_program::state::PROGRAM_VERSION_2_0_2;
 use solend_program::NULL_PUBKEY;
 
 use solend_program::{

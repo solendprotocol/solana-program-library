@@ -12,7 +12,7 @@ use solend_program::instruction::refresh_obligation;
 use solend_program::processor::process_instruction;
 
 use solend_program::state::ObligationCollateral;
-use solend_sdk::state::PROGRAM_VERSION;
+use solend_sdk::state::PROGRAM_VERSION_2_0_2;
 use std::collections::HashSet;
 
 use helpers::solend_program_test::{setup_world, BalanceChecker, Info, SolendProgramTest, User};

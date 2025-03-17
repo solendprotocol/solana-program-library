@@ -516,8 +516,15 @@ impl UserRewardManager {
     /// - [Self::rewards] vector length as u8
     const HEAD_LEN: usize = PUBKEY_BYTES + 8 + 8 + 1;
 
+    /// How many bytes are needed to pack this [UserRewardManager].
+    pub(crate) fn size_in_bytes_when_packed(&self) -> usize {
+        Self::HEAD_LEN + self.rewards.len() * UserReward::LEN
+    }
+
     /// Because [Self] is dynamically sized we don't implement [Pack] that
     /// contains a misleading const `LEN`.
+    ///
+    /// We return how many bytes were written.
     pub(crate) fn pack_into_slice(&self, output: &mut [u8]) {
         let raw_user_reward_manager = array_mut_ref![output, 0, UserRewardManager::HEAD_LEN];
 
@@ -534,8 +541,8 @@ impl UserRewardManager {
         dst_reserve.copy_from_slice(self.reserve.as_ref());
         dst_user_rewards_len.copy_from_slice(
             &({
-                assert!(MAX_REWARDS >= self.rewards.len());
-                assert!(u8::MAX >= MAX_REWARDS as _);
+                debug_assert!(MAX_REWARDS >= self.rewards.len());
+                debug_assert!(u8::MAX >= MAX_REWARDS as _);
                 self.rewards.len() as u8
             })
             .to_le_bytes(),

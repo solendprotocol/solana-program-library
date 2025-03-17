@@ -13,7 +13,7 @@ use solana_sdk::transaction::TransactionError;
 use solend_program::error::LendingError;
 use solend_program::instruction::init_obligation;
 use solend_program::math::Decimal;
-use solend_program::state::{LastUpdate, LendingMarket, Obligation, PROGRAM_VERSION};
+use solend_program::state::{LastUpdate, LendingMarket, Obligation, PROGRAM_VERSION_2_0_2};
 
 async fn setup() -> (SolendProgramTest, Info<LendingMarket>, User) {
     let (test, lending_market, _, _, _, user) =

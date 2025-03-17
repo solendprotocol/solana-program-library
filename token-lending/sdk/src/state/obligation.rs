@@ -30,8 +30,17 @@ pub const MAX_OBLIGATION_RESERVES: usize = 10;
 /// instead.
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct Obligation {
-    /// Version of the struct
-    pub version: u8,
+    /// For historical reasons we mask both program version and account
+    /// discriminator onto 1 byte.
+    ///
+    /// For accounts last used with version prior to @v2.1.0 this will be equal
+    /// to [ProgramVersion::V2_0_2].
+    ///
+    /// For uninitialized accounts, this will be equal to [ProgramVersion::Uninitialized].
+    ///
+    /// Accounts after including @v2.1.0 use first 4 bits for discriminator and
+    /// last 4 bits for program version.
+    pub discriminator_and_version: u8,
     /// Last update to collateral, liquidity, or their market values
     pub last_update: LastUpdate,
     /// Lending market address
@@ -97,7 +106,8 @@ impl Obligation {
 
     /// Initialize an obligation
     pub fn init(&mut self, params: InitObligationParams) {
-        self.version = PROGRAM_VERSION;
+        self.discriminator_and_version =
+            set_discriminator_and_version(AccountDiscriminator::Obligation, ProgramVersion::V2_1_0);
         self.last_update = LastUpdate::new(params.current_slot);
         self.lending_market = params.lending_market;
         self.owner = params.owner;
@@ -327,7 +337,10 @@ pub struct InitObligationParams {
 impl Sealed for Obligation {}
 impl IsInitialized for Obligation {
     fn is_initialized(&self) -> bool {
-        self.version != UNINITIALIZED_VERSION
+        match extract_discriminator_and_version(self.discriminator_and_version) {
+            Ok((_, version)) => !matches!(version, ProgramVersion::Uninitialized),
+            Err(_) => unreachable!("There is no path to invalid discriminator/version"),
+        }
     }
 }
 
@@ -462,10 +475,7 @@ impl Obligation {
     }
 
     /// Unpack from slice and check if initialized
-    pub fn unpack(input: &[u8]) -> Result<Self, ProgramError>
-    where
-        Self: IsInitialized,
-    {
+    pub fn unpack(input: &[u8]) -> Result<Self, ProgramError> {
         let value = Self::unpack_unchecked(input)?;
         if value.is_initialized() {
             Ok(value)
@@ -493,12 +503,12 @@ impl Obligation {
         Ok(())
     }
 
-    /// @v2.1.0 TODO: pack vec of user reward managers
+    /// Since @v2.1.0 we pack vec of user reward managers
     fn pack_into_slice(&self, dst: &mut [u8]) {
         let output = array_mut_ref![dst, 0, OBLIGATION_LEN_V1];
         #[allow(clippy::ptr_offset_with_cast)]
         let (
-            version,
+            discriminator_and_version,
             last_update_slot,
             last_update_stale,
             lending_market,
@@ -539,7 +549,7 @@ impl Obligation {
         ];
 
         // obligation
-        *version = self.version.to_le_bytes();
+        *discriminator_and_version = self.discriminator_and_version.to_le_bytes();
         *last_update_slot = self.last_update.slot.to_le_bytes();
         pack_bool(self.last_update.stale, last_update_stale);
         lending_market.copy_from_slice(self.lending_market.as_ref());
@@ -600,15 +610,37 @@ impl Obligation {
             pack_decimal(liquidity.market_value, market_value);
             offset += OBLIGATION_LIQUIDITY_LEN;
         }
+
+        if !self.user_reward_managers.is_empty() {
+            // if the underlying buffer doesn't have enough space then we panic
+
+            debug_assert!(MAX_OBLIGATION_RESERVES >= self.user_reward_managers.len());
+            debug_assert!(u8::MAX > MAX_OBLIGATION_RESERVES as _);
+            let user_reward_managers_len = self.user_reward_managers.len() as u8;
+            dst[OBLIGATION_LEN_V1] = user_reward_managers_len;
+
+            let mut offset = OBLIGATION_LEN_V1 + 1;
+            for user_reward_manager in self.user_reward_managers.iter() {
+                user_reward_manager.pack_into_slice(&mut dst[offset..]);
+                offset += user_reward_manager.size_in_bytes_when_packed();
+            }
+        } else if dst.len() > OBLIGATION_LEN_V1 {
+            // set the length to 0 if obligation was resized before
+
+            dst[OBLIGATION_LEN_V1] = 0;
+        };
+
+        // Any data after offset is garbage, but we don't zero it out bcs
+        // it costs CU and we'd have to do it bit by bit to avoid stack overflows.
     }
 
     /// Unpacks a byte buffer into an [Obligation].
-    // @v2.1.0 TODO: unpack vector of optional user reward managers
+    /// Since @v2.1.0 we unpack vector of user reward managers
     fn unpack_from_slice(src: &[u8]) -> Result<Self, ProgramError> {
         let input = array_ref![src, 0, OBLIGATION_LEN_V1];
         #[allow(clippy::ptr_offset_with_cast)]
         let (
-            version,
+            discriminator_and_version,
             last_update_slot,
             last_update_stale,
             lending_market,
@@ -648,11 +680,28 @@ impl Obligation {
             OBLIGATION_COLLATERAL_LEN + (OBLIGATION_LIQUIDITY_LEN * (MAX_OBLIGATION_RESERVES - 1))
         ];
 
-        let version = u8::from_le_bytes(*version);
-        if version > PROGRAM_VERSION {
-            msg!("Obligation version does not match lending program version");
-            return Err(ProgramError::InvalidAccountData);
-        }
+        match extract_discriminator_and_version(u8::from_le_bytes(*discriminator_and_version)) {
+            Ok((AccountDiscriminator::Obligation, ProgramVersion::V2_1_0)) => {
+                // migrated and all ok
+            }
+            Ok((AccountDiscriminator::Uninitialized, ProgramVersion::V2_0_2))
+                if input.len() == OBLIGATION_LEN_V1 =>
+            {
+                // not migrated yet, so must have the old size
+            }
+            Ok((AccountDiscriminator::Obligation, _)) => {
+                msg!("Obligation version does not match lending program version");
+                return Err(ProgramError::InvalidAccountData);
+            }
+            Ok((_, _)) => {
+                msg!("Obligation discriminator does not match");
+                return Err(ProgramError::InvalidAccountData);
+            }
+            Err(e) => {
+                msg!("Obligation has an unexpected first byte value");
+                return Err(e);
+            }
+        };
 
         let deposits_len = u8::from_le_bytes(*deposits_len);
         let borrows_len = u8::from_le_bytes(*borrows_len);
@@ -697,10 +746,27 @@ impl Obligation {
             offset += OBLIGATION_LIQUIDITY_LEN;
         }
 
-        let user_reward_managers = Vec::new(); // TODO
+        let user_reward_managers = match src.get(OBLIGATION_LEN_V1) {
+            Some(len @ 1..) => {
+                let mut user_reward_managers = Vec::with_capacity(*len as _);
+
+                let mut offset = OBLIGATION_LEN_V1 + 1;
+                for _ in 0..*len {
+                    let user_reward_manager = UserRewardManager::unpack_from_slice(&src[offset..])?;
+                    offset += user_reward_manager.size_in_bytes_when_packed();
+                    user_reward_managers.push(user_reward_manager);
+                }
+
+                user_reward_managers
+            }
+            _ => Vec::new(),
+        };
 
         Ok(Self {
-            version,
+            discriminator_and_version: set_discriminator_and_version(
+                AccountDiscriminator::Obligation,
+                ProgramVersion::V2_1_0,
+            ),
             last_update: LastUpdate {
                 slot: u64::from_le_bytes(*last_update_slot),
                 stale: unpack_bool(last_update_stale)?,
@@ -749,12 +815,13 @@ mod test {
         Decimal::from_scaled_val(rand::thread_rng().gen())
     }
 
-    #[test]
-    fn pack_and_unpack_obligation() {
-        let mut rng = rand::thread_rng();
-        for _ in 0..100 {
-            let obligation = Obligation {
-                version: PROGRAM_VERSION,
+    impl Obligation {
+        fn new_rand(rng: &mut impl Rng) -> Self {
+            Self {
+                discriminator_and_version: set_discriminator_and_version(
+                    AccountDiscriminator::Obligation,
+                    ProgramVersion::V2_1_0,
+                ),
                 last_update: LastUpdate {
                     slot: rng.gen(),
                     stale: rng.gen(),
@@ -785,15 +852,43 @@ mod test {
                 user_reward_managers: {
                     let user_reward_managers_len = rng.gen_range(0..=MAX_OBLIGATION_RESERVES);
 
-                    std::iter::repeat_with(|| UserRewardManager::new_rand(&mut rng))
+                    std::iter::repeat_with(|| UserRewardManager::new_rand(rng))
                         .take(user_reward_managers_len)
                         .collect()
                 },
-            };
+            }
+        }
+    }
 
-            let mut packed = [0u8; OBLIGATION_LEN_V1];
+    #[test]
+    fn pack_and_unpack_obligation_v2_1_0() {
+        let mut rng = rand::thread_rng();
+        for _ in 0..100 {
+            let obligation = Obligation::new_rand(&mut rng);
+
+            let mut packed = [0u8; Obligation::MAX_LEN];
             Obligation::pack(obligation.clone(), &mut packed).unwrap();
             let unpacked = Obligation::unpack(&packed).unwrap();
+            assert_eq!(obligation, unpacked);
+        }
+    }
+
+    #[test]
+    fn pack_and_unpack_obligation_v2_0_2() {
+        let mut rng = rand::thread_rng();
+        for _ in 0..100 {
+            let mut obligation = Obligation::new_rand(&mut rng);
+            // this is what version looked like before the upgrade to v2.1.0
+            obligation.discriminator_and_version = ProgramVersion::V2_0_2 as _;
+
+            let mut packed = [0u8; Obligation::MAX_LEN];
+            Obligation::pack(obligation.clone(), &mut packed).unwrap();
+            let unpacked = Obligation::unpack(&packed).unwrap();
+            // upgraded
+            obligation.discriminator_and_version = set_discriminator_and_version(
+                AccountDiscriminator::Obligation,
+                ProgramVersion::V2_1_0,
+            );
             assert_eq!(obligation, unpacked);
         }
     }

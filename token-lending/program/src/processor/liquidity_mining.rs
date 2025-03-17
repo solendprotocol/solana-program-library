@@ -282,7 +282,7 @@ pub(crate) fn upgrade_reserve(program_id: &Pubkey, accounts: &[AccountInfo]) -> 
     // 3.
     //
 
-    // sanity checks pack and unpack reserves is ok
+    // updates version and discriminator
     let reserve = Reserve::unpack(&accounts.reserve_info.data.borrow())?;
     Reserve::pack(reserve, &mut accounts.reserve_info.data.borrow_mut())?;
 
