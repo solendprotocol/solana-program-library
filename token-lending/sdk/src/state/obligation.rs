@@ -9,7 +9,7 @@ use solana_program::{
     entrypoint::ProgramResult,
     msg,
     program_error::ProgramError,
-    program_pack::{IsInitialized, Pack, Sealed},
+    program_pack::{IsInitialized, Sealed},
     pubkey::{Pubkey, PUBKEY_BYTES},
 };
 use std::{
@@ -21,6 +21,13 @@ use std::{
 pub const MAX_OBLIGATION_RESERVES: usize = 10;
 
 /// Lending market obligation state
+///
+/// # (Un)packing
+/// [Obligation] used to implement `Pack` in versions prior to 2.1.0.
+/// Now [Obligation] is dynamically sized based on the reserves in
+/// [Obligation::user_reward_managers].
+/// We manually implement packing and unpacking functions the the `Pack` trait
+/// instead.
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct Obligation {
     /// Version of the struct
@@ -63,6 +70,12 @@ pub struct Obligation {
     pub borrowing_isolated_asset: bool,
     /// Obligation can be marked as closeable
     pub closeable: bool,
+    /// Collects liquidity mining rewards for positions (collateral/borrows).
+    ///
+    /// # (Un)packing
+    /// If there are no rewards to be collected then the obligation is packed
+    /// as if there was no liquidity mining feature involved.
+    pub user_reward_managers: Vec<UserRewardManager>,
 }
 
 /// These are the two foundational user interactions in a borrow-lending protocol.
@@ -426,10 +439,61 @@ const OBLIGATION_LIQUIDITY_LEN: usize = 112; // 32 + 16 + 16 + 16 + 32
 /// This is the size of the account _before_ LM feature was added.
 const OBLIGATION_LEN_V1: usize = 1300; // 1 + 8 + 1 + 32 + 32 + 16 + 16 + 16 + 16 + 64 + 1 + 1 + (88 * 1) + (112 * 9)
                                        // @TODO: break this up by obligation / collateral / liquidity https://git.io/JOCca
-impl Pack for Obligation {
-    const LEN: usize = OBLIGATION_LEN_V1;
+impl Obligation {
+    /// Obligation with no Liquidity Mining Rewards
+    const MIN_LEN: usize = OBLIGATION_LEN_V1;
 
-    // @v2.1.0 TODO: pack vec of user reward managers
+    /// Maximum account size for obligation.
+    /// Scenario in which all reserves have all associated rewards filled.
+    ///
+    /// - [Self::user_reward_managers] vec length in u8
+    /// - [Self::user_reward_managers] vector
+    const MAX_LEN: usize = Self::MIN_LEN + 1 + MAX_OBLIGATION_RESERVES * UserRewardManager::MAX_LEN;
+
+    /// Unpacks from slice but returns an error if the account is already
+    /// initialized.
+    pub fn unpack_uninitialized(input: &[u8]) -> Result<Self, ProgramError> {
+        let account = Self::unpack_unchecked(&input)?;
+        if account.is_initialized() {
+            Err(LendingError::AlreadyInitialized.into())
+        } else {
+            Ok(account)
+        }
+    }
+
+    /// Unpack from slice and check if initialized
+    pub fn unpack(input: &[u8]) -> Result<Self, ProgramError>
+    where
+        Self: IsInitialized,
+    {
+        let value = Self::unpack_unchecked(input)?;
+        if value.is_initialized() {
+            Ok(value)
+        } else {
+            Err(ProgramError::UninitializedAccount)
+        }
+    }
+
+    /// Unpack from slice without checking if initialized
+    pub fn unpack_unchecked(input: &[u8]) -> Result<Self, ProgramError> {
+        // TODO: add discriminant
+        if !(Self::MIN_LEN..=Self::MAX_LEN).contains(&input.len()) {
+            return Err(ProgramError::InvalidAccountData);
+        }
+        Self::unpack_from_slice(input)
+    }
+
+    /// Pack into slice
+    pub fn pack(src: Self, dst: &mut [u8]) -> Result<(), ProgramError> {
+        // TODO: add discriminant
+        if !(Self::MIN_LEN..=Self::MAX_LEN).contains(&dst.len()) {
+            return Err(ProgramError::InvalidAccountData);
+        }
+        src.pack_into_slice(dst);
+        Ok(())
+    }
+
+    /// @v2.1.0 TODO: pack vec of user reward managers
     fn pack_into_slice(&self, dst: &mut [u8]) {
         let output = array_mut_ref![dst, 0, OBLIGATION_LEN_V1];
         #[allow(clippy::ptr_offset_with_cast)]
@@ -633,6 +697,8 @@ impl Pack for Obligation {
             offset += OBLIGATION_LIQUIDITY_LEN;
         }
 
+        let user_reward_managers = Vec::new(); // TODO
+
         Ok(Self {
             version,
             last_update: LastUpdate {
@@ -652,6 +718,7 @@ impl Pack for Obligation {
             super_unhealthy_borrow_value: unpack_decimal(super_unhealthy_borrow_value),
             borrowing_isolated_asset: unpack_bool(borrowing_isolated_asset)?,
             closeable: unpack_bool(closeable)?,
+            user_reward_managers,
         })
     }
 }
@@ -715,6 +782,13 @@ mod test {
                 super_unhealthy_borrow_value: rand_decimal(),
                 borrowing_isolated_asset: rng.gen(),
                 closeable: rng.gen(),
+                user_reward_managers: {
+                    let user_reward_managers_len = rng.gen_range(0..=MAX_OBLIGATION_RESERVES);
+
+                    std::iter::repeat_with(|| UserRewardManager::new_rand(&mut rng))
+                        .take(user_reward_managers_len)
+                        .collect()
+                },
             };
 
             let mut packed = [0u8; OBLIGATION_LEN_V1];

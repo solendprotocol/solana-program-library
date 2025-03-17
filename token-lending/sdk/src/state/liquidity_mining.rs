@@ -14,7 +14,7 @@ use solana_program::{
 use super::pack_decimal;
 
 /// Determines the size of [PoolRewardManager]
-const MAX_REWARDS: usize = 50;
+pub const MAX_REWARDS: usize = 50;
 
 /// Cannot create a reward shorter than this.
 pub const MIN_REWARD_PERIOD_SECS: u64 = 3_600;
@@ -110,7 +110,7 @@ pub struct PoolReward {
 }
 
 /// Tracks user's LM rewards for a specific pool (reserve.)
-#[derive(Debug, PartialEq, Eq, Default)]
+#[derive(Debug, PartialEq, Eq, Default, Clone)]
 pub struct UserRewardManager {
     /// User cannot both borrow and deposit in the same reserve.
     /// This manager is unique for this reserve within an obligation.
@@ -141,7 +141,7 @@ pub struct UserRewardManager {
 }
 
 /// Track user rewards for a specific [PoolReward].
-#[derive(Debug, PartialEq, Eq, Default)]
+#[derive(Debug, PartialEq, Eq, Default, Clone)]
 pub struct UserReward {
     /// Which [PoolReward] within the reserve's index does this [UserReward]
     /// correspond to.
@@ -506,15 +506,15 @@ impl UserRewardManager {
     /// for the given [Self::reserve].
     ///
     /// This is the maximum length a manager can have.
-    const MAX_LEN: usize = Self::HEAD_LEN + MAX_REWARDS * UserReward::LEN;
+    pub const MAX_LEN: usize = Self::HEAD_LEN + MAX_REWARDS * UserReward::LEN;
 
     /// Length of data before [Self::rewards] tail.
     ///
     /// - [Self::reserve]
     /// - [Self::share]
     /// - [Self::last_update_time_secs]
-    /// - [Self::rewards] vector length
-    const HEAD_LEN: usize = PUBKEY_BYTES + 8 + 8 + 8;
+    /// - [Self::rewards] vector length as u8
+    const HEAD_LEN: usize = PUBKEY_BYTES + 8 + 8 + 1;
 
     /// Because [Self] is dynamically sized we don't implement [Pack] that
     /// contains a misleading const `LEN`.
@@ -526,13 +526,20 @@ impl UserRewardManager {
             PUBKEY_BYTES,
             8, // share
             8, // last_update_time_secs
-            8  // length of rewards array that's next to come
+            1  // length of rewards array that's next to come
         ];
 
         dst_share.copy_from_slice(&self.share.to_le_bytes());
         dst_last_update_time_secs.copy_from_slice(&self.last_update_time_secs.to_le_bytes());
         dst_reserve.copy_from_slice(self.reserve.as_ref());
-        dst_user_rewards_len.copy_from_slice(&self.rewards.len().to_le_bytes());
+        dst_user_rewards_len.copy_from_slice(
+            &({
+                assert!(MAX_REWARDS >= self.rewards.len());
+                assert!(u8::MAX >= MAX_REWARDS as _);
+                self.rewards.len() as u8
+            })
+            .to_le_bytes(),
+        );
 
         for (index, user_reward) in self.rewards.iter().enumerate() {
             let offset = Self::HEAD_LEN + index * UserReward::LEN;
@@ -569,11 +576,11 @@ impl UserRewardManager {
             PUBKEY_BYTES,
             8, // share
             8, // last_update_time_secs
-            8  // length of rewards array that's next to come
+            1  // length of rewards array that's next to come
         ];
 
         let reserve = Pubkey::new_from_array(*src_reserve);
-        let user_rewards_len = usize::from_le_bytes(*src_user_rewards_len);
+        let user_rewards_len = u8::from_le_bytes(*src_user_rewards_len) as _;
         let share = u64::from_le_bytes(*src_share);
         let last_update_time_secs = u64::from_le_bytes(*src_last_update_time_secs);
 
