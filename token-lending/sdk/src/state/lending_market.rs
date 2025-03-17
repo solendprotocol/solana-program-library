@@ -179,13 +179,22 @@ impl Pack for LendingMarket {
             8
         ];
 
-        match extract_discriminator_and_version(u8::from_le_bytes(*discriminator_and_version)) {
+        let mut discriminator_and_version = u8::from_le_bytes(*discriminator_and_version);
+        match extract_discriminator_and_version(discriminator_and_version) {
             Ok((AccountDiscriminator::LendingMarket, ProgramVersion::V2_1_0)) => {
                 // migrated and all ok
             }
             Ok((AccountDiscriminator::LendingMarket, ProgramVersion::V2_0_2)) => {
-                // Not migrated yet, will do during unpacking.
+                // Not migrated yet.
                 // There's no other change than discriminator & version.
+
+                discriminator_and_version = set_discriminator_and_version(
+                    AccountDiscriminator::LendingMarket,
+                    ProgramVersion::V2_1_0,
+                );
+            }
+            Ok((AccountDiscriminator::Uninitialized, ProgramVersion::Uninitialized)) => {
+                // uninitialized account
             }
             Ok((AccountDiscriminator::LendingMarket, _)) => {
                 msg!("Lending market version does not match lending program version");
@@ -203,10 +212,7 @@ impl Pack for LendingMarket {
 
         let owner_pubkey = Pubkey::new_from_array(*owner);
         Ok(Self {
-            discriminator_and_version: set_discriminator_and_version(
-                AccountDiscriminator::LendingMarket,
-                ProgramVersion::V2_1_0,
-            ),
+            discriminator_and_version,
             bump_seed: u8::from_le_bytes(*bump_seed),
             owner: owner_pubkey,
             quote_currency: *quote_currency,

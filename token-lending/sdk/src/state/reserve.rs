@@ -1577,14 +1577,23 @@ impl Pack for Reserve {
             49
         ];
 
-        match extract_discriminator_and_version(u8::from_le_bytes(*discriminator_and_version)) {
+        let mut discriminator_and_version = u8::from_le_bytes(*discriminator_and_version);
+        match extract_discriminator_and_version(discriminator_and_version) {
             Ok((AccountDiscriminator::Reserve, ProgramVersion::V2_1_0)) => {
                 // migrated and all ok
             }
             Ok((AccountDiscriminator::Uninitialized, ProgramVersion::V2_0_2)) => {
-                // Not migrated yet, will do during unpacking.
+                // Not migrated yet.
                 // We checked earlier that the input buffer was already resized.
                 debug_assert_eq!(input.len(), RESERVE_LEN_V2_1_0);
+
+                discriminator_and_version = set_discriminator_and_version(
+                    AccountDiscriminator::Reserve,
+                    ProgramVersion::V2_1_0,
+                );
+            }
+            Ok((AccountDiscriminator::Uninitialized, ProgramVersion::Uninitialized)) => {
+                // uninitialized account
             }
             Ok((AccountDiscriminator::Reserve, _)) => {
                 msg!("Reserve version does not match lending program version");
@@ -1727,10 +1736,7 @@ impl Pack for Reserve {
             PoolRewardManager::unpack_to_box(input_for_deposits_pool_reward_manager)?;
 
         Ok(Self {
-            discriminator_and_version: set_discriminator_and_version(
-                AccountDiscriminator::Reserve,
-                ProgramVersion::V2_1_0,
-            ),
+            discriminator_and_version,
             last_update,
             lending_market: Pubkey::new_from_array(*lending_market),
             liquidity,

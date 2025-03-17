@@ -51,18 +51,6 @@ pub mod program_version {
         /// Will have an associated account discriminator.
         V2_1_0 = 2,
     }
-
-    /// Version of the program and all new accounts created until inclusive version
-    /// @v2.0.2
-    pub const V2_0_2: u8 = 1;
-
-    /// Version of the program and all new accounts created from inclusive version
-    /// @v2.1.0 (liquidity mining)
-    pub const V2_1_0: u8 = 2;
-
-    /// Accounts are created with data zeroed out, so uninitialized state instances
-    /// will have the version set to 0.
-    pub const UNINITIALIZED: u8 = 0;
 }
 
 pub mod discriminator {

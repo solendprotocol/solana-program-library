@@ -7,9 +7,9 @@
 //! implementation of the same feature.
 //!
 //! There are three admin-only ixs:
-//! - [add_pool_reward]
-//! - [cancel_pool_reward]
-//! - [close_pool_reward]
+//! - [add_pool_reward] (TODO: add bpf tests)
+//! - [cancel_pool_reward] (TODO: add bpf tests)
+//! - [close_pool_reward] (TODO: add bpf tests)
 //!
 //! [suilend-lm]: https://github.com/solendprotocol/suilend/blob/dc53150416f352053ac3acbb320ee143409c4a5d/contracts/suilend/sources/liquidity_mining.move#L2
 

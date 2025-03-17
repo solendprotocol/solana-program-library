@@ -781,7 +781,6 @@ fn main() {
                         .required(true)
                         .help("Reserve address"),
                 )
-
         )
         .subcommand(
             SubCommand::with_name("update-reserve")

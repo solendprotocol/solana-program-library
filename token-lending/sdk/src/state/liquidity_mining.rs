@@ -423,6 +423,8 @@ impl Pack for PoolRewardManager {
 
             dst_id.copy_from_slice(&id.0.to_le_bytes());
             dst_vault.copy_from_slice(vault.as_ref());
+
+            // TBD: these values don't have to be written if the slot is vacant
             *dst_start_time_secs = start_time_secs.to_le_bytes();
             *dst_duration_secs = duration_secs.to_le_bytes();
             *dst_total_rewards = total_rewards.to_le_bytes();
@@ -459,6 +461,7 @@ impl Pack for PoolRewardManager {
                 raw_pool_reward,
                 PoolRewardId::LEN,
                 PUBKEY_BYTES,
+                // TBD: these values don't have to be referenced if the slot is vacant
                 8,  // start_time_secs
                 4,  // duration_secs
                 8,  // total_rewards

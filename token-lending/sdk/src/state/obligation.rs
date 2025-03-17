@@ -691,7 +691,8 @@ impl Obligation {
             OBLIGATION_COLLATERAL_LEN + (OBLIGATION_LIQUIDITY_LEN * (MAX_OBLIGATION_RESERVES - 1))
         ];
 
-        match extract_discriminator_and_version(u8::from_le_bytes(*discriminator_and_version)) {
+        let mut discriminator_and_version = u8::from_le_bytes(*discriminator_and_version);
+        match extract_discriminator_and_version(discriminator_and_version) {
             Ok((AccountDiscriminator::Obligation, ProgramVersion::V2_1_0)) => {
                 // migrated and all ok
             }
@@ -699,6 +700,14 @@ impl Obligation {
                 if input.len() == OBLIGATION_LEN_V1 =>
             {
                 // not migrated yet, so must have the old size
+
+                discriminator_and_version = set_discriminator_and_version(
+                    AccountDiscriminator::Obligation,
+                    ProgramVersion::V2_1_0,
+                );
+            }
+            Ok((AccountDiscriminator::Uninitialized, ProgramVersion::Uninitialized)) => {
+                // uninitialized account
             }
             Ok((AccountDiscriminator::Obligation, _)) => {
                 msg!("Obligation version does not match lending program version");
@@ -774,10 +783,7 @@ impl Obligation {
         };
 
         Ok(Self {
-            discriminator_and_version: set_discriminator_and_version(
-                AccountDiscriminator::Obligation,
-                ProgramVersion::V2_1_0,
-            ),
+            discriminator_and_version,
             last_update: LastUpdate {
                 slot: u64::from_le_bytes(*last_update_slot),
                 stale: unpack_bool(last_update_stale)?,
