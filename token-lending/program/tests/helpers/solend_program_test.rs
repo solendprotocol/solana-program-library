@@ -254,6 +254,21 @@ impl SolendProgramTest {
         }
     }
 
+    pub async fn load_obligation(&mut self, acc_pk: Pubkey) -> Info<Obligation> {
+        let acc = self
+            .context
+            .banks_client
+            .get_account(acc_pk)
+            .await
+            .unwrap()
+            .unwrap();
+
+        Info {
+            pubkey: acc_pk,
+            account: Obligation::unpack(&acc.data).unwrap(),
+        }
+    }
+
     pub async fn load_zeroable_account<T: Pod + Copy>(&mut self, acc_pk: Pubkey) -> Info<T> {
         let acc = self
             .context
@@ -1002,8 +1017,8 @@ impl Info<LendingMarket> {
             system_instruction::create_account(
                 &test.context.payer.pubkey(),
                 &obligation_keypair.pubkey(),
-                Rent::minimum_balance(&Rent::default(), Obligation::LEN),
-                Obligation::LEN as u64,
+                Rent::minimum_balance(&Rent::default(), Obligation::MIN_LEN),
+                Obligation::MIN_LEN as u64,
                 &solend_program::id(),
             ),
             init_obligation(
@@ -1018,9 +1033,7 @@ impl Info<LendingMarket> {
             .process_transaction(&instructions, Some(&[&obligation_keypair, &user.keypair]))
             .await
         {
-            Ok(()) => Ok(test
-                .load_account::<Obligation>(obligation_keypair.pubkey())
-                .await),
+            Ok(()) => Ok(test.load_obligation(obligation_keypair.pubkey()).await),
             Err(e) => Err(e),
         }
     }
@@ -1080,7 +1093,7 @@ impl Info<LendingMarket> {
         obligation: &Info<Obligation>,
         extra_reserve: Option<&Info<Reserve>>,
     ) -> Vec<Instruction> {
-        let obligation = test.load_account::<Obligation>(obligation.pubkey).await;
+        let obligation = test.load_obligation(obligation.pubkey).await;
         let reserve_pubkeys: Vec<Pubkey> = {
             let mut r = HashSet::new();
             r.extend(
@@ -1174,7 +1187,7 @@ impl Info<LendingMarket> {
         host_fee_receiver_pubkey: Option<Pubkey>,
         liquidity_amount: u64,
     ) -> Result<(), BanksClientError> {
-        let obligation = test.load_account::<Obligation>(obligation.pubkey).await;
+        let obligation = test.load_obligation(obligation.pubkey).await;
 
         let refresh_ixs = self
             .build_refresh_instructions(test, &obligation, Some(borrow_reserve))
@@ -1343,7 +1356,7 @@ impl Info<LendingMarket> {
         user: &User,
         collateral_amount: u64,
     ) -> Result<(), BanksClientError> {
-        let obligation = test.load_account::<Obligation>(obligation.pubkey).await;
+        let obligation = test.load_obligation(obligation.pubkey).await;
 
         let refresh_ixs = self
             .build_refresh_instructions(test, &obligation, None)
@@ -1451,7 +1464,7 @@ impl Info<LendingMarket> {
         reserve: &Info<Reserve>,
         liquidity_amount: u64,
     ) -> Result<(), BanksClientError> {
-        let obligation = test.load_account::<Obligation>(obligation.pubkey).await;
+        let obligation = test.load_obligation(obligation.pubkey).await;
 
         let mut instructions = self
             .build_refresh_instructions(test, &obligation, None)
@@ -1815,7 +1828,7 @@ pub async fn scenario_1(
         .unwrap();
 
     // borrow 10 SOL against 100k cUSDC.
-    let obligation = test.load_account::<Obligation>(obligation.pubkey).await;
+    let obligation = test.load_obligation(obligation.pubkey).await;
     lending_market
         .borrow_obligation_liquidity(
             &mut test,
@@ -1840,7 +1853,7 @@ pub async fn scenario_1(
         .unwrap();
 
     // populate deposit value correctly.
-    let obligation = test.load_account::<Obligation>(obligation.pubkey).await;
+    let obligation = test.load_obligation(obligation.pubkey).await;
     lending_market
         .refresh_obligation(&mut test, &obligation)
         .await
@@ -1849,7 +1862,7 @@ pub async fn scenario_1(
     let lending_market = test.load_account(lending_market.pubkey).await;
     let usdc_reserve = test.load_account(usdc_reserve.pubkey).await;
     let wsol_reserve = test.load_account(wsol_reserve.pubkey).await;
-    let obligation = test.load_account::<Obligation>(obligation.pubkey).await;
+    let obligation = test.load_obligation(obligation.pubkey).await;
 
     (
         test,
@@ -2021,7 +2034,7 @@ pub async fn custom_scenario(
             .await
             .unwrap();
 
-        *obligation = test.load_account::<Obligation>(obligation.pubkey).await;
+        *obligation = test.load_obligation(obligation.pubkey).await;
     }
 
     // load accounts into reserve

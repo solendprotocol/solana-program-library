@@ -454,7 +454,7 @@ const OBLIGATION_LEN_V1: usize = 1300; // 1 + 8 + 1 + 32 + 32 + 16 + 16 + 16 + 1
                                        // @TODO: break this up by obligation / collateral / liquidity https://git.io/JOCca
 impl Obligation {
     /// Obligation with no Liquidity Mining Rewards
-    const MIN_LEN: usize = OBLIGATION_LEN_V1;
+    pub const MIN_LEN: usize = OBLIGATION_LEN_V1;
 
     /// Maximum account size for obligation.
     /// Scenario in which all reserves have all associated rewards filled.
@@ -462,6 +462,17 @@ impl Obligation {
     /// - [Self::user_reward_managers] vec length in u8
     /// - [Self::user_reward_managers] vector
     const MAX_LEN: usize = Self::MIN_LEN + 1 + MAX_OBLIGATION_RESERVES * UserRewardManager::MAX_LEN;
+
+    /// How many bytes are needed to pack this [UserRewardManager].
+    pub fn size_in_bytes_when_packed(&self) -> usize {
+        let mut size = OBLIGATION_LEN_V1 + 1;
+
+        for reward_manager in &self.user_reward_managers {
+            size += reward_manager.size_in_bytes_when_packed();
+        }
+
+        size
+    }
 
     /// Unpacks from slice but returns an error if the account is already
     /// initialized.
@@ -504,7 +515,7 @@ impl Obligation {
     }
 
     /// Since @v2.1.0 we pack vec of user reward managers
-    fn pack_into_slice(&self, dst: &mut [u8]) {
+    pub fn pack_into_slice(&self, dst: &mut [u8]) {
         let output = array_mut_ref![dst, 0, OBLIGATION_LEN_V1];
         #[allow(clippy::ptr_offset_with_cast)]
         let (
@@ -636,7 +647,7 @@ impl Obligation {
 
     /// Unpacks a byte buffer into an [Obligation].
     /// Since @v2.1.0 we unpack vector of user reward managers
-    fn unpack_from_slice(src: &[u8]) -> Result<Self, ProgramError> {
+    pub fn unpack_from_slice(src: &[u8]) -> Result<Self, ProgramError> {
         let input = array_ref![src, 0, OBLIGATION_LEN_V1];
         #[allow(clippy::ptr_offset_with_cast)]
         let (

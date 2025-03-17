@@ -165,7 +165,7 @@ async fn test_forgive_debt_success_easy() {
         .await
         .unwrap();
 
-    let obligation_post = test.load_account::<Obligation>(obligations[0].pubkey).await;
+    let obligation_post = test.load_obligation(obligations[0].pubkey).await;
     assert_eq!(
         obligation_post.account,
         Obligation {
@@ -182,6 +182,7 @@ async fn test_forgive_debt_success_easy() {
             allowed_borrow_value: Decimal::zero(),
             unhealthy_borrow_value: Decimal::zero(),
             super_unhealthy_borrow_value: Decimal::zero(),
+            user_reward_managers: obligation_post.account.user_reward_managers.clone(),
             ..obligations[0].account
         }
     );

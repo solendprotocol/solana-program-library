@@ -88,7 +88,10 @@ pub mod discriminator {
 /// There can be at the moment at most 16 different program versions.
 /// Extrapolating from the current program history this should be good enough.
 /// The program versions can also wrap if sufficient precautions are taken.
-fn set_discriminator_and_version(discriminator: AccountDiscriminator, version: ProgramVersion) -> u8 {
+pub fn set_discriminator_and_version(
+    discriminator: AccountDiscriminator,
+    version: ProgramVersion,
+) -> u8 {
     let discriminator = discriminator as u8;
     debug_assert!(discriminator <= 0x0F);
     let version = version as u8;
@@ -98,7 +101,7 @@ fn set_discriminator_and_version(discriminator: AccountDiscriminator, version: P
 }
 
 /// First 4 bytes are the discriminator, next 4 bytes are the version.
-fn extract_discriminator_and_version(
+pub fn extract_discriminator_and_version(
     byte: u8,
 ) -> Result<(AccountDiscriminator, ProgramVersion), ProgramError> {
     let version = match byte & 0x0F {

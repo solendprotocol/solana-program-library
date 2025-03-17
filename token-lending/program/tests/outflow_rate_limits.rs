@@ -78,7 +78,7 @@ async fn setup(
         .unwrap();
 
     // populate deposit value correctly.
-    let obligation = test.load_account::<Obligation>(obligation.pubkey).await;
+    let obligation = test.load_obligation(obligation.pubkey).await;
     lending_market
         .refresh_obligation(&mut test, &obligation)
         .await
@@ -87,7 +87,7 @@ async fn setup(
     let lending_market = test.load_account(lending_market.pubkey).await;
     let usdc_reserve = test.load_account(usdc_reserve.pubkey).await;
     let wsol_reserve = test.load_account(wsol_reserve.pubkey).await;
-    let obligation = test.load_account::<Obligation>(obligation.pubkey).await;
+    let obligation = test.load_obligation(obligation.pubkey).await;
 
     let host_fee_receiver = User::new_with_balances(&mut test, &[(&wsol_mint::id(), 0)]).await;
     (

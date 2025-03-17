@@ -25,22 +25,20 @@ use solana_sdk::{
     signature::{Keypair, Signer},
     transaction::TransactionError,
 };
-use solend_program::state::LastUpdate;
-use solend_program::state::RateLimiter;
 
-use solend_program::state::Reserve;
-use solend_program::state::ReserveCollateral;
-use solend_program::state::ReserveLiquidity;
-use solend_program::state::PROGRAM_VERSION_2_0_2;
 use solend_program::NULL_PUBKEY;
 
+use solend_program::state::{
+    discriminator::AccountDiscriminator, program_version::ProgramVersion,
+    set_discriminator_and_version, LastUpdate, LendingMarket, RateLimiter, Reserve,
+    ReserveCollateral, ReserveLiquidity,
+};
 use solend_program::{
     error::LendingError,
     instruction::init_reserve,
     math::Decimal,
     state::{RateLimiterConfig, ReserveConfig, ReserveFees},
 };
-use solend_sdk::state::LendingMarket;
 use spl_token::state::{Account as Token, Mint};
 
 async fn setup() -> (SolendProgramTest, Info<LendingMarket>, User) {
@@ -154,7 +152,10 @@ async fn test_success() {
     assert_eq!(
         wsol_reserve.account,
         Reserve {
-            version: PROGRAM_VERSION,
+            discriminator_and_version: set_discriminator_and_version(
+                AccountDiscriminator::Reserve,
+                ProgramVersion::V2_1_0
+            ),
             last_update: LastUpdate {
                 slot: 1001,
                 stale: true

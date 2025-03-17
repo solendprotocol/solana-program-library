@@ -205,7 +205,7 @@ async fn test_success_new() {
         }
     );
 
-    let obligation_post = test.load_account::<Obligation>(obligation.pubkey).await;
+    let obligation_post = test.load_obligation(obligation.pubkey).await;
     assert_eq!(
         obligation_post.account,
         Obligation {
@@ -382,7 +382,7 @@ async fn test_success_insufficient_liquidity() {
             .await
             .unwrap();
 
-        let obligation = test.load_account::<Obligation>(obligation.pubkey).await;
+        let obligation = test.load_obligation(obligation.pubkey).await;
         lending_market
             .borrow_obligation_liquidity(
                 &mut test,
