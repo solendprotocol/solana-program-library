@@ -7,9 +7,9 @@
 //! implementation of the same feature.
 //!
 //! There are three admin-only ixs:
-//! - [add_pool_reward]
-//! - [cancel_pool_reward]
-//! - [close_pool_reward]
+//! - [add_pool_reward] (TODO: add bpf tests)
+//! - [cancel_pool_reward] (TODO: add bpf tests)
+//! - [close_pool_reward] (TODO: add bpf tests)
 //!
 //! [suilend-lm]: https://github.com/solendprotocol/suilend/blob/dc53150416f352053ac3acbb320ee143409c4a5d/contracts/suilend/sources/liquidity_mining.move#L2
 
@@ -33,6 +33,7 @@ use solana_program::{
     system_instruction,
     sysvar::Sysvar,
 };
+use solend_sdk::state::discriminator::AccountDiscriminator;
 use solend_sdk::{
     error::LendingError,
     state::{LendingMarket, PositionKind, Reserve},
@@ -282,9 +283,16 @@ pub(crate) fn upgrade_reserve(program_id: &Pubkey, accounts: &[AccountInfo]) -> 
     // 3.
     //
 
-    // sanity checks pack and unpack reserves is ok
-    let reserve = Reserve::unpack(&accounts.reserve_info.data.borrow())?;
-    Reserve::pack(reserve, &mut accounts.reserve_info.data.borrow_mut())?;
+    // we upgrade discriminator as we've checked that the account is indeed
+    // a reserve account in [UpgradeReserveAccounts::from_unchecked_iter]
+    let mut data = accounts.reserve_info.data.borrow_mut();
+    data[0] = AccountDiscriminator::Reserve as u8;
+    // Now the reserve can unpack fine and doesn't have to worry about
+    // migrations.
+    // Instead it returns an error on an invalid discriminator.
+    // This way a reserve cannot be mistaken for an obligation.
+    let reserve = Reserve::unpack(&data)?;
+    Reserve::pack(reserve, &mut data)?;
 
     Ok(())
 }

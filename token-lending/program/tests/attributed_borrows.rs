@@ -22,7 +22,7 @@ use solana_program::native_token::LAMPORTS_PER_SOL;
 
 use solend_sdk::math::Decimal;
 
-use solend_program::state::{Obligation, ReserveConfig};
+use solend_program::state::ReserveConfig;
 
 use solend_sdk::state::ReserveFees;
 mod helpers;
@@ -398,7 +398,7 @@ async fn test_calculations() {
         .await
         .unwrap();
 
-    let obligation_post = test.load_account::<Obligation>(obligations[0].pubkey).await;
+    let obligation_post = test.load_obligation(obligations[0].pubkey).await;
 
     // obligation 0 after borrowing 10 usd
     // usdc.borrow_attribution = 80 / 100 * 30 = 24
@@ -688,7 +688,7 @@ async fn test_withdraw() {
             Decimal::from_percent(250)
         );
 
-        let obligation_post = test.load_account::<Obligation>(obligations[0].pubkey).await;
+        let obligation_post = test.load_obligation(obligations[0].pubkey).await;
         assert_eq!(
             obligation_post.account.deposits[0].attributed_borrow_value,
             Decimal::from(7500u64)
@@ -733,7 +733,7 @@ async fn test_withdraw() {
             Decimal::zero()
         );
 
-        let obligation_post = test.load_account::<Obligation>(obligations[0].pubkey).await;
+        let obligation_post = test.load_obligation(obligations[0].pubkey).await;
         assert_eq!(
             obligation_post.account.deposits[0].attributed_borrow_value,
             Decimal::from(10u64)

@@ -48,7 +48,7 @@ async fn test_success_withdraw_fixed_amount() {
     let usdc_reserve_post = test.load_account::<Reserve>(usdc_reserve.pubkey).await;
     assert_eq!(usdc_reserve_post.account, usdc_reserve.account);
 
-    let obligation_post = test.load_account::<Obligation>(obligation.pubkey).await;
+    let obligation_post = test.load_obligation(obligation.pubkey).await;
     assert_eq!(
         obligation_post.account,
         Obligation {
@@ -113,7 +113,7 @@ async fn test_success_withdraw_max() {
     let usdc_reserve_post = test.load_account::<Reserve>(usdc_reserve.pubkey).await;
     assert_eq!(usdc_reserve_post.account, usdc_reserve.account);
 
-    let obligation_post = test.load_account::<Obligation>(obligation.pubkey).await;
+    let obligation_post = test.load_obligation(obligation.pubkey).await;
     assert_eq!(
         obligation_post.account,
         Obligation {

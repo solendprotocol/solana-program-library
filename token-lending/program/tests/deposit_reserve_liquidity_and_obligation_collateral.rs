@@ -119,7 +119,7 @@ async fn test_success() {
         }
     );
 
-    let obligation_post = test.load_account::<Obligation>(obligation.pubkey).await;
+    let obligation_post = test.load_obligation(obligation.pubkey).await;
     assert_eq!(
         obligation_post.account,
         Obligation {

@@ -1,3 +1,7 @@
+use std::convert::TryFrom;
+
+use crate::error::LendingError;
+
 use super::*;
 use arrayref::{array_mut_ref, array_ref, array_refs, mut_array_refs};
 use solana_program::{
@@ -10,8 +14,13 @@ use solana_program::{
 /// Lending market state
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct LendingMarket {
-    /// Version of lending market
-    pub version: u8,
+    /// For uninitialized accounts, this will be equal to [AccountDiscriminator::Uninitialized].
+    /// Otherwise this is [AccountDiscriminator::LendingMarket].
+    ///
+    /// # Note
+    /// For accounts last used with version prior to @v2.1.0 this will be equal
+    /// to [PROGRAM_VERSION_2_0_2].
+    pub discriminator: AccountDiscriminator,
     /// Bump seed for derived authority address
     pub bump_seed: u8,
     /// Owner authority which can add new reserves
@@ -43,7 +52,7 @@ impl LendingMarket {
 
     /// Initialize a lending market
     pub fn init(&mut self, params: InitLendingMarketParams) {
-        self.version = PROGRAM_VERSION;
+        self.discriminator = AccountDiscriminator::LendingMarket;
         self.bump_seed = params.bump_seed;
         self.owner = params.owner;
         self.quote_currency = params.quote_currency;
@@ -76,7 +85,7 @@ pub struct InitLendingMarketParams {
 impl Sealed for LendingMarket {}
 impl IsInitialized for LendingMarket {
     fn is_initialized(&self) -> bool {
-        self.version != UNINITIALIZED_VERSION
+        !matches!(self.discriminator, AccountDiscriminator::Uninitialized)
     }
 }
 
@@ -88,7 +97,7 @@ impl Pack for LendingMarket {
         let output = array_mut_ref![output, 0, LENDING_MARKET_LEN];
         #[allow(clippy::ptr_offset_with_cast)]
         let (
-            version,
+            discriminator,
             bump_seed,
             owner,
             quote_currency,
@@ -114,7 +123,7 @@ impl Pack for LendingMarket {
             8
         ];
 
-        *version = self.version.to_le_bytes();
+        discriminator[0] = self.discriminator as _;
         *bump_seed = self.bump_seed.to_le_bytes();
         owner.copy_from_slice(self.owner.as_ref());
         quote_currency.copy_from_slice(self.quote_currency.as_ref());
@@ -138,7 +147,7 @@ impl Pack for LendingMarket {
         let input = array_ref![input, 0, LENDING_MARKET_LEN];
         #[allow(clippy::ptr_offset_with_cast)]
         let (
-            version,
+            discriminator,
             bump_seed,
             owner,
             quote_currency,
@@ -164,15 +173,30 @@ impl Pack for LendingMarket {
             8
         ];
 
-        let version = u8::from_le_bytes(*version);
-        if version > PROGRAM_VERSION {
-            msg!("Lending market version does not match lending program version");
-            return Err(ProgramError::InvalidAccountData);
-        }
+        let discriminator = match AccountDiscriminator::try_from(discriminator) {
+            Ok(d @ AccountDiscriminator::Uninitialized) => d, // yet to be set
+            Ok(d @ AccountDiscriminator::LendingMarket) => d, // migrated to v2.1.0
+            Ok(_) => {
+                msg!("Lending market discriminator does not match");
+                return Err(LendingError::InvalidAccountDiscriminator.into());
+            }
+            Err(LendingError::AccountNotMigrated) => {
+                // We're migrating the account from v2.0.2 to v2.1.0.
+                // The reason this is safe to do is conveyed in these asserts:
+                debug_assert_eq!(Self::LEN, input.len());
+                debug_assert!(Self::LEN < Reserve::LEN);
+                debug_assert!(Self::LEN < RESERVE_LEN_V2_0_2);
+                debug_assert!(Self::LEN < Obligation::MIN_LEN);
+                // Ie. there's no confusion with other account types.
+
+                AccountDiscriminator::LendingMarket
+            }
+            Err(e) => return Err(e.into()),
+        };
 
         let owner_pubkey = Pubkey::new_from_array(*owner);
         Ok(Self {
-            version,
+            discriminator,
             bump_seed: u8::from_le_bytes(*bump_seed),
             owner: owner_pubkey,
             quote_currency: *quote_currency,
@@ -202,29 +226,50 @@ mod test {
     use super::*;
     use rand::Rng;
 
+    impl LendingMarket {
+        fn new_rand(rng: &mut impl Rng) -> Self {
+            Self {
+                discriminator: AccountDiscriminator::LendingMarket,
+                bump_seed: rng.gen(),
+                owner: Pubkey::new_unique(),
+                quote_currency: [rng.gen(); 32],
+                token_program_id: Pubkey::new_unique(),
+                oracle_program_id: Pubkey::new_unique(),
+                switchboard_oracle_program_id: Pubkey::new_unique(),
+                rate_limiter: rand_rate_limiter(),
+                whitelisted_liquidator: if rng.gen_bool(0.5) {
+                    None
+                } else {
+                    Some(Pubkey::new_unique())
+                },
+                risk_authority: Pubkey::new_unique(),
+            }
+        }
+    }
+
     #[test]
-    fn pack_and_unpack_lending_market() {
+    fn pack_and_unpack_lending_market_v2_1_0() {
         let mut rng = rand::thread_rng();
-        let lending_market = LendingMarket {
-            version: PROGRAM_VERSION,
-            bump_seed: rng.gen(),
-            owner: Pubkey::new_unique(),
-            quote_currency: [rng.gen(); 32],
-            token_program_id: Pubkey::new_unique(),
-            oracle_program_id: Pubkey::new_unique(),
-            switchboard_oracle_program_id: Pubkey::new_unique(),
-            rate_limiter: rand_rate_limiter(),
-            whitelisted_liquidator: if rng.gen_bool(0.5) {
-                None
-            } else {
-                Some(Pubkey::new_unique())
-            },
-            risk_authority: Pubkey::new_unique(),
-        };
+        let lending_market = LendingMarket::new_rand(&mut rng);
 
         let mut packed = vec![0u8; LendingMarket::LEN];
         LendingMarket::pack(lending_market.clone(), &mut packed).unwrap();
         let unpacked = LendingMarket::unpack_from_slice(&packed).unwrap();
+        assert_eq!(unpacked, lending_market);
+    }
+
+    #[test]
+    fn pack_and_unpack_lending_market_v2_0_2() {
+        let mut rng = rand::thread_rng();
+        let lending_market = LendingMarket::new_rand(&mut rng);
+
+        let mut packed = vec![0u8; LendingMarket::LEN];
+        LendingMarket::pack(lending_market.clone(), &mut packed).unwrap();
+        // this is what version looked like before the upgrade to v2.1.0
+        packed[0] = PROGRAM_VERSION_2_0_2;
+
+        let unpacked = LendingMarket::unpack_from_slice(&packed).unwrap();
+        // upgraded
         assert_eq!(unpacked, lending_market);
     }
 }

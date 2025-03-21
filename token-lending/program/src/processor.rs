@@ -983,7 +983,7 @@ fn process_init_obligation(program_id: &Pubkey, accounts: &[AccountInfo]) -> Pro
     let token_program_id = next_account_info(account_info_iter)?;
 
     assert_rent_exempt(rent, obligation_info)?;
-    let mut obligation = assert_uninitialized::<Obligation>(obligation_info)?;
+    let mut obligation = Obligation::unpack_uninitialized(&obligation_info.data.borrow())?;
     if obligation_info.owner != program_id {
         msg!("Obligation provided is not owned by the lending program");
         return Err(LendingError::InvalidAccountOwner.into());

@@ -12,7 +12,7 @@ use solana_sdk::signer::Signer;
 use solana_sdk::transaction::TransactionError;
 use solend_program::error::LendingError;
 use solend_program::instruction::init_lending_market;
-use solend_program::state::{LendingMarket, RateLimiter, PROGRAM_VERSION};
+use solend_program::state::{discriminator::AccountDiscriminator, LendingMarket, RateLimiter};
 
 #[tokio::test]
 async fn test_success() {
@@ -28,7 +28,7 @@ async fn test_success() {
     assert_eq!(
         lending_market.account,
         LendingMarket {
-            version: PROGRAM_VERSION,
+            discriminator: AccountDiscriminator::LendingMarket,
             bump_seed: lending_market.account.bump_seed, // TODO test this field
             owner: lending_market_owner.keypair.pubkey(),
             quote_currency: QUOTE_CURRENCY,

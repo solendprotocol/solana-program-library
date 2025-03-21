@@ -80,7 +80,7 @@ async fn test_success() {
     let usdc_reserve_post = test.load_account(usdc_reserve.pubkey).await;
     assert_eq!(usdc_reserve, usdc_reserve_post);
 
-    let obligation_post = test.load_account::<Obligation>(obligation.pubkey).await;
+    let obligation_post = test.load_obligation(obligation.pubkey).await;
     assert_eq!(
         obligation_post.account,
         Obligation {

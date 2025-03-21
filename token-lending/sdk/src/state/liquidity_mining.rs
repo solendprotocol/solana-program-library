@@ -14,7 +14,7 @@ use solana_program::{
 use super::pack_decimal;
 
 /// Determines the size of [PoolRewardManager]
-const MAX_REWARDS: usize = 50;
+pub const MAX_REWARDS: usize = 50;
 
 /// Cannot create a reward shorter than this.
 pub const MIN_REWARD_PERIOD_SECS: u64 = 3_600;
@@ -61,6 +61,9 @@ pub enum PoolRewardSlot {
     Vacant {
         /// Increment this ID when adding new [PoolReward].
         last_pool_reward_id: PoolRewardId,
+        /// An optimization to avoid writing data that has not changed.
+        /// When vacating a slot we set this to true.
+        has_been_vacated_in_this_tx: bool,
     },
     /// Reward has not been closed yet.
     ///
@@ -110,9 +113,10 @@ pub struct PoolReward {
 }
 
 /// Tracks user's LM rewards for a specific pool (reserve.)
+#[derive(Debug, PartialEq, Eq, Default, Clone)]
 pub struct UserRewardManager {
     /// User cannot both borrow and deposit in the same reserve.
-    /// This manager is unique for this reserve within the [Obligation].
+    /// This manager is unique for this reserve within an obligation.
     ///
     /// We know whether to use [crate::state::Reserve]'s
     /// `deposits_pool_reward_manager` or `borrows_pool_reward_manager` based on
@@ -130,13 +134,25 @@ pub struct UserRewardManager {
     pub share: u64,
     /// Monotonically increasing time taken from clock sysvar.
     pub last_update_time_secs: u64,
-    /// The index of each reward is important.
-    /// It will match the index in the [PoolRewardManager] of the reserve.
-    pub rewards: Vec<Option<UserReward>>,
+    /// The indices on [Self::rewards] are _not_ correlated with
+    /// [PoolRewardManager::pool_rewards].
+    /// Instead, this vector only tracks meaningful rewards for the user.
+    /// See [UserReward::pool_reward_index].
+    ///
+    /// This is a diversion from the Suilend implementation.
+    pub rewards: Vec<UserReward>,
 }
 
 /// Track user rewards for a specific [PoolReward].
+#[derive(Debug, PartialEq, Eq, Default, Clone)]
 pub struct UserReward {
+    /// Which [PoolReward] within the reserve's index does this [UserReward]
+    /// correspond to.
+    ///
+    /// # (Un)packing
+    /// There are ever only going to be at most [MAX_REWARDS].
+    /// We therefore pack this value into a byte.
+    pub pool_reward_index: usize,
     /// Each pool reward gets an ID which is monotonically increasing with each
     /// new reward added to the pool.
     pub pool_reward_id: PoolRewardId,
@@ -233,26 +249,56 @@ impl UserRewardManager {
             return Ok(());
         }
 
-        self.rewards
-            .resize_with(pool_reward_manager.pool_rewards.len(), || None);
-
-        for (reward_index, pool_reward) in pool_reward_manager.pool_rewards.iter_mut().enumerate() {
+        for (pool_reward_index, pool_reward) in
+            pool_reward_manager.pool_rewards.iter_mut().enumerate()
+        {
             let PoolRewardSlot::Occupied(pool_reward) = pool_reward else {
                 // no reward to track
                 continue;
             };
 
             let end_time_secs = pool_reward.start_time_secs + pool_reward.duration_secs as u64;
+            let has_ended = self.last_update_time_secs > end_time_secs;
 
-            match self.rewards.get_mut(reward_index) {
-                None => unreachable!("We've just resized the rewards."),
-                Some(None) if self.last_update_time_secs > end_time_secs => {
-                    // reward period ended, skip
+            let maybe_user_reward = self
+                .rewards
+                .iter_mut()
+                .enumerate()
+                .find(|(_, r)| r.pool_reward_index == pool_reward_index);
+
+            match maybe_user_reward {
+                Some((user_reward_index, user_reward))
+                    if has_ended && user_reward.earned_rewards == Decimal::zero() =>
+                {
+                    // Reward period ended and there's nothing to crank.
+                    // We can clean up this user reward.
+                    // We're fine with swap remove bcs `user_reward_index` is meaningless.
+                    // SAFETY: We got the index from enumeration, so must exist/
+                    self.rewards.swap_remove(user_reward_index);
+                    pool_reward.num_user_reward_managers -= 1;
                 }
-                Some(None) => {
+                _ if has_ended => {
+                    // reward period over & there are rewards yet to be cracked
+                }
+                Some((_, user_reward)) => {
+                    // user is already accruing rewards, add the difference
+
+                    let new_reward_amount = pool_reward
+                        .cumulative_rewards_per_share
+                        .try_sub(user_reward.cumulative_rewards_per_share)?
+                        .try_mul(Decimal::from(self.share))?;
+
+                    user_reward.earned_rewards =
+                        user_reward.earned_rewards.try_add(new_reward_amount)?;
+
+                    user_reward.cumulative_rewards_per_share =
+                        pool_reward.cumulative_rewards_per_share;
+                }
+                None => {
                     // user did not yet start accruing rewards
 
                     let new_user_reward = UserReward {
+                        pool_reward_index,
                         pool_reward_id: pool_reward.id,
                         cumulative_rewards_per_share: pool_reward.cumulative_rewards_per_share,
                         earned_rewards: if self.last_update_time_secs <= pool_reward.start_time_secs
@@ -269,24 +315,8 @@ impl UserRewardManager {
                         },
                     };
 
-                    // we resized this vector to match the pool rewards
-                    self.rewards[reward_index] = Some(new_user_reward);
-
+                    self.rewards.push(new_user_reward);
                     pool_reward.num_user_reward_managers += 1;
-                }
-                Some(Some(user_reward)) => {
-                    // user is already accruing rewards, add the difference
-
-                    let new_reward_amount = pool_reward
-                        .cumulative_rewards_per_share
-                        .try_sub(user_reward.cumulative_rewards_per_share)?
-                        .try_mul(Decimal::from(self.share))?;
-
-                    user_reward.earned_rewards =
-                        user_reward.earned_rewards.try_add(new_reward_amount)?;
-
-                    user_reward.cumulative_rewards_per_share =
-                        pool_reward.cumulative_rewards_per_share;
                 }
             }
         }
@@ -298,7 +328,16 @@ impl UserRewardManager {
 }
 
 impl PoolReward {
-    const LEN: usize = PoolRewardId::LEN + PUBKEY_BYTES + 8 + 4 + 8 + 8 + 16;
+    const LEN: usize = Self::HEAD_LEN + Self::TAIL_LEN;
+
+    const HEAD_LEN: usize = PoolRewardId::LEN + PUBKEY_BYTES;
+
+    /// - `start_time_secs``
+    /// - `duration_secs``
+    /// - `total_rewards``
+    /// - `num_user_reward_managers``
+    /// - `cumulative_rewards_per_share``
+    const TAIL_LEN: usize = 8 + 4 + 8 + 8 + 16;
 }
 
 impl PoolRewardId {
@@ -319,6 +358,9 @@ impl Default for PoolRewardSlot {
     fn default() -> Self {
         Self::Vacant {
             last_pool_reward_id: PoolRewardId(0),
+            // this is used for initialization of the pool reward manager so
+            // it makes sense as there are 0s in the account data already
+            has_been_vacated_in_this_tx: false,
         }
     }
 }
@@ -340,70 +382,61 @@ impl Pack for PoolRewardManager {
         output[0..8].copy_from_slice(&self.total_shares.to_le_bytes());
         output[8..16].copy_from_slice(&self.last_update_time_secs.to_le_bytes());
 
-        for (index, pool_reward_slot) in self.pool_rewards.iter().enumerate() {
+        let rewards_to_pack = self
+            .pool_rewards
+            .iter()
+            .enumerate()
+            .filter(|(_, s)| s.should_be_packed());
+
+        for (index, pool_reward_slot) in rewards_to_pack {
             let offset = 16 + index * PoolReward::LEN;
-            let raw_pool_reward = array_mut_ref![output, offset, PoolReward::LEN];
 
-            let (
-                dst_id,
-                dst_vault,
-                dst_start_time_secs,
-                dst_duration_secs,
-                dst_total_rewards,
-                dst_num_user_reward_managers,
-                dst_cumulative_rewards_per_share_wads,
-            ) = mut_array_refs![
-                raw_pool_reward,
-                PoolRewardId::LEN,
-                PUBKEY_BYTES,
-                8,  // start_time_secs
-                4,  // duration_secs
-                8,  // total_rewards
-                8,  // num_user_reward_managers
-                16  // cumulative_rewards_per_share
-            ];
+            let raw_pool_reward_head = array_mut_ref![output, offset, PoolReward::HEAD_LEN];
+            let (dst_id, dst_vault) =
+                mut_array_refs![raw_pool_reward_head, PoolRewardId::LEN, PUBKEY_BYTES];
 
-            let (
-                id,
-                vault,
-                start_time_secs,
-                duration_secs,
-                total_rewards,
-                num_user_reward_managers,
-                cumulative_rewards_per_share,
-            ) = match pool_reward_slot {
+            match pool_reward_slot {
                 PoolRewardSlot::Vacant {
-                    last_pool_reward_id,
-                } => (
-                    *last_pool_reward_id,
-                    Pubkey::default(),
-                    0u64,
-                    0u32,
-                    0u64,
-                    0u64,
-                    Decimal::zero(),
-                ),
-                PoolRewardSlot::Occupied(pool_reward) => (
-                    pool_reward.id,
-                    pool_reward.vault,
-                    pool_reward.start_time_secs,
-                    pool_reward.duration_secs,
-                    pool_reward.total_rewards,
-                    pool_reward.num_user_reward_managers,
-                    pool_reward.cumulative_rewards_per_share,
-                ),
-            };
+                    last_pool_reward_id: PoolRewardId(id),
+                    ..
+                } => {
+                    dst_id.copy_from_slice(&id.to_le_bytes());
+                    dst_vault.copy_from_slice(Pubkey::default().as_ref());
+                }
+                PoolRewardSlot::Occupied(pool_reward) => {
+                    dst_id.copy_from_slice(&pool_reward.id.0.to_le_bytes());
+                    dst_vault.copy_from_slice(pool_reward.vault.as_ref());
 
-            dst_id.copy_from_slice(&id.0.to_le_bytes());
-            dst_vault.copy_from_slice(vault.as_ref());
-            *dst_start_time_secs = start_time_secs.to_le_bytes();
-            *dst_duration_secs = duration_secs.to_le_bytes();
-            *dst_total_rewards = total_rewards.to_le_bytes();
-            *dst_num_user_reward_managers = num_user_reward_managers.to_le_bytes();
-            pack_decimal(
-                cumulative_rewards_per_share,
-                dst_cumulative_rewards_per_share_wads,
-            );
+                    let raw_pool_reward_tail =
+                        array_mut_ref![output, offset + PoolReward::HEAD_LEN, PoolReward::TAIL_LEN];
+
+                    let (
+                        dst_start_time_secs,
+                        dst_duration_secs,
+                        dst_total_rewards,
+                        dst_num_user_reward_managers,
+                        dst_cumulative_rewards_per_share_wads,
+                    ) = mut_array_refs![
+                        raw_pool_reward_tail,
+                        8,  // start_time_secs
+                        4,  // duration_secs
+                        8,  // total_rewards
+                        8,  // num_user_reward_managers
+                        16  // cumulative_rewards_per_share
+                    ];
+
+                    *dst_start_time_secs = pool_reward.start_time_secs.to_le_bytes();
+                    *dst_duration_secs = pool_reward.duration_secs.to_le_bytes();
+                    *dst_total_rewards = pool_reward.total_rewards.to_le_bytes();
+                    *dst_num_user_reward_managers =
+                        pool_reward.num_user_reward_managers.to_le_bytes();
+                    // TBD: do we want to ceil?
+                    pack_decimal(
+                        pool_reward.cumulative_rewards_per_share,
+                        dst_cumulative_rewards_per_share_wads,
+                    );
+                }
+            };
         }
     }
 
@@ -417,36 +450,40 @@ impl Pack for PoolRewardManager {
 
         for index in 0..MAX_REWARDS {
             let offset = 8 + 8 + index * PoolReward::LEN;
-            let raw_pool_reward = array_ref![input, offset, PoolReward::LEN];
+            let raw_pool_reward_head = array_ref![input, offset, PoolReward::HEAD_LEN];
 
-            let (
-                src_id,
-                src_vault,
-                src_start_time_secs,
-                src_duration_secs,
-                src_total_rewards,
-                src_num_user_reward_managers,
-                src_cumulative_rewards_per_share_wads,
-            ) = array_refs![
-                raw_pool_reward,
-                PoolRewardId::LEN,
-                PUBKEY_BYTES,
-                8,  // start_time_secs
-                4,  // duration_secs
-                8,  // total_rewards
-                8,  // num_user_reward_managers
-                16  // cumulative_rewards_per_share
-            ];
+            let (src_id, src_vault) =
+                array_refs![raw_pool_reward_head, PoolRewardId::LEN, PUBKEY_BYTES];
 
-            let vault = Pubkey::new_from_array(*src_vault);
             let pool_reward_id = PoolRewardId(u32::from_le_bytes(*src_id));
+            let vault = Pubkey::new_from_array(*src_vault);
 
             // SAFETY: ok to assign because we know the index is less than length
             pool_reward_manager.pool_rewards[index] = if vault == Pubkey::default() {
                 PoolRewardSlot::Vacant {
                     last_pool_reward_id: pool_reward_id,
+                    // nope, has been vacant since unpack
+                    has_been_vacated_in_this_tx: false,
                 }
             } else {
+                let raw_pool_reward_tail =
+                    array_ref![input, offset + PoolReward::HEAD_LEN, PoolReward::TAIL_LEN];
+
+                let (
+                    src_start_time_secs,
+                    src_duration_secs,
+                    src_total_rewards,
+                    src_num_user_reward_managers,
+                    src_cumulative_rewards_per_share_wads,
+                ) = array_refs![
+                    raw_pool_reward_tail,
+                    8,  // start_time_secs
+                    4,  // duration_secs
+                    8,  // total_rewards
+                    8,  // num_user_reward_managers
+                    16  // cumulative_rewards_per_share
+                ];
+
                 PoolRewardSlot::Occupied(Box::new(PoolReward {
                     id: pool_reward_id,
                     vault,
@@ -465,6 +502,148 @@ impl Pack for PoolRewardManager {
     }
 }
 
+impl PoolRewardSlot {
+    /// If we know for sure that data hasn't changed then we can just skip packing.
+    fn should_be_packed(&self) -> bool {
+        let for_sure_has_not_changed = matches!(
+            self,
+            Self::Vacant {
+                has_been_vacated_in_this_tx: false,
+                ..
+            }
+        );
+
+        !for_sure_has_not_changed
+    }
+}
+
+impl UserReward {
+    /// - [UserReward::pool_reward_index] truncated to a byte
+    /// - [PoolRewardId]
+    /// - packed [Decimal]
+    /// - packed [Decimal]
+    pub const LEN: usize = 1 + PoolRewardId::LEN + 16 + 16;
+}
+
+impl UserRewardManager {
+    /// [Self] is dynamically sized based on how many [PoolReward]s are there
+    /// for the given [Self::reserve].
+    ///
+    /// This is the maximum length a manager can have.
+    pub const MAX_LEN: usize = Self::HEAD_LEN + MAX_REWARDS * UserReward::LEN;
+
+    /// Length of data before [Self::rewards] tail.
+    ///
+    /// - [Self::reserve]
+    /// - [Self::share]
+    /// - [Self::last_update_time_secs]
+    /// - [Self::rewards] vector length as u8
+    const HEAD_LEN: usize = PUBKEY_BYTES + 8 + 8 + 1;
+
+    /// How many bytes are needed to pack this [UserRewardManager].
+    pub(crate) fn size_in_bytes_when_packed(&self) -> usize {
+        Self::HEAD_LEN + self.rewards.len() * UserReward::LEN
+    }
+
+    /// Because [Self] is dynamically sized we don't implement [Pack] that
+    /// contains a misleading const `LEN`.
+    ///
+    /// We return how many bytes were written.
+    pub(crate) fn pack_into_slice(&self, output: &mut [u8]) {
+        let raw_user_reward_manager = array_mut_ref![output, 0, UserRewardManager::HEAD_LEN];
+
+        let (dst_reserve, dst_share, dst_last_update_time_secs, dst_user_rewards_len) = mut_array_refs![
+            raw_user_reward_manager,
+            PUBKEY_BYTES,
+            8, // share
+            8, // last_update_time_secs
+            1  // length of rewards array that's next to come
+        ];
+
+        dst_share.copy_from_slice(&self.share.to_le_bytes());
+        dst_last_update_time_secs.copy_from_slice(&self.last_update_time_secs.to_le_bytes());
+        dst_reserve.copy_from_slice(self.reserve.as_ref());
+        dst_user_rewards_len.copy_from_slice(
+            &({
+                debug_assert!(MAX_REWARDS >= self.rewards.len());
+                debug_assert!(u8::MAX >= MAX_REWARDS as _);
+                self.rewards.len() as u8
+            })
+            .to_le_bytes(),
+        );
+
+        for (index, user_reward) in self.rewards.iter().enumerate() {
+            let offset = Self::HEAD_LEN + index * UserReward::LEN;
+            let raw_user_reward = array_mut_ref![output, offset, UserReward::LEN];
+
+            let (
+                dst_pool_reward_index,
+                dst_pool_reward_id,
+                dst_earned_rewards,
+                dst_cumulative_rewards_per_share,
+            ) = mut_array_refs![raw_user_reward, 1, PoolRewardId::LEN, 16, 16];
+
+            dst_pool_reward_id.copy_from_slice(&user_reward.pool_reward_id.0.to_le_bytes());
+            pack_decimal(user_reward.earned_rewards, dst_earned_rewards);
+            pack_decimal(
+                user_reward.cumulative_rewards_per_share,
+                dst_cumulative_rewards_per_share,
+            );
+            let pool_reward_index = {
+                assert!(user_reward.pool_reward_index < MAX_REWARDS);
+                assert!(MAX_REWARDS < u8::MAX as _);
+                // will always fit
+                user_reward.pool_reward_index as u8
+            };
+            dst_pool_reward_index.copy_from_slice(&pool_reward_index.to_le_bytes());
+        }
+    }
+
+    pub(crate) fn unpack_from_slice(input: &[u8]) -> Result<Self, ProgramError> {
+        let raw_user_reward_manager_head = array_ref![input, 0, UserRewardManager::HEAD_LEN];
+
+        let (src_reserve, src_share, src_last_update_time_secs, src_user_rewards_len) = array_refs![
+            raw_user_reward_manager_head,
+            PUBKEY_BYTES,
+            8, // share
+            8, // last_update_time_secs
+            1  // length of rewards array that's next to come
+        ];
+
+        let reserve = Pubkey::new_from_array(*src_reserve);
+        let user_rewards_len = u8::from_le_bytes(*src_user_rewards_len) as _;
+        let share = u64::from_le_bytes(*src_share);
+        let last_update_time_secs = u64::from_le_bytes(*src_last_update_time_secs);
+
+        let mut rewards = Vec::with_capacity(user_rewards_len);
+        for index in 0..user_rewards_len {
+            let offset = Self::HEAD_LEN + index * UserReward::LEN;
+            let raw_user_reward = array_ref![input, offset, UserReward::LEN];
+
+            let (
+                src_pool_reward_index,
+                src_pool_reward_id,
+                src_earned_rewards,
+                src_cumulative_rewards_per_share,
+            ) = array_refs![raw_user_reward, 1, PoolRewardId::LEN, 16, 16];
+
+            rewards.push(UserReward {
+                pool_reward_index: u8::from_le_bytes(*src_pool_reward_index) as _,
+                pool_reward_id: PoolRewardId(u32::from_le_bytes(*src_pool_reward_id)),
+                earned_rewards: unpack_decimal(src_earned_rewards),
+                cumulative_rewards_per_share: unpack_decimal(src_cumulative_rewards_per_share),
+            });
+        }
+
+        Ok(Self {
+            reserve,
+            share,
+            last_update_time_secs,
+            rewards,
+        })
+    }
+}
+
 #[cfg(test)]
 mod tests {
     //! TODO: Rewrite these tests from their Suilend counterparts.
@@ -475,21 +654,60 @@ mod tests {
     use rand::Rng;
 
     fn pool_reward_manager_strategy() -> impl Strategy<Value = PoolRewardManager> {
-        (0..100u32).prop_perturb(|_, mut rng| PoolRewardManager::new_rand(&mut rng))
+        (0..1u32).prop_perturb(|_, mut rng| PoolRewardManager::new_rand(&mut rng))
+    }
+
+    fn user_reward_manager_strategy() -> impl Strategy<Value = UserRewardManager> {
+        (0..100u32).prop_perturb(|_, mut rng| UserRewardManager::new_rand(&mut rng))
     }
 
     proptest! {
         #[test]
-        fn it_packs_and_unpacks(pool_reward_manager in pool_reward_manager_strategy()) {
+        fn it_packs_and_unpacks_pool_reward_manager(pool_reward_manager in pool_reward_manager_strategy()) {
             let mut packed = vec![0u8; PoolRewardManager::LEN];
             Pack::pack_into_slice(&pool_reward_manager, &mut packed);
             let unpacked = PoolRewardManager::unpack_from_slice(&packed).unwrap();
-            prop_assert_eq!(pool_reward_manager, unpacked);
+
+            prop_assert_eq!(pool_reward_manager.last_update_time_secs, unpacked.last_update_time_secs);
+            prop_assert_eq!(pool_reward_manager.total_shares, unpacked.total_shares);
+
+            for (og, unpacked) in pool_reward_manager.pool_rewards.iter().zip(unpacked.pool_rewards.iter()) {
+                prop_assert_eq!(og, unpacked);
+            }
+        }
+
+        #[test]
+        fn it_packs_and_unpacks_user_reward_manager(user_reward_manager in user_reward_manager_strategy()) {
+            let mut packed = vec![0u8; UserRewardManager::MAX_LEN];
+            user_reward_manager.pack_into_slice(&mut packed);
+            let unpacked = UserRewardManager::unpack_from_slice(&packed).unwrap();
+            prop_assert_eq!(user_reward_manager, unpacked);
         }
     }
 
     #[test]
-    fn it_unpacks_empty_bytes_as_default() {
+    fn it_packs_id_if_vacated_in_this_tx() {
+        let mut m = PoolRewardManager::default();
+        m.pool_rewards[0] = PoolRewardSlot::Vacant {
+            last_pool_reward_id: PoolRewardId(69),
+            has_been_vacated_in_this_tx: true,
+        };
+
+        let mut packed = vec![0u8; PoolRewardManager::LEN];
+        m.pack_into_slice(&mut packed);
+        let unpacked = PoolRewardManager::unpack_from_slice(&packed).unwrap();
+
+        assert_eq!(
+            unpacked.pool_rewards[0],
+            PoolRewardSlot::Vacant {
+                last_pool_reward_id: PoolRewardId(69),
+                has_been_vacated_in_this_tx: false,
+            }
+        );
+    }
+
+    #[test]
+    fn it_unpacks_empty_pool_reward_manager_bytes_as_default() {
         let packed = vec![0u8; PoolRewardManager::LEN];
         let unpacked = PoolRewardManager::unpack_from_slice(&packed).unwrap();
         assert_eq!(unpacked, PoolRewardManager::default());
@@ -499,7 +717,8 @@ mod tests {
             matches!(
                 pool_reward,
                 PoolRewardSlot::Vacant {
-                    last_pool_reward_id: PoolRewardId(0)
+                    last_pool_reward_id: PoolRewardId(0),
+                    has_been_vacated_in_this_tx: false,
                 }
             )
         });
@@ -556,7 +775,8 @@ mod tests {
 
                     if is_vacant {
                         PoolRewardSlot::Vacant {
-                            last_pool_reward_id: PoolRewardId(rng.gen()),
+                            last_pool_reward_id: Default::default(),
+                            has_been_vacated_in_this_tx: false,
                         }
                     } else {
                         PoolRewardSlot::Occupied(Box::new(PoolReward {
@@ -570,6 +790,27 @@ mod tests {
                         }))
                     }
                 }),
+            }
+        }
+    }
+
+    impl UserRewardManager {
+        pub(crate) fn new_rand(rng: &mut impl Rng) -> Self {
+            let rewards_len = rng.gen_range(0..MAX_REWARDS);
+            Self {
+                reserve: Pubkey::new_unique(),
+                share: rng.gen(),
+                last_update_time_secs: rng.gen(),
+                rewards: std::iter::from_fn(|| {
+                    Some(UserReward {
+                        pool_reward_index: rng.gen_range(0..MAX_REWARDS),
+                        pool_reward_id: PoolRewardId(rng.gen()),
+                        earned_rewards: Decimal::from_scaled_val(rng.gen()),
+                        cumulative_rewards_per_share: Decimal::from_scaled_val(rng.gen()),
+                    })
+                })
+                .take(rewards_len)
+                .collect(),
             }
         }
     }

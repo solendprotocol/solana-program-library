@@ -217,6 +217,12 @@ pub enum LendingError {
     /// Cannot close token account
     #[error("Cannot close token account")]
     CloseTokenAccountFailed,
+    /// Not an account discriminator
+    #[error("Given leading byte does not match any account discriminator")]
+    InvalidAccountDiscriminator,
+    /// Trying to use an account that hasn't been migrated
+    #[error("Trying to use an account that hasn't been migrated")]
+    AccountNotMigrated,
 }
 
 impl From<LendingError> for ProgramError {

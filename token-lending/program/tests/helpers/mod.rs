@@ -117,25 +117,25 @@ pub mod bonk_mint {
 }
 
 pub trait AddPacked {
+    fn add_packed(&mut self, pubkey: Pubkey, amount: u64, data: &[u8], owner: &Pubkey);
+
     fn add_packable_account<T: Pack>(
         &mut self,
         pubkey: Pubkey,
         amount: u64,
-        data: &T,
+        unpacked: &T,
         owner: &Pubkey,
-    );
+    ) {
+        let mut data = vec![0; T::get_packed_len()];
+        unpacked.pack_into_slice(&mut data);
+        self.add_packed(pubkey, amount, &data, owner);
+    }
 }
 
 impl AddPacked for ProgramTest {
-    fn add_packable_account<T: Pack>(
-        &mut self,
-        pubkey: Pubkey,
-        amount: u64,
-        data: &T,
-        owner: &Pubkey,
-    ) {
-        let mut account = Account::new(amount, T::get_packed_len(), owner);
-        data.pack_into_slice(&mut account.data);
+    fn add_packed(&mut self, pubkey: Pubkey, amount: u64, data: &[u8], owner: &Pubkey) {
+        let mut account = Account::new(amount, data.len(), owner);
+        account.data.copy_from_slice(data);
         self.add_account(pubkey, account);
     }
 }

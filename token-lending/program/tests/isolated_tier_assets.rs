@@ -76,7 +76,7 @@ async fn test_refresh_obligation() {
         .await
         .unwrap();
 
-    let obligation = test.load_account::<Obligation>(obligations[0].pubkey).await;
+    let obligation = test.load_obligation(obligations[0].pubkey).await;
     assert!(!obligation.account.borrowing_isolated_asset);
 
     test.advance_clock_by_slots(1).await;
@@ -104,7 +104,7 @@ async fn test_refresh_obligation() {
         .await
         .unwrap();
 
-    let obligation_post = test.load_account::<Obligation>(obligations[0].pubkey).await;
+    let obligation_post = test.load_obligation(obligations[0].pubkey).await;
 
     assert_eq!(
         obligation_post.account,

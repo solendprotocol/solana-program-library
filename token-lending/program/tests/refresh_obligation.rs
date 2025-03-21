@@ -12,7 +12,6 @@ use solend_program::instruction::refresh_obligation;
 use solend_program::processor::process_instruction;
 
 use solend_program::state::ObligationCollateral;
-use solend_sdk::state::PROGRAM_VERSION;
 use std::collections::HashSet;
 
 use helpers::solend_program_test::{setup_world, BalanceChecker, Info, SolendProgramTest, User};
@@ -21,7 +20,10 @@ use solana_program::native_token::LAMPORTS_PER_SOL;
 use solana_program_test::*;
 use solana_sdk::signature::Keypair;
 use solend_program::state::SLOTS_PER_YEAR;
-use solend_program::state::{LastUpdate, ObligationLiquidity, ReserveFees, ReserveLiquidity};
+use solend_program::state::{
+    discriminator::AccountDiscriminator, LastUpdate, ObligationLiquidity, ReserveFees,
+    ReserveLiquidity,
+};
 
 use solend_program::{
     math::{Decimal, TryAdd, TryDiv, TryMul},
@@ -101,7 +103,7 @@ async fn setup() -> (
         .unwrap();
 
     // borrow 6 SOL against 100k cUSDC.
-    let obligation = test.load_account::<Obligation>(obligation.pubkey).await;
+    let obligation = test.load_obligation(obligation.pubkey).await;
     lending_market
         .borrow_obligation_liquidity(
             &mut test,
@@ -121,7 +123,7 @@ async fn setup() -> (
         .unwrap();
 
     // populate deposit value correctly.
-    let obligation = test.load_account::<Obligation>(obligation.pubkey).await;
+    let obligation = test.load_obligation(obligation.pubkey).await;
     lending_market
         .refresh_obligation(&mut test, &obligation)
         .await
@@ -130,7 +132,7 @@ async fn setup() -> (
     let lending_market = test.load_account(lending_market.pubkey).await;
     let usdc_reserve = test.load_account(usdc_reserve.pubkey).await;
     let wsol_reserve = test.load_account(wsol_reserve.pubkey).await;
-    let obligation = test.load_account::<Obligation>(obligation.pubkey).await;
+    let obligation = test.load_obligation(obligation.pubkey).await;
 
     (
         test,
@@ -246,7 +248,7 @@ async fn test_success() {
         }
     );
 
-    let obligation_post = test.load_account::<Obligation>(obligation.pubkey).await;
+    let obligation_post = test.load_obligation(obligation.pubkey).await;
 
     assert_eq!(
         obligation_post.account,
@@ -415,7 +417,7 @@ async fn test_obligation_liquidity_ordering() {
         .await
         .unwrap();
 
-    let obligation = test.load_account::<Obligation>(obligations[0].pubkey).await;
+    let obligation = test.load_obligation(obligations[0].pubkey).await;
     let max_reserve = reserves.iter().max_by_key(|r| r.pubkey).unwrap();
     assert!(obligation.account.borrows[0].borrow_reserve == max_reserve.pubkey);
 
@@ -441,7 +443,7 @@ async fn test_obligation_liquidity_ordering() {
         .await
         .unwrap();
 
-    let obligation = test.load_account::<Obligation>(obligations[0].pubkey).await;
+    let obligation = test.load_obligation(obligations[0].pubkey).await;
     assert!(obligation.account.borrows[0].borrow_reserve == wsol_reserve.pubkey);
 
     lending_market
@@ -466,7 +468,7 @@ async fn test_obligation_liquidity_ordering() {
         .await
         .unwrap();
 
-    let obligation = test.load_account::<Obligation>(obligations[0].pubkey).await;
+    let obligation = test.load_obligation(obligations[0].pubkey).await;
     assert!(obligation.account.borrows[0].borrow_reserve == usdc_reserve.pubkey);
 }
 
@@ -479,7 +481,7 @@ async fn test_normalize_obligation() {
     );
 
     let reserve_1 = Reserve {
-        version: PROGRAM_VERSION,
+        discriminator: AccountDiscriminator::Reserve,
         last_update: LastUpdate {
             slot: 1,
             stale: false,
@@ -496,7 +498,7 @@ async fn test_normalize_obligation() {
     );
 
     let reserve_2 = Reserve {
-        version: PROGRAM_VERSION,
+        discriminator: AccountDiscriminator::Reserve,
         last_update: LastUpdate {
             slot: 1,
             stale: false,
@@ -514,7 +516,7 @@ async fn test_normalize_obligation() {
 
     let obligation_pubkey = Pubkey::new_unique();
     let obligation = Obligation {
-        version: PROGRAM_VERSION,
+        discriminator: AccountDiscriminator::Obligation,
         deposits: vec![
             ObligationCollateral {
                 deposit_reserve: reserve_1_pubkey,
@@ -542,10 +544,12 @@ async fn test_normalize_obligation() {
         ..Obligation::default()
     };
 
-    test.add_packable_account(
+    let mut packed_obligation = vec![0; obligation.size_in_bytes_when_packed()];
+    obligation.pack_into_slice(&mut packed_obligation);
+    test.add_packed(
         obligation_pubkey,
         u32::MAX as u64,
-        &obligation,
+        &packed_obligation,
         &solend_program::id(),
     );
 
@@ -563,7 +567,7 @@ async fn test_normalize_obligation() {
     )];
     test.process_transaction(&ix, None).await.unwrap();
 
-    let o = test.load_account::<Obligation>(obligation_pubkey).await;
+    let o = test.load_obligation(obligation_pubkey).await;
     assert_eq!(
         o.account.deposits,
         vec![ObligationCollateral {
