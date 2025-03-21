@@ -489,7 +489,6 @@ impl Obligation {
 
     /// Unpack from slice without checking if initialized
     pub fn unpack_unchecked(input: &[u8]) -> Result<Self, ProgramError> {
-        // TODO: add discriminant
         if !(Self::MIN_LEN..=Self::MAX_LEN).contains(&input.len()) {
             return Err(ProgramError::InvalidAccountData);
         }
@@ -498,7 +497,6 @@ impl Obligation {
 
     /// Pack into slice
     pub fn pack(src: Self, dst: &mut [u8]) -> Result<(), ProgramError> {
-        // TODO: add discriminant
         if !(Self::MIN_LEN..=Self::MAX_LEN).contains(&dst.len()) {
             return Err(ProgramError::InvalidAccountData);
         }

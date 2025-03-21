@@ -1,5 +1,3 @@
-// TODO: code budgets were increased. export them to consts and optimize code to again lower them
-
 use bytemuck::checked::from_bytes;
 use oracles::switchboard_on_demand_mainnet;
 
