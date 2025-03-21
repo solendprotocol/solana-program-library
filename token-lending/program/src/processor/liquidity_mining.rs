@@ -33,6 +33,7 @@ use solana_program::{
     system_instruction,
     sysvar::Sysvar,
 };
+use solend_sdk::state::discriminator::AccountDiscriminator;
 use solend_sdk::{
     error::LendingError,
     state::{LendingMarket, PositionKind, Reserve},
@@ -282,9 +283,16 @@ pub(crate) fn upgrade_reserve(program_id: &Pubkey, accounts: &[AccountInfo]) -> 
     // 3.
     //
 
-    // updates version and discriminator
-    let reserve = Reserve::unpack(&accounts.reserve_info.data.borrow())?;
-    Reserve::pack(reserve, &mut accounts.reserve_info.data.borrow_mut())?;
+    // we upgrade discriminator as we've checked that the account is indeed
+    // a reserve account in [UpgradeReserveAccounts::from_unchecked_iter]
+    let mut data = accounts.reserve_info.data.borrow_mut();
+    data[0] = AccountDiscriminator::Reserve as u8;
+    // Now the reserve can unpack fine and doesn't have to worry about
+    // migrations.
+    // Instead it returns an error on an invalid discriminator.
+    // This way a reserve cannot be mistaken for an obligation.
+    let reserve = Reserve::unpack(&data)?;
+    Reserve::pack(reserve, &mut data)?;
 
     Ok(())
 }

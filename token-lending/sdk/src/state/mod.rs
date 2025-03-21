@@ -13,7 +13,6 @@ pub use lending_market::*;
 pub use lending_market_metadata::*;
 pub use liquidity_mining::*;
 pub use obligation::*;
-use program_version::ProgramVersion;
 pub use rate_limiter::*;
 pub use reserve::*;
 
@@ -30,92 +29,64 @@ const INITIAL_COLLATERAL_RATE: u64 = INITIAL_COLLATERAL_RATIO * WAD;
 // 2 (slots per second) * 60 * 60 * 24 * 365 = 63072000
 pub const SLOTS_PER_YEAR: u64 = 63072000;
 
-pub mod program_version {
-    //! There can be at the moment at most 16 different program versions.
-    //! Extrapolating from the current program history this should be good enough.
-    //! The program versions can also wrap if sufficient precautions are taken.
-
-    /// Match the second 4 bits of an account data against this enum to determine
-    /// the program version.
-    pub enum ProgramVersion {
-        /// Account is not initialized yet.
-        Uninitialized = 0,
-        /// Version of the program and all new accounts created until inclusive version
-        /// @v2.0.2
-        ///
-        /// These versions will have no account discriminator.
-        V2_0_2 = 1,
-        /// Version of the program and all new accounts created from inclusive version
-        /// @v2.1.0 (liquidity mining)
-        ///
-        /// Will have an associated account discriminator.
-        V2_1_0 = 2,
-    }
-}
+/// Unmigrated accounts have this as their leading byte.
+pub const PROGRAM_VERSION_2_0_2: u8 = 1;
 
 pub mod discriminator {
-    //! First 4 bits determine the account kind.
-    //!
-    //! There can be at the moment at most 15 different discriminators.
-    //! Extrapolating from the current program history this should be good enough.
+    //! First 1 byte determines the account kind.
 
-    /// Match the first 4 bits of an account data against this enum to determine
+    use std::convert::TryFrom;
+
+    use crate::error::LendingError;
+
+    /// Match the first byte of an account data against this enum to determine
     /// the account type.
+    ///
+    /// # Note
+    ///
+    /// In versions before @v2.1.0 this byte represented program version.
+    /// That's why we skip value `1u8`.
+    #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
     pub enum AccountDiscriminator {
         /// Account is not initialized yet.
+        #[default]
         Uninitialized = 0,
         /// [crate::state::LendingMarket]
-        LendingMarket = 1,
+        LendingMarket = 2,
         /// [crate::state::Reserve]
-        Reserve = 2,
+        Reserve = 3,
         /// [crate::state::Obligation]
-        Obligation = 3,
+        Obligation = 4,
     }
-}
 
-/// There can be at the moment at most 16 different program versions.
-/// Extrapolating from the current program history this should be good enough.
-/// The program versions can also wrap if sufficient precautions are taken.
-pub fn set_discriminator_and_version(
-    discriminator: AccountDiscriminator,
-    version: ProgramVersion,
-) -> u8 {
-    let discriminator = discriminator as u8;
-    debug_assert!(discriminator <= 0x0F);
-    let version = version as u8;
-    debug_assert!(version <= 0x0F);
+    impl TryFrom<u8> for AccountDiscriminator {
+        type Error = LendingError;
 
-    (discriminator << 4) | (version & 0x0F)
-}
+        fn try_from(value: u8) -> Result<Self, Self::Error> {
+            match value {
+                // the account data were just created and are filled with 0s
+                0 => Ok(Self::Uninitialized),
 
-/// First 4 bytes are the discriminator, next 4 bytes are the version.
-pub fn extract_discriminator_and_version(
-    byte: u8,
-) -> Result<(AccountDiscriminator, ProgramVersion), ProgramError> {
-    let version = match byte & 0x0F {
-        0 => ProgramVersion::Uninitialized,
-        1 => ProgramVersion::V2_0_2,
-        2 => ProgramVersion::V2_1_0,
-        3..=16 => {
-            // unused
-            return Err(ProgramError::InvalidAccountData);
+                // we skip 1 because it was used for program version
+                1 => Err(Self::Error::AccountNotMigrated),
+
+                // valid accounts
+                2 => Ok(Self::LendingMarket),
+                3 => Ok(Self::Reserve),
+                4 => Ok(Self::Obligation),
+
+                _ => Err(Self::Error::InvalidAccountDiscriminator),
+            }
         }
-        _ => unreachable!("Version is out of bounds"),
-    };
+    }
 
-    let discriminator = match (byte >> 4) & 0x0F {
-        0 => AccountDiscriminator::Uninitialized,
-        1 => AccountDiscriminator::LendingMarket,
-        2 => AccountDiscriminator::Reserve,
-        3 => AccountDiscriminator::Obligation,
-        4..=16 => {
-            // unused
-            return Err(ProgramError::InvalidAccountData);
+    impl TryFrom<&[u8; 1]> for AccountDiscriminator {
+        type Error = LendingError;
+
+        fn try_from(value: &[u8; 1]) -> Result<Self, Self::Error> {
+            Self::try_from(value[0])
         }
-        17.. => unreachable!("Discriminator is out of bounds"),
-    };
-
-    Ok((discriminator, version))
+    }
 }
 
 // Helpers

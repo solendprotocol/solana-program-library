@@ -44,18 +44,13 @@ pub const MIN_SCALED_PRICE_OFFSET_BPS: i64 = -2000;
 /// Lending market reserve state
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct Reserve {
-    /// For historical reasons we mask both program version and account
-    /// discriminator onto 1 byte.
+    /// For uninitialized accounts, this will be equal to [AccountDiscriminator::Uninitialized].
+    /// Otherwise this is [AccountDiscriminator::Reserve].
     ///
+    /// # Note
     /// For accounts last used with version prior to @v2.1.0 this will be equal
-    /// to [ProgramVersion::V2_0_2].
-    ///
-    /// For uninitialized accounts, this will be equal to
-    /// [Discriminator::Uninitialized] and [ProgramVersion::Uninitialized].
-    ///
-    /// Accounts after including @v2.1.0 use first 4 bits for discriminator and
-    /// last 4 bits for program version.
-    pub discriminator_and_version: u8,
+    /// to [PROGRAM_VERSION_2_0_2].
+    pub discriminator: AccountDiscriminator,
     /// Last slot when supply and rates updated
     pub last_update: LastUpdate,
     /// Lending market address
@@ -96,8 +91,7 @@ impl Reserve {
 
     /// Initialize a reserve
     pub fn init(&mut self, params: InitReserveParams) {
-        self.discriminator_and_version =
-            set_discriminator_and_version(AccountDiscriminator::Reserve, ProgramVersion::V2_1_0);
+        self.discriminator = AccountDiscriminator::Reserve;
         self.last_update = LastUpdate::new(params.current_slot);
         self.lending_market = params.lending_market;
         self.liquidity = params.liquidity;
@@ -1249,10 +1243,7 @@ pub enum FeeCalculation {
 impl Sealed for Reserve {}
 impl IsInitialized for Reserve {
     fn is_initialized(&self) -> bool {
-        match extract_discriminator_and_version(self.discriminator_and_version) {
-            Ok((_, version)) => !matches!(version, ProgramVersion::Uninitialized),
-            Err(_) => unreachable!("There is no path to invalid discriminator/version"),
-        }
+        !matches!(self.discriminator, AccountDiscriminator::Uninitialized)
     }
 }
 
@@ -1266,12 +1257,11 @@ impl Pack for Reserve {
 
     // @TODO: break this up by reserve / liquidity / collateral / config https://git.io/JOCca
     // @v2.1.0: packs deposits_pool_reward_manager and borrows_pool_reward_manager
-    // @v2.1.0 TODO: add discriminator
     fn pack_into_slice(&self, output: &mut [u8]) {
         let output = array_mut_ref![output, 0, Reserve::LEN];
         #[allow(clippy::ptr_offset_with_cast)]
         let (
-            discriminator_and_version,
+            discriminator,
             last_update_slot,
             last_update_stale,
             lending_market,
@@ -1318,7 +1308,7 @@ impl Pack for Reserve {
             attributed_borrow_value,
             config_attributed_borrow_limit_open,
             config_attributed_borrow_limit_close,
-            _padding, // TODO: use some of this for discriminator
+            _padding,
             output_for_borrows_pool_reward_manager,
             output_for_deposits_pool_reward_manager,
         ) = mut_array_refs![
@@ -1376,7 +1366,7 @@ impl Pack for Reserve {
         ];
 
         // reserve
-        *discriminator_and_version = self.discriminator_and_version.to_le_bytes();
+        discriminator[0] = self.discriminator as _;
         *last_update_slot = self.last_update.slot.to_le_bytes();
         pack_bool(self.last_update.stale, last_update_stale);
         lending_market.copy_from_slice(self.lending_market.as_ref());
@@ -1477,7 +1467,7 @@ impl Pack for Reserve {
         let input_v2_0_2 = array_ref![input, 0, RESERVE_LEN_V2_0_2];
         #[allow(clippy::ptr_offset_with_cast)]
         let (
-            discriminator_and_version,
+            discriminator,
             last_update_slot,
             last_update_stale,
             lending_market,
@@ -1577,36 +1567,18 @@ impl Pack for Reserve {
             49
         ];
 
-        let mut discriminator_and_version = u8::from_le_bytes(*discriminator_and_version);
-        match extract_discriminator_and_version(discriminator_and_version) {
-            Ok((AccountDiscriminator::Reserve, ProgramVersion::V2_1_0)) => {
-                // migrated and all ok
-            }
-            Ok((AccountDiscriminator::Uninitialized, ProgramVersion::V2_0_2)) => {
-                // Not migrated yet.
-                // We checked earlier that the input buffer was already resized.
-                debug_assert_eq!(input.len(), RESERVE_LEN_V2_1_0);
-
-                discriminator_and_version = set_discriminator_and_version(
-                    AccountDiscriminator::Reserve,
-                    ProgramVersion::V2_1_0,
-                );
-            }
-            Ok((AccountDiscriminator::Uninitialized, ProgramVersion::Uninitialized)) => {
-                // uninitialized account
-            }
-            Ok((AccountDiscriminator::Reserve, _)) => {
-                msg!("Reserve version does not match lending program version");
-                return Err(ProgramError::InvalidAccountData);
-            }
-            Ok((_, _)) => {
+        // Reserve migration v2.0.2 to v2.1.0 happens outside of the
+        // unpack method because there's no reliable way to ensure that we're
+        // migrating a reserve and not an obligation that's dynamically resized
+        // to the same length as a reserve.
+        let discriminator = match AccountDiscriminator::try_from(discriminator) {
+            Ok(d @ AccountDiscriminator::Uninitialized) => d, // yet to be set
+            Ok(d @ AccountDiscriminator::Reserve) => d,       // migrated to v2.1.0
+            Ok(_) => {
                 msg!("Reserve discriminator does not match");
-                return Err(ProgramError::InvalidAccountData);
+                return Err(LendingError::InvalidAccountDiscriminator.into());
             }
-            Err(e) => {
-                msg!("Reserve has an unexpected first byte value");
-                return Err(e);
-            }
+            Err(e) => return Err(e.into()),
         };
 
         let optimal_utilization_rate = u8::from_le_bytes(*config_optimal_utilization_rate);
@@ -1736,7 +1708,7 @@ impl Pack for Reserve {
             PoolRewardManager::unpack_to_box(input_for_deposits_pool_reward_manager)?;
 
         Ok(Self {
-            discriminator_and_version,
+            discriminator,
             last_update,
             lending_market: Pubkey::new_from_array(*lending_market),
             liquidity,
@@ -1781,10 +1753,7 @@ mod test {
             };
 
             Self {
-                discriminator_and_version: set_discriminator_and_version(
-                    AccountDiscriminator::Reserve,
-                    ProgramVersion::V2_1_0,
-                ),
+                discriminator: AccountDiscriminator::Reserve,
                 last_update: LastUpdate {
                     slot: rng.gen(),
                     stale: rng.gen(),
@@ -1862,21 +1831,18 @@ mod test {
     #[test]
     fn pack_and_unpack_reserve_v2_0_2() {
         let mut rng = rand::thread_rng();
-        for _ in 0..100 {
-            let mut reserve = Reserve::new_rand(&mut rng);
-            // this is what version looked like before the upgrade to v2.1.0
-            reserve.discriminator_and_version = ProgramVersion::V2_0_2 as _;
+        let reserve = Reserve::new_rand(&mut rng);
 
-            let mut packed = [0u8; Reserve::LEN];
-            Reserve::pack(reserve.clone(), &mut packed).unwrap();
-            let unpacked = Reserve::unpack(&packed).unwrap();
-            // upgraded
-            reserve.discriminator_and_version = set_discriminator_and_version(
-                AccountDiscriminator::Reserve,
-                ProgramVersion::V2_1_0,
-            );
-            assert_eq!(reserve, unpacked);
-        }
+        let mut packed = [0u8; Reserve::LEN];
+        Reserve::pack(reserve.clone(), &mut packed).unwrap();
+        // this is what version looked like before the upgrade to v2.1.0
+        packed[0] = PROGRAM_VERSION_2_0_2;
+
+        // reserve must be upgraded with a special ix
+        assert_eq!(
+            Reserve::unpack(&packed).unwrap_err(),
+            LendingError::AccountNotMigrated.into()
+        );
     }
 
     const MAX_LIQUIDITY: u64 = u64::MAX / 5;

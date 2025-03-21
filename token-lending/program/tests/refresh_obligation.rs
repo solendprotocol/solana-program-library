@@ -21,8 +21,8 @@ use solana_program_test::*;
 use solana_sdk::signature::Keypair;
 use solend_program::state::SLOTS_PER_YEAR;
 use solend_program::state::{
-    discriminator::AccountDiscriminator, program_version::ProgramVersion,
-    set_discriminator_and_version, LastUpdate, ObligationLiquidity, ReserveFees, ReserveLiquidity,
+    discriminator::AccountDiscriminator, LastUpdate, ObligationLiquidity, ReserveFees,
+    ReserveLiquidity,
 };
 
 use solend_program::{
@@ -481,10 +481,7 @@ async fn test_normalize_obligation() {
     );
 
     let reserve_1 = Reserve {
-        discriminator_and_version: set_discriminator_and_version(
-            AccountDiscriminator::Reserve,
-            ProgramVersion::V2_1_0,
-        ),
+        discriminator: AccountDiscriminator::Reserve,
         last_update: LastUpdate {
             slot: 1,
             stale: false,
@@ -501,10 +498,7 @@ async fn test_normalize_obligation() {
     );
 
     let reserve_2 = Reserve {
-        discriminator_and_version: set_discriminator_and_version(
-            AccountDiscriminator::Reserve,
-            ProgramVersion::V2_1_0,
-        ),
+        discriminator: AccountDiscriminator::Reserve,
         last_update: LastUpdate {
             slot: 1,
             stale: false,
@@ -522,10 +516,7 @@ async fn test_normalize_obligation() {
 
     let obligation_pubkey = Pubkey::new_unique();
     let obligation = Obligation {
-        discriminator_and_version: set_discriminator_and_version(
-            AccountDiscriminator::Obligation,
-            ProgramVersion::V2_1_0,
-        ),
+        discriminator: AccountDiscriminator::Obligation,
         deposits: vec![
             ObligationCollateral {
                 deposit_reserve: reserve_1_pubkey,

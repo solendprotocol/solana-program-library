@@ -29,8 +29,7 @@ use solana_sdk::{
 use solend_program::NULL_PUBKEY;
 
 use solend_program::state::{
-    discriminator::AccountDiscriminator, program_version::ProgramVersion,
-    set_discriminator_and_version, LastUpdate, LendingMarket, RateLimiter, Reserve,
+    discriminator::AccountDiscriminator, LastUpdate, LendingMarket, RateLimiter, Reserve,
     ReserveCollateral, ReserveLiquidity,
 };
 use solend_program::{
@@ -152,10 +151,7 @@ async fn test_success() {
     assert_eq!(
         wsol_reserve.account,
         Reserve {
-            discriminator_and_version: set_discriminator_and_version(
-                AccountDiscriminator::Reserve,
-                ProgramVersion::V2_1_0
-            ),
+            discriminator: AccountDiscriminator::Reserve,
             last_update: LastUpdate {
                 slot: 1001,
                 stale: true

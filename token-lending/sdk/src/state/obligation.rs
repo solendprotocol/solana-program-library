@@ -30,17 +30,13 @@ pub const MAX_OBLIGATION_RESERVES: usize = 10;
 /// instead.
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct Obligation {
-    /// For historical reasons we mask both program version and account
-    /// discriminator onto 1 byte.
+    /// For uninitialized accounts, this will be equal to [AccountDiscriminator::Uninitialized].
+    /// Otherwise this is [AccountDiscriminator::Obligation].
     ///
+    /// # Note
     /// For accounts last used with version prior to @v2.1.0 this will be equal
-    /// to [ProgramVersion::V2_0_2].
-    ///
-    /// For uninitialized accounts, this will be equal to [ProgramVersion::Uninitialized].
-    ///
-    /// Accounts after including @v2.1.0 use first 4 bits for discriminator and
-    /// last 4 bits for program version.
-    pub discriminator_and_version: u8,
+    /// to [PROGRAM_VERSION_2_0_2].
+    pub discriminator: AccountDiscriminator,
     /// Last update to collateral, liquidity, or their market values
     pub last_update: LastUpdate,
     /// Lending market address
@@ -106,8 +102,7 @@ impl Obligation {
 
     /// Initialize an obligation
     pub fn init(&mut self, params: InitObligationParams) {
-        self.discriminator_and_version =
-            set_discriminator_and_version(AccountDiscriminator::Obligation, ProgramVersion::V2_1_0);
+        self.discriminator = AccountDiscriminator::Obligation;
         self.last_update = LastUpdate::new(params.current_slot);
         self.lending_market = params.lending_market;
         self.owner = params.owner;
@@ -337,10 +332,7 @@ pub struct InitObligationParams {
 impl Sealed for Obligation {}
 impl IsInitialized for Obligation {
     fn is_initialized(&self) -> bool {
-        match extract_discriminator_and_version(self.discriminator_and_version) {
-            Ok((_, version)) => !matches!(version, ProgramVersion::Uninitialized),
-            Err(_) => unreachable!("There is no path to invalid discriminator/version"),
-        }
+        !matches!(self.discriminator, AccountDiscriminator::Uninitialized)
     }
 }
 
@@ -519,7 +511,7 @@ impl Obligation {
         let output = array_mut_ref![dst, 0, OBLIGATION_LEN_V1];
         #[allow(clippy::ptr_offset_with_cast)]
         let (
-            discriminator_and_version,
+            discriminator,
             last_update_slot,
             last_update_stale,
             lending_market,
@@ -560,7 +552,7 @@ impl Obligation {
         ];
 
         // obligation
-        *discriminator_and_version = self.discriminator_and_version.to_le_bytes();
+        discriminator[0] = self.discriminator as _;
         *last_update_slot = self.last_update.slot.to_le_bytes();
         pack_bool(self.last_update.stale, last_update_stale);
         lending_market.copy_from_slice(self.lending_market.as_ref());
@@ -651,7 +643,7 @@ impl Obligation {
         let input = array_ref![src, 0, OBLIGATION_LEN_V1];
         #[allow(clippy::ptr_offset_with_cast)]
         let (
-            discriminator_and_version,
+            discriminator,
             last_update_slot,
             last_update_stale,
             lending_market,
@@ -691,36 +683,20 @@ impl Obligation {
             OBLIGATION_COLLATERAL_LEN + (OBLIGATION_LIQUIDITY_LEN * (MAX_OBLIGATION_RESERVES - 1))
         ];
 
-        let mut discriminator_and_version = u8::from_le_bytes(*discriminator_and_version);
-        match extract_discriminator_and_version(discriminator_and_version) {
-            Ok((AccountDiscriminator::Obligation, ProgramVersion::V2_1_0)) => {
-                // migrated and all ok
-            }
-            Ok((AccountDiscriminator::Uninitialized, ProgramVersion::V2_0_2))
-                if input.len() == OBLIGATION_LEN_V1 =>
-            {
-                // not migrated yet, so must have the old size
-
-                discriminator_and_version = set_discriminator_and_version(
-                    AccountDiscriminator::Obligation,
-                    ProgramVersion::V2_1_0,
-                );
-            }
-            Ok((AccountDiscriminator::Uninitialized, ProgramVersion::Uninitialized)) => {
-                // uninitialized account
-            }
-            Ok((AccountDiscriminator::Obligation, _)) => {
-                msg!("Obligation version does not match lending program version");
-                return Err(ProgramError::InvalidAccountData);
-            }
-            Ok((_, _)) => {
+        let discriminator = match AccountDiscriminator::try_from(discriminator) {
+            Ok(d @ AccountDiscriminator::Uninitialized) => d, // yet to be set
+            Ok(d @ AccountDiscriminator::Obligation) => d,    // migrated to v2.1.0
+            Ok(_) => {
                 msg!("Obligation discriminator does not match");
-                return Err(ProgramError::InvalidAccountData);
+                return Err(LendingError::InvalidAccountDiscriminator.into());
             }
-            Err(e) => {
-                msg!("Obligation has an unexpected first byte value");
-                return Err(e);
+            Err(LendingError::AccountNotMigrated) => {
+                // We're migrating the account from v2.0.2 to v2.1.0.
+                debug_assert_eq!(OBLIGATION_LEN_V1, input.len());
+
+                AccountDiscriminator::Obligation
             }
+            Err(e) => return Err(e.into()),
         };
 
         let deposits_len = u8::from_le_bytes(*deposits_len);
@@ -783,7 +759,7 @@ impl Obligation {
         };
 
         Ok(Self {
-            discriminator_and_version,
+            discriminator,
             last_update: LastUpdate {
                 slot: u64::from_le_bytes(*last_update_slot),
                 stale: unpack_bool(last_update_stale)?,
@@ -835,10 +811,7 @@ mod test {
     impl Obligation {
         fn new_rand(rng: &mut impl Rng) -> Self {
             Self {
-                discriminator_and_version: set_discriminator_and_version(
-                    AccountDiscriminator::Obligation,
-                    ProgramVersion::V2_1_0,
-                ),
+                discriminator: AccountDiscriminator::Obligation,
                 last_update: LastUpdate {
                     slot: rng.gen(),
                     stale: rng.gen(),
@@ -894,18 +867,15 @@ mod test {
     fn pack_and_unpack_obligation_v2_0_2() {
         let mut rng = rand::thread_rng();
         for _ in 0..100 {
-            let mut obligation = Obligation::new_rand(&mut rng);
-            // this is what version looked like before the upgrade to v2.1.0
-            obligation.discriminator_and_version = ProgramVersion::V2_0_2 as _;
+            let obligation = Obligation::new_rand(&mut rng);
 
             let mut packed = [0u8; Obligation::MAX_LEN];
             Obligation::pack(obligation.clone(), &mut packed).unwrap();
+            // this is what version looked like before the upgrade to v2.1.0
+            packed[0] = PROGRAM_VERSION_2_0_2;
+
             let unpacked = Obligation::unpack(&packed).unwrap();
             // upgraded
-            obligation.discriminator_and_version = set_discriminator_and_version(
-                AccountDiscriminator::Obligation,
-                ProgramVersion::V2_1_0,
-            );
             assert_eq!(obligation, unpacked);
         }
     }
