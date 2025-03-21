@@ -61,6 +61,9 @@ pub enum PoolRewardSlot {
     Vacant {
         /// Increment this ID when adding new [PoolReward].
         last_pool_reward_id: PoolRewardId,
+        /// An optimization to avoid writing data that has not changed.
+        /// When vacating a slot we set this to true.
+        has_been_vacated_in_this_tx: bool,
     },
     /// Reward has not been closed yet.
     ///
@@ -325,7 +328,16 @@ impl UserRewardManager {
 }
 
 impl PoolReward {
-    const LEN: usize = PoolRewardId::LEN + PUBKEY_BYTES + 8 + 4 + 8 + 8 + 16;
+    const LEN: usize = Self::HEAD_LEN + Self::TAIL_LEN;
+
+    const HEAD_LEN: usize = PoolRewardId::LEN + PUBKEY_BYTES;
+
+    /// - `start_time_secs``
+    /// - `duration_secs``
+    /// - `total_rewards``
+    /// - `num_user_reward_managers``
+    /// - `cumulative_rewards_per_share``
+    const TAIL_LEN: usize = 8 + 4 + 8 + 8 + 16;
 }
 
 impl PoolRewardId {
@@ -346,6 +358,9 @@ impl Default for PoolRewardSlot {
     fn default() -> Self {
         Self::Vacant {
             last_pool_reward_id: PoolRewardId(0),
+            // this is used for initialization of the pool reward manager so
+            // it makes sense as there are 0s in the account data already
+            has_been_vacated_in_this_tx: false,
         }
     }
 }
@@ -367,73 +382,61 @@ impl Pack for PoolRewardManager {
         output[0..8].copy_from_slice(&self.total_shares.to_le_bytes());
         output[8..16].copy_from_slice(&self.last_update_time_secs.to_le_bytes());
 
-        for (index, pool_reward_slot) in self.pool_rewards.iter().enumerate() {
+        let rewards_to_pack = self
+            .pool_rewards
+            .iter()
+            .enumerate()
+            .filter(|(_, s)| s.should_be_packed());
+
+        for (index, pool_reward_slot) in rewards_to_pack {
             let offset = 16 + index * PoolReward::LEN;
-            let raw_pool_reward = array_mut_ref![output, offset, PoolReward::LEN];
 
-            let (
-                dst_id,
-                dst_vault,
-                dst_start_time_secs,
-                dst_duration_secs,
-                dst_total_rewards,
-                dst_num_user_reward_managers,
-                dst_cumulative_rewards_per_share_wads,
-            ) = mut_array_refs![
-                raw_pool_reward,
-                PoolRewardId::LEN,
-                PUBKEY_BYTES,
-                8,  // start_time_secs
-                4,  // duration_secs
-                8,  // total_rewards
-                8,  // num_user_reward_managers
-                16  // cumulative_rewards_per_share
-            ];
+            let raw_pool_reward_head = array_mut_ref![output, offset, PoolReward::HEAD_LEN];
+            let (dst_id, dst_vault) =
+                mut_array_refs![raw_pool_reward_head, PoolRewardId::LEN, PUBKEY_BYTES];
 
-            let (
-                id,
-                vault,
-                start_time_secs,
-                duration_secs,
-                total_rewards,
-                num_user_reward_managers,
-                cumulative_rewards_per_share,
-            ) = match pool_reward_slot {
+            match pool_reward_slot {
                 PoolRewardSlot::Vacant {
-                    last_pool_reward_id,
-                } => (
-                    *last_pool_reward_id,
-                    Pubkey::default(),
-                    0u64,
-                    0u32,
-                    0u64,
-                    0u64,
-                    Decimal::zero(),
-                ),
-                PoolRewardSlot::Occupied(pool_reward) => (
-                    pool_reward.id,
-                    pool_reward.vault,
-                    pool_reward.start_time_secs,
-                    pool_reward.duration_secs,
-                    pool_reward.total_rewards,
-                    pool_reward.num_user_reward_managers,
-                    pool_reward.cumulative_rewards_per_share,
-                ),
+                    last_pool_reward_id: PoolRewardId(id),
+                    ..
+                } => {
+                    dst_id.copy_from_slice(&id.to_le_bytes());
+                    dst_vault.copy_from_slice(Pubkey::default().as_ref());
+                }
+                PoolRewardSlot::Occupied(pool_reward) => {
+                    dst_id.copy_from_slice(&pool_reward.id.0.to_le_bytes());
+                    dst_vault.copy_from_slice(pool_reward.vault.as_ref());
+
+                    let raw_pool_reward_tail =
+                        array_mut_ref![output, offset + PoolReward::HEAD_LEN, PoolReward::TAIL_LEN];
+
+                    let (
+                        dst_start_time_secs,
+                        dst_duration_secs,
+                        dst_total_rewards,
+                        dst_num_user_reward_managers,
+                        dst_cumulative_rewards_per_share_wads,
+                    ) = mut_array_refs![
+                        raw_pool_reward_tail,
+                        8,  // start_time_secs
+                        4,  // duration_secs
+                        8,  // total_rewards
+                        8,  // num_user_reward_managers
+                        16  // cumulative_rewards_per_share
+                    ];
+
+                    *dst_start_time_secs = pool_reward.start_time_secs.to_le_bytes();
+                    *dst_duration_secs = pool_reward.duration_secs.to_le_bytes();
+                    *dst_total_rewards = pool_reward.total_rewards.to_le_bytes();
+                    *dst_num_user_reward_managers =
+                        pool_reward.num_user_reward_managers.to_le_bytes();
+                    // TBD: do we want to ceil?
+                    pack_decimal(
+                        pool_reward.cumulative_rewards_per_share,
+                        dst_cumulative_rewards_per_share_wads,
+                    );
+                }
             };
-
-            dst_id.copy_from_slice(&id.0.to_le_bytes());
-            dst_vault.copy_from_slice(vault.as_ref());
-
-            // TBD: these values don't have to be written if the slot is vacant
-            *dst_start_time_secs = start_time_secs.to_le_bytes();
-            *dst_duration_secs = duration_secs.to_le_bytes();
-            *dst_total_rewards = total_rewards.to_le_bytes();
-            *dst_num_user_reward_managers = num_user_reward_managers.to_le_bytes();
-            // TBD: do we want to ceil?
-            pack_decimal(
-                cumulative_rewards_per_share,
-                dst_cumulative_rewards_per_share_wads,
-            );
         }
     }
 
@@ -447,37 +450,40 @@ impl Pack for PoolRewardManager {
 
         for index in 0..MAX_REWARDS {
             let offset = 8 + 8 + index * PoolReward::LEN;
-            let raw_pool_reward = array_ref![input, offset, PoolReward::LEN];
+            let raw_pool_reward_head = array_ref![input, offset, PoolReward::HEAD_LEN];
 
-            let (
-                src_id,
-                src_vault,
-                src_start_time_secs,
-                src_duration_secs,
-                src_total_rewards,
-                src_num_user_reward_managers,
-                src_cumulative_rewards_per_share_wads,
-            ) = array_refs![
-                raw_pool_reward,
-                PoolRewardId::LEN,
-                PUBKEY_BYTES,
-                // TBD: these values don't have to be referenced if the slot is vacant
-                8,  // start_time_secs
-                4,  // duration_secs
-                8,  // total_rewards
-                8,  // num_user_reward_managers
-                16  // cumulative_rewards_per_share
-            ];
+            let (src_id, src_vault) =
+                array_refs![raw_pool_reward_head, PoolRewardId::LEN, PUBKEY_BYTES];
 
-            let vault = Pubkey::new_from_array(*src_vault);
             let pool_reward_id = PoolRewardId(u32::from_le_bytes(*src_id));
+            let vault = Pubkey::new_from_array(*src_vault);
 
             // SAFETY: ok to assign because we know the index is less than length
             pool_reward_manager.pool_rewards[index] = if vault == Pubkey::default() {
                 PoolRewardSlot::Vacant {
                     last_pool_reward_id: pool_reward_id,
+                    // nope, has been vacant since unpack
+                    has_been_vacated_in_this_tx: false,
                 }
             } else {
+                let raw_pool_reward_tail =
+                    array_ref![input, offset + PoolReward::HEAD_LEN, PoolReward::TAIL_LEN];
+
+                let (
+                    src_start_time_secs,
+                    src_duration_secs,
+                    src_total_rewards,
+                    src_num_user_reward_managers,
+                    src_cumulative_rewards_per_share_wads,
+                ) = array_refs![
+                    raw_pool_reward_tail,
+                    8,  // start_time_secs
+                    4,  // duration_secs
+                    8,  // total_rewards
+                    8,  // num_user_reward_managers
+                    16  // cumulative_rewards_per_share
+                ];
+
                 PoolRewardSlot::Occupied(Box::new(PoolReward {
                     id: pool_reward_id,
                     vault,
@@ -493,6 +499,21 @@ impl Pack for PoolRewardManager {
         }
 
         Ok(pool_reward_manager)
+    }
+}
+
+impl PoolRewardSlot {
+    /// If we know for sure that data hasn't changed then we can just skip packing.
+    fn should_be_packed(&self) -> bool {
+        let for_sure_has_not_changed = matches!(
+            self,
+            Self::Vacant {
+                has_been_vacated_in_this_tx: false,
+                ..
+            }
+        );
+
+        !for_sure_has_not_changed
     }
 }
 
@@ -633,7 +654,7 @@ mod tests {
     use rand::Rng;
 
     fn pool_reward_manager_strategy() -> impl Strategy<Value = PoolRewardManager> {
-        (0..100u32).prop_perturb(|_, mut rng| PoolRewardManager::new_rand(&mut rng))
+        (0..1u32).prop_perturb(|_, mut rng| PoolRewardManager::new_rand(&mut rng))
     }
 
     fn user_reward_manager_strategy() -> impl Strategy<Value = UserRewardManager> {
@@ -646,7 +667,13 @@ mod tests {
             let mut packed = vec![0u8; PoolRewardManager::LEN];
             Pack::pack_into_slice(&pool_reward_manager, &mut packed);
             let unpacked = PoolRewardManager::unpack_from_slice(&packed).unwrap();
-            prop_assert_eq!(pool_reward_manager, unpacked);
+
+            prop_assert_eq!(pool_reward_manager.last_update_time_secs, unpacked.last_update_time_secs);
+            prop_assert_eq!(pool_reward_manager.total_shares, unpacked.total_shares);
+
+            for (og, unpacked) in pool_reward_manager.pool_rewards.iter().zip(unpacked.pool_rewards.iter()) {
+                prop_assert_eq!(og, unpacked);
+            }
         }
 
         #[test]
@@ -656,6 +683,27 @@ mod tests {
             let unpacked = UserRewardManager::unpack_from_slice(&packed).unwrap();
             prop_assert_eq!(user_reward_manager, unpacked);
         }
+    }
+
+    #[test]
+    fn it_packs_id_if_vacated_in_this_tx() {
+        let mut m = PoolRewardManager::default();
+        m.pool_rewards[0] = PoolRewardSlot::Vacant {
+            last_pool_reward_id: PoolRewardId(69),
+            has_been_vacated_in_this_tx: true,
+        };
+
+        let mut packed = vec![0u8; PoolRewardManager::LEN];
+        m.pack_into_slice(&mut packed);
+        let unpacked = PoolRewardManager::unpack_from_slice(&packed).unwrap();
+
+        assert_eq!(
+            unpacked.pool_rewards[0],
+            PoolRewardSlot::Vacant {
+                last_pool_reward_id: PoolRewardId(69),
+                has_been_vacated_in_this_tx: false,
+            }
+        );
     }
 
     #[test]
@@ -669,7 +717,8 @@ mod tests {
             matches!(
                 pool_reward,
                 PoolRewardSlot::Vacant {
-                    last_pool_reward_id: PoolRewardId(0)
+                    last_pool_reward_id: PoolRewardId(0),
+                    has_been_vacated_in_this_tx: false,
                 }
             )
         });
@@ -726,7 +775,8 @@ mod tests {
 
                     if is_vacant {
                         PoolRewardSlot::Vacant {
-                            last_pool_reward_id: PoolRewardId(rng.gen()),
+                            last_pool_reward_id: Default::default(),
+                            has_been_vacated_in_this_tx: false,
                         }
                     } else {
                         PoolRewardSlot::Occupied(Box::new(PoolReward {
