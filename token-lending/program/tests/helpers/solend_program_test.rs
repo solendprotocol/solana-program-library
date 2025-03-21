@@ -59,6 +59,25 @@ use std::{
 use super::mock_pyth::{init, set_price};
 use super::mock_pyth_pull::{init as init_pull, set_price as set_price_pull};
 
+mod cu_budgets {
+    pub(super) const INIT_OBLIGATION: u32 = 5_001;
+    pub(super) const DEPOSIT_OBLIGATION_COLLATERAL: u32 = 70_002;
+    pub(super) const REFRESH_RESERVE: u32 = 2_000_003;
+    pub(super) const REFRESH_OBLIGATION: u32 = 1_000_004;
+    pub(super) const BORROW_OBLIGATION_LIQUIDITY: u32 = 140_005;
+    pub(super) const REPAY_OBLIGATION_LIQUIDITY: u32 = 70_006;
+    pub(super) const REDEEM_FEES: u32 = 80_007;
+    pub(super) const LIQUIDATE_OBLIGATION_AND_REDEEM_RESERVE_COLLATERAL: u32 = 200_008;
+    pub(super) const WITHDRAW_OBLIGATION_COLLATERAL_AND_REDEEM_RESERVE_COLLATERAL: u32 = 200_009;
+    pub(super) const WITHDRAW_OBLIGATION_COLLATERAL: u32 = 100_010;
+    pub(super) const INIT_RESERVE: u32 = 90_011;
+    pub(super) const DEPOSIT: u32 = 70_012;
+    pub(super) const DONATE_TO_RESERVE: u32 = 50_013;
+    pub(super) const UPDATE_RESERVE_CONFIG: u32 = 25_014;
+    pub(super) const DEPOSIT_RESERVE_LIQUIDITY_AND_OBLIGATION_COLLATERAL: u32 = 130_015;
+    pub(super) const REDEEM: u32 = 130_016;
+}
+
 pub struct SolendProgramTest {
     pub context: ProgramTestContext,
     rent: Rent,
@@ -673,7 +692,7 @@ impl SolendProgramTest {
         let res = self
             .process_transaction(
                 &[
-                    ComputeBudgetInstruction::set_compute_unit_limit(100_011),
+                    ComputeBudgetInstruction::set_compute_unit_limit(cu_budgets::INIT_RESERVE),
                     init_reserve(
                         solend_program::id(),
                         liquidity_amount,
@@ -859,7 +878,7 @@ impl Info<LendingMarket> {
         liquidity_amount: u64,
     ) -> Result<(), BanksClientError> {
         let instructions = [
-            ComputeBudgetInstruction::set_compute_unit_limit(100_012),
+            ComputeBudgetInstruction::set_compute_unit_limit(cu_budgets::DEPOSIT),
             deposit_reserve_liquidity(
                 solend_program::id(),
                 liquidity_amount,
@@ -887,7 +906,7 @@ impl Info<LendingMarket> {
         liquidity_amount: u64,
     ) -> Result<(), BanksClientError> {
         let instructions = [
-            ComputeBudgetInstruction::set_compute_unit_limit(100_013),
+            ComputeBudgetInstruction::set_compute_unit_limit(cu_budgets::DONATE_TO_RESERVE),
             donate_to_reserve(
                 solend_program::id(),
                 liquidity_amount,
@@ -921,7 +940,7 @@ impl Info<LendingMarket> {
         let oracle = oracle.unwrap_or(&default_oracle);
 
         let instructions = [
-            ComputeBudgetInstruction::set_compute_unit_limit(30_014),
+            ComputeBudgetInstruction::set_compute_unit_limit(cu_budgets::UPDATE_RESERVE_CONFIG),
             update_reserve_config(
                 solend_program::id(),
                 config,
@@ -948,7 +967,9 @@ impl Info<LendingMarket> {
         liquidity_amount: u64,
     ) -> Result<(), BanksClientError> {
         let instructions = [
-            ComputeBudgetInstruction::set_compute_unit_limit(150_015),
+            ComputeBudgetInstruction::set_compute_unit_limit(
+                cu_budgets::DEPOSIT_RESERVE_LIQUIDITY_AND_OBLIGATION_COLLATERAL,
+            ),
             deposit_reserve_liquidity_and_obligation_collateral(
                 solend_program::id(),
                 liquidity_amount,
@@ -981,7 +1002,7 @@ impl Info<LendingMarket> {
         collateral_amount: u64,
     ) -> Result<(), BanksClientError> {
         let instructions = [
-            ComputeBudgetInstruction::set_compute_unit_limit(150_016),
+            ComputeBudgetInstruction::set_compute_unit_limit(cu_budgets::REDEEM),
             refresh_reserve(
                 solend_program::id(),
                 reserve.pubkey,
@@ -1015,7 +1036,7 @@ impl Info<LendingMarket> {
         user: &User,
     ) -> Result<Info<Obligation>, BanksClientError> {
         let instructions = [
-            ComputeBudgetInstruction::set_compute_unit_limit(10_001),
+            ComputeBudgetInstruction::set_compute_unit_limit(cu_budgets::INIT_OBLIGATION),
             system_instruction::create_account(
                 &test.context.payer.pubkey(),
                 &obligation_keypair.pubkey(),
@@ -1049,7 +1070,9 @@ impl Info<LendingMarket> {
         collateral_amount: u64,
     ) -> Result<(), BanksClientError> {
         let instructions = [
-            ComputeBudgetInstruction::set_compute_unit_limit(150_002),
+            ComputeBudgetInstruction::set_compute_unit_limit(
+                cu_budgets::DEPOSIT_OBLIGATION_COLLATERAL,
+            ),
             deposit_obligation_collateral(
                 solend_program::id(),
                 collateral_amount,
@@ -1075,7 +1098,7 @@ impl Info<LendingMarket> {
     ) -> Result<(), BanksClientError> {
         test.process_transaction(
             &[
-                ComputeBudgetInstruction::set_compute_unit_limit(2_000_003),
+                ComputeBudgetInstruction::set_compute_unit_limit(cu_budgets::REFRESH_RESERVE),
                 refresh_reserve(
                     solend_program::id(),
                     reserve.pubkey,
@@ -1174,7 +1197,9 @@ impl Info<LendingMarket> {
             Err(e) => return Err(e),
         };
 
-        let mut instructions = vec![ComputeBudgetInstruction::set_compute_unit_limit(1_000_004)];
+        let mut instructions = vec![ComputeBudgetInstruction::set_compute_unit_limit(
+            cu_budgets::REFRESH_OBLIGATION,
+        )];
         instructions.push(refresh_reserve_instructions.last().unwrap().clone());
 
         test.process_transaction(&instructions, None).await
@@ -1196,7 +1221,9 @@ impl Info<LendingMarket> {
             .await;
         test.process_transaction(&refresh_ixs, None).await.unwrap();
 
-        let mut instructions = vec![ComputeBudgetInstruction::set_compute_unit_limit(140_005)];
+        let mut instructions = vec![ComputeBudgetInstruction::set_compute_unit_limit(
+            cu_budgets::BORROW_OBLIGATION_LIQUIDITY,
+        )];
         instructions.push(borrow_obligation_liquidity(
             solend_program::id(),
             liquidity_amount,
@@ -1230,7 +1257,9 @@ impl Info<LendingMarket> {
         liquidity_amount: u64,
     ) -> Result<(), BanksClientError> {
         let instructions = [
-            ComputeBudgetInstruction::set_compute_unit_limit(80_006),
+            ComputeBudgetInstruction::set_compute_unit_limit(
+                cu_budgets::REPAY_OBLIGATION_LIQUIDITY,
+            ),
             repay_obligation_liquidity(
                 solend_program::id(),
                 liquidity_amount,
@@ -1254,7 +1283,7 @@ impl Info<LendingMarket> {
         reserve: &Info<Reserve>,
     ) -> Result<(), BanksClientError> {
         let instructions = [
-            ComputeBudgetInstruction::set_compute_unit_limit(100_007),
+            ComputeBudgetInstruction::set_compute_unit_limit(cu_budgets::REDEEM_FEES),
             refresh_reserve(
                 solend_program::id(),
                 reserve.pubkey,
@@ -1290,7 +1319,9 @@ impl Info<LendingMarket> {
 
         test.process_transaction(
             &[
-                ComputeBudgetInstruction::set_compute_unit_limit(280_008),
+                ComputeBudgetInstruction::set_compute_unit_limit(
+                    cu_budgets::LIQUIDATE_OBLIGATION_AND_REDEEM_RESERVE_COLLATERAL,
+                ),
                 liquidate_obligation_and_redeem_reserve_collateral(
                     solend_program::id(),
                     liquidity_amount,
@@ -1367,7 +1398,9 @@ impl Info<LendingMarket> {
 
         test.process_transaction(
             &[
-                ComputeBudgetInstruction::set_compute_unit_limit(250_009),
+                ComputeBudgetInstruction::set_compute_unit_limit(
+                    cu_budgets::WITHDRAW_OBLIGATION_COLLATERAL_AND_REDEEM_RESERVE_COLLATERAL,
+                ),
                 withdraw_obligation_collateral_and_redeem_reserve_collateral(
                     solend_program::id(),
                     collateral_amount,
@@ -1411,7 +1444,9 @@ impl Info<LendingMarket> {
 
         test.process_transaction(
             &[
-                ComputeBudgetInstruction::set_compute_unit_limit(120_010),
+                ComputeBudgetInstruction::set_compute_unit_limit(
+                    cu_budgets::WITHDRAW_OBLIGATION_COLLATERAL,
+                ),
                 withdraw_obligation_collateral(
                     solend_program::id(),
                     collateral_amount,
