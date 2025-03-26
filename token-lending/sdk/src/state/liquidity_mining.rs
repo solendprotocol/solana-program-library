@@ -1,17 +1,18 @@
+use super::pack_decimal;
 use crate::{
     error::LendingError,
     math::{Decimal, TryAdd, TryDiv, TryMul, TrySub},
     state::unpack_decimal,
 };
 use arrayref::{array_mut_ref, array_ref, array_refs, mut_array_refs};
+use solana_program::msg;
 use solana_program::program_pack::{Pack, Sealed};
 use solana_program::{
     clock::Clock,
     program_error::ProgramError,
     pubkey::{Pubkey, PUBKEY_BYTES},
 };
-
-use super::pack_decimal;
+use std::convert::TryFrom;
 
 /// Determines the size of [PoolRewardManager]
 pub const MAX_REWARDS: usize = 50;
@@ -74,6 +75,7 @@ pub enum PoolRewardSlot {
 /// Tracks rewards in a specific mint over some period of time.
 ///
 /// # Reward cancellation
+///
 /// In Suilend we also store the amount of rewards that have been made available
 /// to users already.
 /// We keep adding `(total_rewards * time_passed) / (total_time)` every
@@ -92,6 +94,10 @@ pub struct PoolReward {
     /// Monotonically increasing time taken from clock sysvar.
     pub start_time_secs: u64,
     /// For how long (since start time) will this reward be releasing tokens.
+    ///
+    /// # Reward cancellation
+    ///
+    /// Is cut short if the reward is cancelled.
     pub duration_secs: u32,
     /// Total token amount to distribute.
     /// The token account that holds the rewards holds at least this much in
@@ -169,6 +175,77 @@ pub struct UserReward {
 }
 
 impl PoolRewardManager {
+    /// Returns all rewards that use the given vault.
+    pub fn find_rewards_with_vault(
+        &self,
+        vault: Pubkey,
+    ) -> impl Iterator<Item = (usize, &Box<PoolReward>)> {
+        self.pool_rewards
+            .iter()
+            .enumerate()
+            .filter_map(move |(index, slot)| match slot {
+                PoolRewardSlot::Occupied(pool_reward) if pool_reward.vault == vault => {
+                    Some((index, pool_reward))
+                }
+                _ => None,
+            })
+    }
+
+    /// Sets the duration of the pool reward to now.
+    /// Returns the amount of unallocated rewards and the vault they are in.
+    pub fn cancel_pool_reward(
+        &mut self,
+        pool_reward_index: usize,
+        clock: &Clock,
+    ) -> Result<(Pubkey, u64), ProgramError> {
+        self.update(clock)?;
+
+        let Some(PoolRewardSlot::Occupied(pool_reward)) =
+            self.pool_rewards.get_mut(pool_reward_index)
+        else {
+            msg!("Cannot cancel a non-existent pool reward");
+            return Err(ProgramError::InvalidArgument);
+        };
+
+        if pool_reward.has_ended(clock) {
+            msg!("Cannot cancel a pool reward that has already ended");
+            return Err(LendingError::InvalidAccountInput.into());
+        }
+
+        let since_start_secs = clock.unix_timestamp as u64 - pool_reward.start_time_secs;
+        let unlocked_rewards = Decimal::from(pool_reward.total_rewards)
+            .try_mul(Decimal::from(since_start_secs))?
+            .try_div(Decimal::from(pool_reward.duration_secs as u64))?
+            .try_floor_u64()?;
+
+        pool_reward.duration_secs =
+            u32::try_from(since_start_secs).expect("New duration to be strictly shorter");
+
+        Ok((pool_reward.vault, unlocked_rewards))
+    }
+
+    /// Closes a pool reward if it has been cancelled before.
+    pub fn close_pool_reward(&mut self, pool_reward_index: usize) -> Result<(), ProgramError> {
+        let Some(PoolRewardSlot::Occupied(pool_reward)) =
+            self.pool_rewards.get_mut(pool_reward_index)
+        else {
+            msg!("Cannot close a non-existent pool reward");
+            return Err(ProgramError::InvalidArgument);
+        };
+
+        if pool_reward.num_user_reward_managers > 0 {
+            msg!("Cannot close a pool reward with active user reward managers");
+            return Err(LendingError::InvalidAccountInput.into());
+        }
+
+        self.pool_rewards[pool_reward_index] = PoolRewardSlot::Vacant {
+            last_pool_reward_id: pool_reward.id,
+            has_been_vacated_in_this_tx: true,
+        };
+
+        Ok(())
+    }
+
     /// Should be updated before any interaction with rewards.
     fn update(&mut self, clock: &Clock) -> Result<(), ProgramError> {
         let curr_unix_timestamp_secs = clock.unix_timestamp as u64;
@@ -219,19 +296,69 @@ impl PoolRewardManager {
     }
 }
 
-enum CreatingNewUserRewardManager {
+/// When creating a new [UserRewardManager] we need to know whether we should
+/// populate it with rewards or not.
+pub enum CreatingNewUserRewardManager {
     /// If we are creating a [UserRewardManager] then we want to populate it.
     Yes,
+    /// If we are updating an existing [UserRewardManager] then we don't want
+    /// to populate it.
     No,
 }
 
 impl UserRewardManager {
+    /// Claims all rewards that the user has earned.
+    /// Returns how many tokens should be transferred to the user.
+    pub fn claim_rewards(
+        &mut self,
+        pool_reward_manager: &mut PoolRewardManager,
+        vault: Pubkey,
+        clock: &Clock,
+    ) -> Result<u64, ProgramError> {
+        let mut total_reward_amount = 0;
+        let mut should_update_managers = false;
+        for user_reward in &mut self.rewards {
+            let Some(PoolRewardSlot::Occupied(pool_reward)) = pool_reward_manager
+                .pool_rewards
+                .get(user_reward.pool_reward_index)
+            else {
+                unreachable!("User reward points to a non-existent pool reward");
+            };
+
+            if pool_reward.vault != vault {
+                // not the pool reward we are looking for
+                continue;
+            }
+
+            if user_reward.pool_reward_id != pool_reward.id {
+                unreachable!("User reward points to an outdated pool reward");
+            }
+
+            total_reward_amount += user_reward.withdraw_earned_rewards()?;
+
+            if pool_reward.has_ended(clock) {
+                // if pool reward has ended then it will be removed from the user
+                // reward manager in the next update call
+                should_update_managers = true;
+            }
+        }
+
+        if should_update_managers {
+            // Only do this is we know something will change.
+            // We could also complicate matters by doing updates in place when
+            // needed to save on CU if necessary.
+            self.update(pool_reward_manager, clock, CreatingNewUserRewardManager::No)?;
+        }
+
+        Ok(total_reward_amount)
+    }
+
     /// Should be updated before any interaction with rewards.
     ///
     /// # Assumption
     /// Invoker has checked that this [PoolRewardManager] matches the
     /// [UserRewardManager].
-    fn update(
+    pub fn update(
         &mut self,
         pool_reward_manager: &mut PoolRewardManager,
         clock: &Clock,
@@ -257,23 +384,23 @@ impl UserRewardManager {
                 continue;
             };
 
-            let end_time_secs = pool_reward.start_time_secs + pool_reward.duration_secs as u64;
-            let has_ended = self.last_update_time_secs > end_time_secs;
-
             let maybe_user_reward = self
                 .rewards
                 .iter_mut()
                 .enumerate()
                 .find(|(_, r)| r.pool_reward_index == pool_reward_index);
 
+            let end_time_secs = pool_reward.start_time_secs + pool_reward.duration_secs as u64;
+            let has_ended = self.last_update_time_secs > end_time_secs;
+
             match maybe_user_reward {
                 Some((user_reward_index, user_reward))
-                    if has_ended && user_reward.earned_rewards == Decimal::zero() =>
+                    if has_ended && user_reward.earned_rewards.try_floor_u64()? == 0 =>
                 {
                     // Reward period ended and there's nothing to crank.
                     // We can clean up this user reward.
                     // We're fine with swap remove bcs `user_reward_index` is meaningless.
-                    // SAFETY: We got the index from enumeration, so must exist/
+                    // SAFETY: We got the index from enumeration, so must exist.
                     self.rewards.swap_remove(user_reward_index);
                     pool_reward.num_user_reward_managers -= 1;
                 }
@@ -338,6 +465,12 @@ impl PoolReward {
     /// - `num_user_reward_managers``
     /// - `cumulative_rewards_per_share``
     const TAIL_LEN: usize = 8 + 4 + 8 + 8 + 16;
+
+    /// Returns whether the reward has ended.
+    pub fn has_ended(&self, clock: &Clock) -> bool {
+        let end_time_secs = self.start_time_secs + self.duration_secs as u64;
+        clock.unix_timestamp as u64 > end_time_secs
+    }
 }
 
 impl PoolRewardId {
@@ -523,6 +656,20 @@ impl UserReward {
     /// - packed [Decimal]
     /// - packed [Decimal]
     pub const LEN: usize = 1 + PoolRewardId::LEN + 16 + 16;
+
+    /// Removes all earned rewards from [Self] and returns them.
+    ///
+    /// # Note
+    /// Decimals are truncated to u64, dust is kept.
+    fn withdraw_earned_rewards(&mut self) -> Result<u64, ProgramError> {
+        let reward_amount = self.earned_rewards.try_floor_u64()?;
+
+        if reward_amount > 0 {
+            self.earned_rewards = self.earned_rewards.try_sub(reward_amount.into())?;
+        }
+
+        Ok(reward_amount)
+    }
 }
 
 impl UserRewardManager {

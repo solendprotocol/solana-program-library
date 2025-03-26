@@ -568,23 +568,13 @@ pub enum LendingInstruction {
     /// * Can only be called if all users claimed rewards.
     ///
     ///    `[writable]` Reserve account.
-    ///    `[]` Reward mint.
-    ///    `[writable]` Reward token account owned by signer
-    ///    `[]` Derived reserve pool reward authority. Seed:
-    ///         * b"RewardVaultAuthority"
-    ///         * Lending market account pubkey
-    ///         * Reserve account pubkey
-    ///         * Reward mint pubkey
-    ///    `[writable]` Reward vault token account.
     ///    `[]` Lending market account.
     ///    `[signer]` Lending market owner.
-    ///    `[]` Rent sysvar.
-    ///    `[]` Token program.
     ClosePoolReward {
         /// Whether this reward applies to deposits or borrows
         position_kind: PositionKind,
         /// Identifies a reward within a reserve's deposits/borrows rewards.
-        pool_reward_index: u64,
+        pool_reward_index: usize,
     },
 
     // 27
@@ -605,14 +595,31 @@ pub enum LendingInstruction {
     ///    `[writable]` Reward vault token account.
     ///    `[]` Lending market account.
     ///    `[signer]` Lending market owner.
-    ///    `[]` Rent sysvar.
     ///    `[]` Token program.
     CancelPoolReward {
         /// Whether this reward applies to deposits or borrows
         position_kind: PositionKind,
         /// Identifies a reward within a reserve's deposits/borrows rewards.
-        pool_reward_index: u64,
+        pool_reward_index: usize,
     },
+
+    /// 28
+    /// ClaimReward
+    ///
+    /// * User can claim rewards from their obligation.
+    ///
+    ///   `[writable]` Obligation account.
+    ///   `[writable]` User reward receiving token account.
+    ///   `[writable]` Reserve account.
+    ///   `[]` Derived reserve pool reward authority. Seed:
+    ///        * b"RewardVaultAuthority"
+    ///        * Lending market account pubkey
+    ///        * Reserve account pubkey
+    ///        * Reward mint pubkey
+    ///   `[writable]` Reward vault token account.
+    ///   `[]` Lending market account.
+    ///   `[]` Token program.
+    ClaimReward,
 
     // 255
     /// UpgradeReserveToV2_1_0
@@ -900,7 +907,7 @@ impl LendingInstruction {
                 let (pool_reward_index, _rest) = Self::unpack_u64(rest)?;
                 Self::ClosePoolReward {
                     position_kind,
-                    pool_reward_index,
+                    pool_reward_index: pool_reward_index as _,
                 }
             }
             27 => {
@@ -908,9 +915,10 @@ impl LendingInstruction {
                 let (pool_reward_index, _rest) = Self::unpack_u64(rest)?;
                 Self::CancelPoolReward {
                     position_kind,
-                    pool_reward_index,
+                    pool_reward_index: pool_reward_index as _,
                 }
             }
+            28 => Self::ClaimReward,
             255 => Self::UpgradeReserveToV2_1_0,
             _ => {
                 msg!("Instruction cannot be unpacked");
@@ -1247,6 +1255,9 @@ impl LendingInstruction {
                 buf.push(27);
                 buf.extend_from_slice(&(position_kind as u8).to_le_bytes());
                 buf.extend_from_slice(&pool_reward_index.to_le_bytes());
+            }
+            Self::ClaimReward => {
+                buf.push(28);
             }
             Self::UpgradeReserveToV2_1_0 => {
                 buf.push(255);

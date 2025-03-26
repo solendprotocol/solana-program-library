@@ -313,6 +313,38 @@ impl Obligation {
             .iter()
             .position(|liquidity| liquidity.borrow_reserve == borrow_reserve)
     }
+
+    /// Find whether the reserve is a deposit or borrow
+    pub fn find_position_kind(&self, reserve: Pubkey) -> Result<PositionKind, ProgramError> {
+        if self
+            .deposits
+            .iter()
+            .any(|collateral| collateral.deposit_reserve == reserve)
+        {
+            return Ok(PositionKind::Deposit);
+        }
+
+        if self
+            .borrows
+            .iter()
+            .any(|liquidity| liquidity.borrow_reserve == reserve)
+        {
+            return Ok(PositionKind::Borrow);
+        }
+
+        msg!("Reserve not found in obligation");
+        Err(LendingError::InvalidAccountInput.into())
+    }
+
+    /// Returns [UserRewardManager] for the given reserve
+    pub fn find_user_reward_manager_mut(
+        &mut self,
+        reserve: Pubkey,
+    ) -> Option<&mut UserRewardManager> {
+        self.user_reward_managers
+            .iter_mut()
+            .find(|user_reward_manager| user_reward_manager.reserve == reserve)
+    }
 }
 
 /// Initialize an obligation
