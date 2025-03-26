@@ -609,8 +609,9 @@ pub enum LendingInstruction {
     /// * User can claim rewards from their obligation.
     ///
     ///   `[writable]` Obligation account.
-    ///   `[writable]` User reward receiving token account.
+    ///   `[writable]` Obligation owner reward receiving token account.
     ///   `[writable]` Reserve account.
+    ///   `[]` Reward mint.
     ///   `[]` Derived reserve pool reward authority. Seed:
     ///        * b"RewardVaultAuthority"
     ///        * Lending market account pubkey

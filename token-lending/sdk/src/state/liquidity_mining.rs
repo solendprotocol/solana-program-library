@@ -217,11 +217,12 @@ impl PoolRewardManager {
             .try_mul(Decimal::from(since_start_secs))?
             .try_div(Decimal::from(pool_reward.duration_secs as u64))?
             .try_floor_u64()?;
+        let remaining_rewards = pool_reward.total_rewards - unlocked_rewards;
 
         pool_reward.duration_secs =
             u32::try_from(since_start_secs).expect("New duration to be strictly shorter");
 
-        Ok((pool_reward.vault, unlocked_rewards))
+        Ok((pool_reward.vault, remaining_rewards))
     }
 
     /// Closes a pool reward if it has been cancelled before.

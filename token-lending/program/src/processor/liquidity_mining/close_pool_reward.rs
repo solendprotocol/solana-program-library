@@ -58,6 +58,7 @@ pub(crate) fn process(
     pool_reward_manager.close_pool_reward(pool_reward_index)?;
 
     // 2.
+
     Reserve::pack(
         *accounts.reserve,
         &mut accounts.reserve_info.data.borrow_mut(),

@@ -13,6 +13,7 @@ use solana_program::{
 use solend_sdk::state::discriminator::AccountDiscriminator;
 use solend_sdk::state::RESERVE_LEN_V2_0_2;
 use solend_sdk::{error::LendingError, state::Reserve};
+
 struct UpgradeReserveAccounts<'a, 'info> {
     /// Reserve sized as v2.0.2.
     ///
@@ -45,9 +46,7 @@ struct UpgradeReserveAccounts<'a, 'info> {
 pub(crate) fn process(program_id: &Pubkey, accounts: &[AccountInfo]) -> ProgramResult {
     let accounts = UpgradeReserveAccounts::from_unchecked_iter(program_id, &mut accounts.iter())?;
 
-    //
     // 1.
-    //
 
     let current_rent = accounts.reserve_info.lamports();
     let new_rent = Rent::get()?.minimum_balance(Reserve::LEN);
@@ -70,9 +69,7 @@ pub(crate) fn process(program_id: &Pubkey, accounts: &[AccountInfo]) -> ProgramR
         )?;
     }
 
-    //
     // 2.
-    //
 
     // From the [AccountInfo::realloc] docs:
     //
@@ -84,9 +81,7 @@ pub(crate) fn process(program_id: &Pubkey, accounts: &[AccountInfo]) -> ProgramR
     let zero_init = false;
     accounts.reserve_info.realloc(Reserve::LEN, zero_init)?;
 
-    //
     // 3.
-    //
 
     // we upgrade discriminator as we've checked that the account is indeed
     // a reserve account in [UpgradeReserveAccounts::from_unchecked_iter]
