@@ -180,6 +180,7 @@ impl Pack for LendingMarket {
                 msg!("Lending market discriminator does not match");
                 return Err(LendingError::InvalidAccountDiscriminator.into());
             }
+            #[allow(clippy::assertions_on_constants)]
             Err(LendingError::AccountNotMigrated) => {
                 // We're migrating the account from v2.0.2 to v2.1.0.
                 // The reason this is safe to do is conveyed in these asserts:

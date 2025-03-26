@@ -501,7 +501,7 @@ impl Obligation {
     /// Unpacks from slice but returns an error if the account is already
     /// initialized.
     pub fn unpack_uninitialized(input: &[u8]) -> Result<Self, ProgramError> {
-        let account = Self::unpack_unchecked(&input)?;
+        let account = Self::unpack_unchecked(input)?;
         if account.is_initialized() {
             Err(LendingError::AlreadyInitialized.into())
         } else {

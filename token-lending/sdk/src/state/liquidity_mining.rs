@@ -585,6 +585,7 @@ impl Pack for PoolRewardManager {
             let offset = 8 + 8 + index * PoolReward::LEN;
             let raw_pool_reward_head = array_ref![input, offset, PoolReward::HEAD_LEN];
 
+            #[allow(clippy::ptr_offset_with_cast)]
             let (src_id, src_vault) =
                 array_refs![raw_pool_reward_head, PoolRewardId::LEN, PUBKEY_BYTES];
 
@@ -747,8 +748,10 @@ impl UserRewardManager {
     }
 
     pub(crate) fn unpack_from_slice(input: &[u8]) -> Result<Self, ProgramError> {
+        #[allow(clippy::ptr_offset_with_cast)]
         let raw_user_reward_manager_head = array_ref![input, 0, UserRewardManager::HEAD_LEN];
 
+        #[allow(clippy::ptr_offset_with_cast)]
         let (src_reserve, src_share, src_last_update_time_secs, src_user_rewards_len) = array_refs![
             raw_user_reward_manager_head,
             PUBKEY_BYTES,
@@ -767,6 +770,7 @@ impl UserRewardManager {
             let offset = Self::HEAD_LEN + index * UserReward::LEN;
             let raw_user_reward = array_ref![input, offset, UserReward::LEN];
 
+            #[allow(clippy::ptr_offset_with_cast)]
             let (
                 src_pool_reward_index,
                 src_pool_reward_id,
