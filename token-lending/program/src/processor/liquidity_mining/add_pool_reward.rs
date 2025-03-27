@@ -17,26 +17,12 @@ use solana_program::{
     rent::Rent,
     sysvar::Sysvar,
 };
-use solend_sdk::state::MIN_REWARD_PERIOD_SECS;
 use solend_sdk::{
     error::LendingError,
     state::{PositionKind, Reserve},
 };
-use std::convert::TryInto;
 
 use super::{check_and_unpack_pool_reward_accounts_for_admin_ixs, unpack_token_account};
-
-/// Use [Self::new] to validate the parameters.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-struct AddPoolRewardParams {
-    position_kind: PositionKind,
-    /// At least the current timestamp.
-    start_time_secs: u64,
-    /// Larger than [MIN_REWARD_PERIOD_SECS].
-    duration_secs: u32,
-    /// Larger than zero.
-    reward_token_amount: u64,
-}
 
 /// Use [Self::from_unchecked_iter] to validate the accounts except for
 /// * `reward_token_vault_info`
@@ -51,7 +37,7 @@ struct AddPoolRewardAccounts<'a, 'info> {
     reward_mint_info: &'a AccountInfo<'info>,
     /// ✅ belongs to the token program
     /// ✅ owned by `lending_market_owner_info`
-    /// ✅ has enough tokens
+    /// ❓ we don't know yet whether it has enough tokens
     /// ✅ matches `reward_mint_info`
     /// ✅ is writable
     reward_token_source_info: &'a AccountInfo<'info>,
@@ -67,6 +53,7 @@ struct AddPoolRewardAccounts<'a, 'info> {
     _lending_market_info: &'a AccountInfo<'info>,
     /// ✅ is a signer
     /// ✅ matches `lending_market_info`
+    ///
     /// TBD: do we want to create another signer authority to be able to
     /// delegate reward management to a softer multisig?
     lending_market_owner_info: &'a AccountInfo<'info>,
@@ -93,15 +80,10 @@ pub(crate) fn process(
     reward_token_amount: u64,
     accounts: &[AccountInfo],
 ) -> ProgramResult {
-    let params = AddPoolRewardParams::new(
-        position_kind,
-        start_time_secs,
-        end_time_secs,
-        reward_token_amount,
-    )?;
+    let clock = &Clock::get()?;
 
-    let accounts =
-        AddPoolRewardAccounts::from_unchecked_iter(program_id, &params, &mut accounts.iter())?;
+    let mut accounts =
+        AddPoolRewardAccounts::from_unchecked_iter(program_id, &mut accounts.iter())?;
 
     // 1.
 
@@ -118,7 +100,7 @@ pub(crate) fn process(
     spl_token_transfer(TokenTransferParams {
         source: accounts.reward_token_source_info.clone(),
         destination: accounts.reward_token_vault_info.clone(),
-        amount: params.reward_token_amount,
+        amount: reward_token_amount,
         authority: accounts.lending_market_owner_info.clone(),
         authority_signer_seeds: &[],
         token_program: accounts.token_program_info.clone(),
@@ -126,7 +108,16 @@ pub(crate) fn process(
 
     // 2.
 
-    // TODO: accounts.reserve.add_pool_reward(..)
+    accounts
+        .reserve
+        .pool_reward_manager_mut(position_kind)
+        .add_pool_reward(
+            *accounts.reward_token_vault_info.key,
+            start_time_secs,
+            end_time_secs,
+            reward_token_amount,
+            clock,
+        )?;
 
     // 3.
 
@@ -138,53 +129,9 @@ pub(crate) fn process(
     Ok(())
 }
 
-impl AddPoolRewardParams {
-    fn new(
-        position_kind: PositionKind,
-        start_time_secs: u64,
-        end_time_secs: u64,
-        reward_token_amount: u64,
-    ) -> Result<Self, ProgramError> {
-        let clock = &Clock::get()?;
-
-        let start_time_secs = start_time_secs.max(clock.unix_timestamp as u64);
-
-        if start_time_secs <= end_time_secs {
-            msg!("Pool reward must end after it starts");
-            return Err(LendingError::MathOverflow.into());
-        }
-
-        let duration_secs: u32 = {
-            // SAFETY: just checked that start time is strictly smaller
-            let d = end_time_secs - start_time_secs;
-            d.try_into().map_err(|_| {
-                msg!("Pool reward duration is too long");
-                LendingError::MathOverflow
-            })?
-        };
-        if MIN_REWARD_PERIOD_SECS > duration_secs as u64 {
-            msg!("Pool reward duration must be at least {MIN_REWARD_PERIOD_SECS} secs");
-            return Err(LendingError::PoolRewardPeriodTooShort.into());
-        }
-
-        if reward_token_amount == 0 {
-            msg!("Pool reward amount must be greater than zero");
-            return Err(LendingError::InvalidAmount.into());
-        }
-
-        Ok(Self {
-            position_kind,
-            start_time_secs,
-            duration_secs,
-            reward_token_amount,
-        })
-    }
-}
-
 impl<'a, 'info> AddPoolRewardAccounts<'a, 'info> {
     fn from_unchecked_iter(
         program_id: &Pubkey,
-        params: &AddPoolRewardParams,
         iter: &mut impl Iterator<Item = &'a AccountInfo<'info>>,
     ) -> Result<AddPoolRewardAccounts<'a, 'info>, ProgramError> {
         let reserve_info = next_account_info(iter)?;
@@ -214,10 +161,6 @@ impl<'a, 'info> AddPoolRewardAccounts<'a, 'info> {
         let reward_token_source = unpack_token_account(&reward_token_source_info.data.borrow())?;
         if reward_token_source.owner != *lending_market_owner_info.key {
             msg!("Reward token source owner does not match the lending market owner provided");
-            return Err(LendingError::InvalidAccountInput.into());
-        }
-        if reward_token_source.amount >= params.reward_token_amount {
-            msg!("Reward token source is empty");
             return Err(LendingError::InvalidAccountInput.into());
         }
         if reward_token_source.mint != *reward_mint_info.key {

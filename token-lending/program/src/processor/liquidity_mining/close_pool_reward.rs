@@ -78,11 +78,10 @@ pub(crate) fn process(
 
     // 1.
 
-    let pool_reward_manager = match position_kind {
-        PositionKind::Borrow => &mut accounts.reserve.borrows_pool_reward_manager,
-        PositionKind::Deposit => &mut accounts.reserve.deposits_pool_reward_manager,
-    };
-    let expected_vault = pool_reward_manager.close_pool_reward(pool_reward_index)?;
+    let expected_vault = accounts
+        .reserve
+        .pool_reward_manager_mut(position_kind)
+        .close_pool_reward(pool_reward_index)?;
     if expected_vault != *accounts.reward_token_vault_info.key {
         msg!("Reward token vault provided does not match the expected vault");
         return Err(LendingError::InvalidAccountInput.into());
