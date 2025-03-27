@@ -223,6 +223,9 @@ pub enum LendingError {
     /// Trying to use an account that hasn't been migrated
     #[error("Trying to use an account that hasn't been migrated")]
     AccountNotMigrated,
+    /// There's no pool reward that matches the given parameters
+    #[error("There's no pool reward that matches the given parameters")]
+    NoPoolRewardMatches,
 }
 
 impl From<LendingError> for ProgramError {

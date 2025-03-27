@@ -211,7 +211,7 @@ pub fn process_instruction(
             token_amount,
         } => {
             msg!("Instruction: Add Pool Reward");
-            liquidity_mining::process_add_pool_reward(
+            liquidity_mining::add_pool_reward::process(
                 program_id,
                 position_kind,
                 start_time_secs,
@@ -225,7 +225,7 @@ pub fn process_instruction(
             pool_reward_index,
         } => {
             msg!("Instruction: Cancel Pool Reward");
-            liquidity_mining::process_cancel_pool_reward(
+            liquidity_mining::cancel_pool_reward::process(
                 program_id,
                 position_kind,
                 pool_reward_index,
@@ -237,18 +237,22 @@ pub fn process_instruction(
             pool_reward_index,
         } => {
             msg!("Instruction: Close Pool Reward");
-            liquidity_mining::process_close_pool_reward(
+            liquidity_mining::close_pool_reward::process(
                 program_id,
                 position_kind,
                 pool_reward_index,
                 accounts,
             )
         }
+        LendingInstruction::ClaimReward => {
+            msg!("Instruction: Claim Reward");
+            liquidity_mining::claim_user_reward::process(program_id, accounts)
+        }
 
         // temporary ix for upgrade
         LendingInstruction::UpgradeReserveToV2_1_0 => {
             msg!("Instruction: Upgrade Reserve to v2.1.0");
-            liquidity_mining::upgrade_reserve(program_id, accounts)
+            liquidity_mining::upgrade_reserve::process(program_id, accounts)
         }
     }
 }

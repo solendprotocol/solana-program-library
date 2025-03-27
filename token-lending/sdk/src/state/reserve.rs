@@ -1698,6 +1698,7 @@ impl Pack for Reserve {
         };
 
         let input_v2_1_0 = array_ref![input, RESERVE_LEN_V2_0_2, PoolRewardManager::LEN * 2];
+        #[allow(clippy::ptr_offset_with_cast)]
         let (input_for_borrows_pool_reward_manager, input_for_deposits_pool_reward_manager) =
             array_refs![input_v2_1_0, PoolRewardManager::LEN, PoolRewardManager::LEN];
 

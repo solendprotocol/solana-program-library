@@ -11,291 +11,27 @@
 //! - [cancel_pool_reward] (TODO: add bpf tests)
 //! - [close_pool_reward] (TODO: add bpf tests)
 //!
+//! There is an ix related to migration:
+//! - [upgrade_reserve] (TODO: add bpf tests)
+//!
+//! There is one user ix:
+//! - [claim_user_reward] (TODO: add bpf tests)
+//!
 //! [suilend-lm]: https://github.com/solendprotocol/suilend/blob/dc53150416f352053ac3acbb320ee143409c4a5d/contracts/suilend/sources/liquidity_mining.move#L2
 
-use crate::processor::{
-    assert_rent_exempt, spl_token_close_account, spl_token_init_account, spl_token_transfer,
-    TokenCloseAccountParams, TokenInitializeAccountParams, TokenTransferParams,
-};
-use add_pool_reward::{AddPoolRewardAccounts, AddPoolRewardParams};
-use cancel_pool_reward::{CancelPoolRewardAccounts, CancelPoolRewardParams};
-use close_pool_reward::{ClosePoolRewardAccounts, ClosePoolRewardParams};
+pub(crate) mod add_pool_reward;
+pub(crate) mod cancel_pool_reward;
+pub(crate) mod claim_user_reward;
+pub(crate) mod close_pool_reward;
+pub(crate) mod upgrade_reserve;
+
 use solana_program::program_pack::Pack;
-use solana_program::{
-    account_info::{next_account_info, AccountInfo},
-    clock::Clock,
-    entrypoint::ProgramResult,
-    msg,
-    program::invoke,
-    program_error::ProgramError,
-    pubkey::Pubkey,
-    rent::Rent,
-    system_instruction,
-    sysvar::Sysvar,
-};
-use solend_sdk::state::discriminator::AccountDiscriminator;
+use solana_program::{account_info::AccountInfo, msg, program_error::ProgramError, pubkey::Pubkey};
 use solend_sdk::{
     error::LendingError,
-    state::{LendingMarket, PositionKind, Reserve},
+    state::{LendingMarket, Reserve},
 };
 use spl_token::state::Account as TokenAccount;
-use std::convert::TryInto;
-use upgrade_reserve::UpgradeReserveAccounts;
-
-/// # Accounts
-///
-/// See [add_pool_reward::AddPoolRewardAccounts::from_unchecked_iter] for a list
-/// of accounts and their constraints.
-///
-/// # Effects
-///
-/// 1. Initializes a new reward vault account and transfers
-///    `reward_token_amount` tokens from the `reward_token_source` account to
-///     the new reward vault account.
-/// 2. Finds an empty slot in the [Reserve]'s LM reward vector and adds it there.
-/// 3. Packs all changes into account buffers.
-pub(crate) fn process_add_pool_reward(
-    program_id: &Pubkey,
-    position_kind: PositionKind,
-    start_time_secs: u64,
-    end_time_secs: u64,
-    reward_token_amount: u64,
-    accounts: &[AccountInfo],
-) -> ProgramResult {
-    let params = AddPoolRewardParams::new(
-        position_kind,
-        start_time_secs,
-        end_time_secs,
-        reward_token_amount,
-    )?;
-
-    let accounts =
-        AddPoolRewardAccounts::from_unchecked_iter(program_id, &params, &mut accounts.iter())?;
-
-    // 1.
-
-    spl_token_init_account(TokenInitializeAccountParams {
-        account: accounts.reward_token_vault_info.clone(),
-        mint: accounts.reward_mint_info.clone(),
-        owner: accounts.reward_authority_info.clone(),
-        rent: accounts.rent_info.clone(),
-        token_program: accounts.token_program_info.clone(),
-    })?;
-    let rent = &Rent::from_account_info(accounts.rent_info)?;
-    assert_rent_exempt(rent, accounts.reward_token_vault_info)?;
-
-    spl_token_transfer(TokenTransferParams {
-        source: accounts.reward_token_source_info.clone(),
-        destination: accounts.reward_token_vault_info.clone(),
-        amount: params.reward_token_amount,
-        authority: accounts.lending_market_owner_info.clone(),
-        authority_signer_seeds: &[],
-        token_program: accounts.token_program_info.clone(),
-    })?;
-
-    // 2.
-
-    todo!("accounts.reserve.add_pool_reward(..)");
-
-    // 3.
-
-    Reserve::pack(
-        *accounts.reserve,
-        &mut accounts.reserve_info.data.borrow_mut(),
-    )?;
-
-    Ok(())
-}
-
-/// # Accounts
-///
-/// See [cancel_pool_reward::CancelPoolRewardAccounts::from_unchecked_iter] for a list
-/// of accounts and their constraints.
-///
-/// # Effects
-///
-/// 1. Cancels any further reward emission, effectively setting end time to now.
-/// 2. Transfers any unallocated rewards to the `reward_token_destination` account.
-/// 3. Packs all changes into account buffers.
-pub(crate) fn process_cancel_pool_reward(
-    program_id: &Pubkey,
-    position_kind: PositionKind,
-    pool_reward_index: u64,
-    accounts: &[AccountInfo],
-) -> ProgramResult {
-    let params = CancelPoolRewardParams::new(position_kind, pool_reward_index);
-
-    let accounts =
-        CancelPoolRewardAccounts::from_unchecked_iter(program_id, &params, &mut accounts.iter())?;
-
-    // 1.
-
-    let unallocated_rewards = todo!("accounts.reserve.cancel_pool_reward(..)");
-
-    // 2.
-
-    spl_token_transfer(TokenTransferParams {
-        source: accounts.reward_token_vault_info.clone(),
-        destination: accounts.reward_token_destination_info.clone(),
-        amount: unallocated_rewards,
-        authority: accounts.reward_authority_info.clone(),
-        authority_signer_seeds: &reward_vault_authority_seeds(
-            accounts.lending_market_info.key,
-            accounts.reserve_info.key,
-            accounts.reward_mint_info.key,
-        ),
-        token_program: accounts.token_program_info.clone(),
-    })?;
-
-    // 3.
-
-    Reserve::pack(
-        *accounts.reserve,
-        &mut accounts.reserve_info.data.borrow_mut(),
-    )?;
-
-    Ok(())
-}
-
-/// # Accounts
-///
-/// See [close_pool_reward::ClosePoolRewardAccounts::from_unchecked_iter] for a list
-/// of accounts and their constraints.
-///
-/// # Effects
-///
-/// 1. Closes reward in the [Reserve] account if all users have claimed.
-/// 2. Transfers any unallocated rewards to the `reward_token_destination` account.
-/// 3. Closes reward vault token account.
-/// 3. Packs all changes into account buffers.
-pub(crate) fn process_close_pool_reward(
-    program_id: &Pubkey,
-    position_kind: PositionKind,
-    pool_reward_index: u64,
-    accounts: &[AccountInfo],
-) -> ProgramResult {
-    let params = ClosePoolRewardParams::new(position_kind, pool_reward_index);
-
-    let accounts =
-        ClosePoolRewardAccounts::from_unchecked_iter(program_id, &params, &mut accounts.iter())?;
-
-    // 1.
-
-    let unallocated_rewards = todo!("accounts.reserve.close_pool_reward(..)");
-
-    // 2.
-
-    spl_token_transfer(TokenTransferParams {
-        source: accounts.reward_token_vault_info.clone(),
-        destination: accounts.reward_token_destination_info.clone(),
-        amount: unallocated_rewards,
-        authority: accounts.reward_authority_info.clone(),
-        authority_signer_seeds: &reward_vault_authority_seeds(
-            accounts.lending_market_info.key,
-            accounts.reserve_info.key,
-            accounts.reward_mint_info.key,
-        ),
-        token_program: accounts.token_program_info.clone(),
-    })?;
-
-    // 3.
-
-    spl_token_close_account(TokenCloseAccountParams {
-        account: accounts.reward_token_vault_info.clone(),
-        destination: accounts.lending_market_owner_info.clone(),
-        authority: accounts.reward_authority_info.clone(),
-        authority_signer_seeds: &reward_vault_authority_seeds(
-            accounts.lending_market_info.key,
-            accounts.reserve_info.key,
-            accounts.reward_mint_info.key,
-        ),
-        token_program: accounts.token_program_info.clone(),
-    })?;
-
-    // 4.
-    Reserve::pack(
-        *accounts.reserve,
-        &mut accounts.reserve_info.data.borrow_mut(),
-    )?;
-
-    Ok(())
-}
-
-/// Temporary ix to upgrade a reserve to LM feature added in @v2.0.2.
-/// Fails if reserve was not sized as @v2.0.2.
-///
-/// Until this ix is called for a [Reserve] account, all other ixs that try to
-/// unpack the [Reserve] will fail due to size mismatch.
-///
-/// # Accounts
-///
-/// See [upgrade_reserve::UpgradeReserveAccounts::from_unchecked_iter] for a list
-/// of accounts and their constraints.
-///
-/// # Effects
-///
-/// 1. Takes payer's lamports and pays for the rent increase.
-/// 2. Reallocates the reserve account to the latest size.
-/// 3. Repacks the reserve account.
-pub(crate) fn upgrade_reserve(program_id: &Pubkey, accounts: &[AccountInfo]) -> ProgramResult {
-    let accounts = UpgradeReserveAccounts::from_unchecked_iter(program_id, &mut accounts.iter())?;
-
-    //
-    // 1.
-    //
-
-    let current_rent = accounts.reserve_info.lamports();
-    let new_rent = Rent::get()?.minimum_balance(Reserve::LEN);
-
-    if let Some(extra_rent) = new_rent.checked_sub(current_rent) {
-        // some reserves have more rent than necessary, let's not assume that
-        // the payer always needs to add more rent
-
-        invoke(
-            &system_instruction::transfer(
-                accounts.payer.key,
-                accounts.reserve_info.key,
-                extra_rent,
-            ),
-            &[
-                accounts.payer.clone(),
-                accounts.reserve_info.clone(),
-                accounts.system_program.clone(),
-            ],
-        )?;
-    }
-
-    //
-    // 2.
-    //
-
-    // From the [AccountInfo::realloc] docs:
-    //
-    // > Memory used to grow is already zero-initialized upon program entrypoint
-    // > and re-zeroing it wastes compute units. If within the same call a program
-    // > reallocs from larger to smaller and back to larger again the new space
-    // > could contain stale data. Pass true for zero_init in this case,
-    // > otherwise compute units will be wasted re-zero-initializing.
-    let zero_init = false;
-    accounts.reserve_info.realloc(Reserve::LEN, zero_init)?;
-
-    //
-    // 3.
-    //
-
-    // we upgrade discriminator as we've checked that the account is indeed
-    // a reserve account in [UpgradeReserveAccounts::from_unchecked_iter]
-    let mut data = accounts.reserve_info.data.borrow_mut();
-    data[0] = AccountDiscriminator::Reserve as u8;
-    // Now the reserve can unpack fine and doesn't have to worry about
-    // migrations.
-    // Instead it returns an error on an invalid discriminator.
-    // This way a reserve cannot be mistaken for an obligation.
-    let reserve = Reserve::unpack(&data)?;
-    Reserve::pack(reserve, &mut data)?;
-
-    Ok(())
-}
 
 /// Unpacks a spl_token [TokenAccount].
 fn unpack_token_account(data: &[u8]) -> Result<TokenAccount, LendingError> {
@@ -303,6 +39,8 @@ fn unpack_token_account(data: &[u8]) -> Result<TokenAccount, LendingError> {
 }
 
 /// Derives the reward vault authority PDA address.
+///
+/// TODO: Accept a bump seed to avoid recalculating it.
 fn reward_vault_authority(
     program_id: &Pubkey,
     lending_market_key: &Pubkey,
@@ -328,479 +66,11 @@ fn reward_vault_authority_seeds<'keys>(
     ]
 }
 
-mod add_pool_reward {
-    use solend_sdk::state::MIN_REWARD_PERIOD_SECS;
-
-    use super::*;
-
-    /// Use [Self::new] to validate the parameters.
-    #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-    pub(super) struct AddPoolRewardParams {
-        pub(super) position_kind: PositionKind,
-        /// At least the current timestamp.
-        pub(super) start_time_secs: u64,
-        /// Larger than [MIN_REWARD_PERIOD_SECS].
-        pub(super) duration_secs: u32,
-        /// Larger than zero.
-        pub(super) reward_token_amount: u64,
-
-        _priv: (),
-    }
-
-    /// Use [Self::from_unchecked_iter] to validate the accounts except for
-    /// * `reward_token_vault_info`
-    /// * `rent_info`
-    pub(super) struct AddPoolRewardAccounts<'a, 'info> {
-        /// ✅ belongs to this program
-        /// ✅ unpacks
-        /// ✅ belongs to `lending_market_info`
-        pub(super) reserve_info: &'a AccountInfo<'info>,
-        pub(super) reward_mint_info: &'a AccountInfo<'info>,
-        /// ✅ belongs to the token program
-        /// ✅ owned by `lending_market_owner_info`
-        /// ✅ has enough tokens
-        /// ✅ matches `reward_mint_info`
-        pub(super) reward_token_source_info: &'a AccountInfo<'info>,
-        /// ✅ seed of `lending_market_info`, `reserve_info`, `reward_mint_info`
-        pub(super) reward_authority_info: &'a AccountInfo<'info>,
-        /// ✅ belongs to the token program
-        /// ✅ has no data
-        /// ❓ we don't yet know whether it's rent exempt
-        pub(super) reward_token_vault_info: &'a AccountInfo<'info>,
-        /// ✅ belongs to this program
-        /// ✅ unpacks
-        pub(super) lending_market_info: &'a AccountInfo<'info>,
-        /// ✅ is a signer
-        /// ✅ matches `lending_market_info`
-        /// TBD: do we want to create another signer authority to be able to
-        /// delegate reward management to a softer multisig?
-        pub(super) lending_market_owner_info: &'a AccountInfo<'info>,
-        /// ❓ we don't yet whether this is rent info
-        pub(super) rent_info: &'a AccountInfo<'info>,
-        /// ✅ matches `lending_market_info`
-        pub(super) token_program_info: &'a AccountInfo<'info>,
-
-        pub(super) reserve: Box<Reserve>,
-
-        _priv: (),
-    }
-
-    impl AddPoolRewardParams {
-        pub(super) fn new(
-            position_kind: PositionKind,
-            start_time_secs: u64,
-            end_time_secs: u64,
-            reward_token_amount: u64,
-        ) -> Result<Self, ProgramError> {
-            let clock = &Clock::get()?;
-
-            let start_time_secs = start_time_secs.max(clock.unix_timestamp as u64);
-
-            if start_time_secs <= end_time_secs {
-                msg!("Pool reward must end after it starts");
-                return Err(LendingError::MathOverflow.into());
-            }
-
-            let duration_secs: u32 = {
-                // SAFETY: just checked that start time is strictly smaller
-                let d = end_time_secs - start_time_secs;
-                d.try_into().map_err(|_| {
-                    msg!("Pool reward duration is too long");
-                    LendingError::MathOverflow
-                })?
-            };
-            if MIN_REWARD_PERIOD_SECS > duration_secs as u64 {
-                msg!("Pool reward duration must be at least {MIN_REWARD_PERIOD_SECS} secs");
-                return Err(LendingError::PoolRewardPeriodTooShort.into());
-            }
-
-            if reward_token_amount == 0 {
-                msg!("Pool reward amount must be greater than zero");
-                return Err(LendingError::InvalidAmount.into());
-            }
-
-            Ok(Self {
-                position_kind,
-                start_time_secs,
-                duration_secs,
-                reward_token_amount,
-
-                _priv: (),
-            })
-        }
-    }
-
-    impl<'a, 'info> AddPoolRewardAccounts<'a, 'info> {
-        pub(super) fn from_unchecked_iter(
-            program_id: &Pubkey,
-            params: &AddPoolRewardParams,
-            iter: &mut impl Iterator<Item = &'a AccountInfo<'info>>,
-        ) -> Result<AddPoolRewardAccounts<'a, 'info>, ProgramError> {
-            let reserve_info = next_account_info(iter)?;
-            let reward_mint_info = next_account_info(iter)?;
-            let reward_token_source_info = next_account_info(iter)?;
-            let reward_authority_info = next_account_info(iter)?;
-            let reward_token_vault_info = next_account_info(iter)?;
-            let lending_market_info = next_account_info(iter)?;
-            let lending_market_owner_info = next_account_info(iter)?;
-            let rent_info = next_account_info(iter)?;
-            let token_program_info = next_account_info(iter)?;
-
-            let reserve = check_pool_reward_accounts_for_admin_ixs_and_unpack_reserve(
-                program_id,
-                reserve_info,
-                reward_mint_info,
-                reward_authority_info,
-                lending_market_info,
-                lending_market_owner_info,
-                token_program_info,
-            )?;
-
-            if reward_token_source_info.owner != token_program_info.key {
-                msg!("Reward token source provided must be owned by the token program");
-                return Err(LendingError::InvalidTokenOwner.into());
-            }
-            let reward_token_source =
-                unpack_token_account(&reward_token_source_info.data.borrow())?;
-            if reward_token_source.owner != *lending_market_owner_info.key {
-                msg!("Reward token source owner does not match the lending market owner provided");
-                return Err(LendingError::InvalidAccountInput.into());
-            }
-            if reward_token_source.amount >= params.reward_token_amount {
-                msg!("Reward token source is empty");
-                return Err(LendingError::InvalidAccountInput.into());
-            }
-            if reward_token_source.mint != *reward_mint_info.key {
-                msg!("Reward token source mint does not match the reward mint provided");
-                return Err(LendingError::InvalidAccountInput.into());
-            }
-
-            if reward_token_vault_info.owner != token_program_info.key {
-                msg!("Reward token vault provided must be owned by the token program");
-                return Err(LendingError::InvalidTokenOwner.into());
-            }
-            if !reward_token_vault_info.data.borrow().is_empty() {
-                msg!("Reward token vault provided must be empty");
-                return Err(LendingError::InvalidAccountInput.into());
-            }
-
-            Ok(Self {
-                reserve_info,
-                reward_mint_info,
-                reward_token_source_info,
-                reward_authority_info,
-                reward_token_vault_info,
-                lending_market_info,
-                lending_market_owner_info,
-                rent_info,
-                token_program_info,
-
-                reserve,
-
-                _priv: (),
-            })
-        }
-    }
-}
-
-mod cancel_pool_reward {
-    use super::*;
-
-    pub(super) struct CancelPoolRewardParams {
-        position_kind: PositionKind,
-        pool_reward_index: u64,
-
-        _priv: (),
-    }
-
-    /// Use [Self::from_unchecked_iter] to validate the accounts.
-    pub(super) struct CancelPoolRewardAccounts<'a, 'info> {
-        /// ✅ belongs to this program
-        /// ✅ unpacks
-        /// ✅ belongs to `lending_market_info`
-        pub(super) reserve_info: &'a AccountInfo<'info>,
-        pub(super) reward_mint_info: &'a AccountInfo<'info>,
-        /// ✅ belongs to the token program
-        /// ✅ owned by `lending_market_owner_info`
-        /// ✅ matches `reward_mint_info`
-        pub(super) reward_token_destination_info: &'a AccountInfo<'info>,
-        /// ✅ seed of `lending_market_info`, `reserve_info`, `reward_mint_info`
-        pub(super) reward_authority_info: &'a AccountInfo<'info>,
-        /// ✅ matches reward vault pubkey stored in the [Reserve]
-        pub(super) reward_token_vault_info: &'a AccountInfo<'info>,
-        /// ✅ belongs to this program
-        /// ✅ unpacks
-        pub(super) lending_market_info: &'a AccountInfo<'info>,
-        /// ✅ is a signer
-        /// ✅ matches `lending_market_info`
-        pub(super) lending_market_owner_info: &'a AccountInfo<'info>,
-        /// ✅ matches `lending_market_info`
-        pub(super) token_program_info: &'a AccountInfo<'info>,
-
-        pub(super) reserve: Box<Reserve>,
-
-        _priv: (),
-    }
-
-    impl<'a, 'info> CancelPoolRewardAccounts<'a, 'info> {
-        pub(super) fn from_unchecked_iter(
-            program_id: &Pubkey,
-            params: &CancelPoolRewardParams,
-            iter: &mut impl Iterator<Item = &'a AccountInfo<'info>>,
-        ) -> Result<CancelPoolRewardAccounts<'a, 'info>, ProgramError> {
-            let reserve_info = next_account_info(iter)?;
-            let reward_mint_info = next_account_info(iter)?;
-            let reward_token_destination_info = next_account_info(iter)?;
-            let reward_authority_info = next_account_info(iter)?;
-            let reward_token_vault_info = next_account_info(iter)?;
-            let lending_market_info = next_account_info(iter)?;
-            let lending_market_owner_info = next_account_info(iter)?;
-            let token_program_info = next_account_info(iter)?;
-
-            let reserve = check_pool_reward_accounts_for_admin_ixs_and_unpack_reserve(
-                program_id,
-                reserve_info,
-                reward_mint_info,
-                reward_authority_info,
-                lending_market_info,
-                lending_market_owner_info,
-                token_program_info,
-            )?;
-
-            todo!("Check that reward_token_vault_info matches reward vault pubkey stored in [Reserve]");
-
-            if reward_token_destination_info.owner != token_program_info.key {
-                msg!("Reward token destination provided must be owned by the token program");
-                return Err(LendingError::InvalidTokenOwner.into());
-            }
-            let reward_token_destination =
-                unpack_token_account(&reward_token_destination_info.data.borrow())?;
-            if reward_token_destination.owner != *lending_market_owner_info.key {
-                // TBD: superfluous check?
-                msg!("Reward token destination owner does not match the lending market owner provided");
-                return Err(LendingError::InvalidAccountInput.into());
-            }
-            if reward_token_destination.mint != *reward_mint_info.key {
-                msg!("Reward token destination mint does not match the reward mint provided");
-                return Err(LendingError::InvalidAccountInput.into());
-            }
-
-            Ok(Self {
-                _priv: (),
-
-                reserve_info,
-                reward_mint_info,
-                reward_token_destination_info,
-                reward_authority_info,
-                reward_token_vault_info,
-                lending_market_info,
-                lending_market_owner_info,
-                token_program_info,
-
-                reserve,
-            })
-        }
-    }
-
-    impl CancelPoolRewardParams {
-        pub(super) fn new(position_kind: PositionKind, pool_reward_index: u64) -> Self {
-            Self {
-                position_kind,
-                pool_reward_index,
-
-                _priv: (),
-            }
-        }
-    }
-}
-
-mod close_pool_reward {
-    use super::*;
-
-    pub(super) struct ClosePoolRewardParams {
-        position_kind: PositionKind,
-        pool_reward_index: u64,
-
-        _priv: (),
-    }
-
-    /// Use [Self::from_unchecked_iter] to validate the accounts.
-    pub(super) struct ClosePoolRewardAccounts<'a, 'info> {
-        _priv: (),
-
-        /// ✅ belongs to this program
-        /// ✅ unpacks
-        /// ✅ belongs to `lending_market_info`
-        pub(super) reserve_info: &'a AccountInfo<'info>,
-        pub(super) reward_mint_info: &'a AccountInfo<'info>,
-        /// ✅ belongs to the token program
-        /// ✅ owned by `lending_market_owner_info`
-        /// ✅ matches `reward_mint_info`
-        pub(super) reward_token_destination_info: &'a AccountInfo<'info>,
-        /// ✅ seed of `lending_market_info`, `reserve_info`, `reward_mint_info`
-        pub(super) reward_authority_info: &'a AccountInfo<'info>,
-        /// ✅ matches reward vault pubkey stored in the [Reserve]
-        pub(super) reward_token_vault_info: &'a AccountInfo<'info>,
-        /// ✅ belongs to this program
-        /// ✅ unpacks
-        pub(super) lending_market_info: &'a AccountInfo<'info>,
-        /// ✅ is a signer
-        /// ✅ matches `lending_market_info`
-        pub(super) lending_market_owner_info: &'a AccountInfo<'info>,
-        /// ✅ matches `lending_market_info`
-        pub(super) token_program_info: &'a AccountInfo<'info>,
-
-        pub(super) reserve: Box<Reserve>,
-    }
-
-    impl<'a, 'info> ClosePoolRewardAccounts<'a, 'info> {
-        pub(super) fn from_unchecked_iter(
-            program_id: &Pubkey,
-            params: &ClosePoolRewardParams,
-            iter: &mut impl Iterator<Item = &'a AccountInfo<'info>>,
-        ) -> Result<ClosePoolRewardAccounts<'a, 'info>, ProgramError> {
-            let reserve_info = next_account_info(iter)?;
-            let reward_mint_info = next_account_info(iter)?;
-            let reward_token_destination_info = next_account_info(iter)?;
-            let reward_authority_info = next_account_info(iter)?;
-            let reward_token_vault_info = next_account_info(iter)?;
-            let lending_market_info = next_account_info(iter)?;
-            let lending_market_owner_info = next_account_info(iter)?;
-            let token_program_info = next_account_info(iter)?;
-
-            let reserve = check_pool_reward_accounts_for_admin_ixs_and_unpack_reserve(
-                program_id,
-                reserve_info,
-                reward_mint_info,
-                reward_authority_info,
-                lending_market_info,
-                lending_market_owner_info,
-                token_program_info,
-            )?;
-
-            todo!("Check that reward_token_vault_info matches reward vault pubkey stored in [Reserve]");
-
-            if reward_token_destination_info.owner != token_program_info.key {
-                msg!("Reward token destination provided must be owned by the token program");
-                return Err(LendingError::InvalidTokenOwner.into());
-            }
-            let reward_token_destination =
-                unpack_token_account(&reward_token_destination_info.data.borrow())?;
-            if reward_token_destination.owner != *lending_market_owner_info.key {
-                // TBD: superfluous check?
-                msg!("Reward token destination owner does not match the lending market owner provided");
-                return Err(LendingError::InvalidAccountInput.into());
-            }
-            if reward_token_destination.mint != *reward_mint_info.key {
-                msg!("Reward token destination mint does not match the reward mint provided");
-                return Err(LendingError::InvalidAccountInput.into());
-            }
-
-            Ok(Self {
-                reserve_info,
-                reward_mint_info,
-                reward_token_destination_info,
-                reward_authority_info,
-                reward_token_vault_info,
-                lending_market_info,
-                lending_market_owner_info,
-                token_program_info,
-
-                reserve,
-
-                _priv: (),
-            })
-        }
-    }
-
-    impl ClosePoolRewardParams {
-        pub(super) fn new(position_kind: PositionKind, pool_reward_index: u64) -> Self {
-            Self {
-                position_kind,
-                pool_reward_index,
-
-                _priv: (),
-            }
-        }
-    }
-}
-
-mod upgrade_reserve {
-    use solend_sdk::state::RESERVE_LEN_V2_0_2;
-
-    use super::*;
-
-    pub(super) struct UpgradeReserveAccounts<'a, 'info> {
-        /// Reserve sized as v2.0.2.
-        ///
-        /// ✅ belongs to this program
-        /// ✅ is sized [RESERVE_LEN_V2_0_2], ie. for sure [Reserve] account
-        pub(super) reserve_info: &'a AccountInfo<'info>,
-        /// The pool fella who pays for this.
-        ///
-        /// ✅ is a signer
-        pub(super) payer: &'a AccountInfo<'info>,
-        /// The system program.
-        ///
-        /// ✅ is the system program
-        pub(super) system_program: &'a AccountInfo<'info>,
-
-        _priv: (),
-    }
-
-    impl<'a, 'info> UpgradeReserveAccounts<'a, 'info> {
-        pub(super) fn from_unchecked_iter(
-            program_id: &Pubkey,
-            iter: &mut impl Iterator<Item = &'a AccountInfo<'info>>,
-        ) -> Result<UpgradeReserveAccounts<'a, 'info>, ProgramError> {
-            let reserve_info = next_account_info(iter)?;
-            let payer = next_account_info(iter)?;
-            let system_program = next_account_info(iter)?;
-
-            if !payer.is_signer {
-                msg!("Payer provided must be a signer");
-                return Err(LendingError::InvalidSigner.into());
-            }
-
-            if reserve_info.owner != program_id {
-                msg!("Reserve provided must be owned by the lending program");
-                return Err(LendingError::InvalidAccountOwner.into());
-            }
-
-            if reserve_info.data_len() != RESERVE_LEN_V2_0_2 {
-                msg!("Reserve provided must be sized as v2.0.2");
-                return Err(LendingError::InvalidAccountInput.into());
-            }
-
-            if system_program.key != &solana_program::system_program::id() {
-                msg!("System program provided must be the system program");
-                return Err(LendingError::InvalidAccountInput.into());
-            }
-
-            Ok(Self {
-                payer,
-                reserve_info,
-                system_program,
-                _priv: (),
-            })
-        }
-    }
-}
-
-/// Common checks within the admin ixs are:
+/// Does all the checks of [check_and_unpack_pool_reward_accounts] and additionally:
 ///
-/// * ✅ `reserve_info` belongs to this program
-/// * ✅ `reserve_info` unpacks
-/// * ✅ `reserve_info` belongs to `lending_market_info`
-/// * ✅ `reward_authority_info` is seed of `lending_market_info`, `reserve_info`, `reward_mint_info`
-/// * ✅ `lending_market_info` belongs to this program
-/// * ✅ `lending_market_info` unpacks
 /// * ✅ `lending_market_owner_info` is a signer
 /// * ✅ `lending_market_owner_info` matches `lending_market_info`
-/// * ✅ `token_program_info` matches `lending_market_info`
-///
-/// To avoid unpacking reserve twice we return it.
-fn check_pool_reward_accounts_for_admin_ixs_and_unpack_reserve<'info>(
+fn check_and_unpack_pool_reward_accounts_for_admin_ixs<'info>(
     program_id: &Pubkey,
     reserve_info: &AccountInfo<'info>,
     reward_mint_info: &AccountInfo<'info>,
@@ -808,7 +78,46 @@ fn check_pool_reward_accounts_for_admin_ixs_and_unpack_reserve<'info>(
     lending_market_info: &AccountInfo<'info>,
     lending_market_owner_info: &AccountInfo<'info>,
     token_program_info: &AccountInfo<'info>,
-) -> Result<Box<Reserve>, ProgramError> {
+) -> Result<(LendingMarket, Box<Reserve>), ProgramError> {
+    let (lending_market, reserve) = check_and_unpack_pool_reward_accounts(
+        program_id,
+        reserve_info,
+        reward_mint_info,
+        reward_authority_info,
+        lending_market_info,
+        token_program_info,
+    )?;
+
+    if lending_market.owner != *lending_market_owner_info.key {
+        msg!("Lending market owner does not match the lending market owner provided");
+        return Err(LendingError::InvalidMarketOwner.into());
+    }
+    if !lending_market_owner_info.is_signer {
+        msg!("Lending market owner provided must be a signer");
+        return Err(LendingError::InvalidSigner.into());
+    }
+
+    Ok((lending_market, reserve))
+}
+
+/// Checks that:
+///
+/// * ✅ `reserve_info` belongs to this program
+/// * ✅ `reserve_info` unpacks
+/// * ✅ `reserve_info` belongs to `lending_market_info`
+/// * ✅ `reward_authority_info` is seed of `lending_market_info`, `reserve_info`, `reward_mint_info`
+/// * ✅ `lending_market_info` belongs to this program
+/// * ✅ `lending_market_info` unpacks
+/// * ✅ `token_program_info` matches `lending_market_info`
+/// * ✅ `reward_mint_info` belongs to the token program
+fn check_and_unpack_pool_reward_accounts<'info>(
+    program_id: &Pubkey,
+    reserve_info: &AccountInfo<'info>,
+    reward_mint_info: &AccountInfo<'info>,
+    reward_authority_info: &AccountInfo<'info>,
+    lending_market_info: &AccountInfo<'info>,
+    token_program_info: &AccountInfo<'info>,
+) -> Result<(LendingMarket, Box<Reserve>), ProgramError> {
     if reserve_info.owner != program_id {
         msg!("Reserve provided is not owned by the lending program");
         return Err(LendingError::InvalidAccountOwner.into());
@@ -831,13 +140,9 @@ fn check_pool_reward_accounts_for_admin_ixs_and_unpack_reserve<'info>(
         return Err(LendingError::InvalidTokenProgram.into());
     }
 
-    if lending_market.owner != *lending_market_owner_info.key {
-        msg!("Lending market owner does not match the lending market owner provided");
-        return Err(LendingError::InvalidMarketOwner.into());
-    }
-    if !lending_market_owner_info.is_signer {
-        msg!("Lending market owner provided must be a signer");
-        return Err(LendingError::InvalidSigner.into());
+    if reward_mint_info.owner != token_program_info.key {
+        msg!("Reward mint provided must be owned by the token program");
+        return Err(LendingError::InvalidTokenOwner.into());
     }
 
     let (expected_reward_vault_authority, _bump_seed) = reward_vault_authority(
@@ -851,5 +156,5 @@ fn check_pool_reward_accounts_for_admin_ixs_and_unpack_reserve<'info>(
         return Err(LendingError::InvalidAccountInput.into());
     }
 
-    Ok(reserve)
+    Ok((lending_market, reserve))
 }
