@@ -568,8 +568,17 @@ pub enum LendingInstruction {
     /// * Can only be called if all users claimed rewards.
     ///
     ///    `[writable]` Reserve account.
+    ///    `[]` Reward mint.
+    ///    `[writable]` Reward token account owned by signer
+    ///    `[]` Derived reserve pool reward authority. Seed:
+    ///         * b"RewardVaultAuthority"
+    ///         * Lending market account pubkey
+    ///         * Reserve account pubkey
+    ///         * Reward mint pubkey
+    ///    `[writable]` Reward vault token account.
     ///    `[]` Lending market account.
     ///    `[signer]` Lending market owner.
+    ///    `[]` Token program.
     ClosePoolReward {
         /// Whether this reward applies to deposits or borrows
         position_kind: PositionKind,

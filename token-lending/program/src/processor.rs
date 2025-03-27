@@ -3488,6 +3488,31 @@ fn spl_token_burn(params: TokenBurnParams<'_, '_>) -> ProgramResult {
     result.map_err(|_| LendingError::TokenBurnFailed.into())
 }
 
+/// Issue a spl_token `CloseAccount` instruction.
+#[inline(always)]
+fn spl_token_close_account(params: TokenCloseAccountParams<'_, '_>) -> ProgramResult {
+    let TokenCloseAccountParams {
+        account,
+        destination,
+        authority,
+        token_program,
+        authority_signer_seeds,
+    } = params;
+    let result = invoke_optionally_signed(
+        &spl_token::instruction::close_account(
+            token_program.key,
+            account.key,
+            destination.key,
+            authority.key,
+            &[],
+        )?,
+        &[account, destination, authority, token_program],
+        authority_signer_seeds,
+    );
+
+    result.map_err(|_| LendingError::CloseTokenAccountFailed.into())
+}
+
 fn is_cpi_call(
     program_id: &Pubkey,
     current_index: usize,
@@ -3555,6 +3580,14 @@ struct TokenBurnParams<'a: 'b, 'b> {
     mint: AccountInfo<'a>,
     source: AccountInfo<'a>,
     amount: u64,
+    authority: AccountInfo<'a>,
+    authority_signer_seeds: &'b [&'b [u8]],
+    token_program: AccountInfo<'a>,
+}
+
+struct TokenCloseAccountParams<'a: 'b, 'b> {
+    account: AccountInfo<'a>,
+    destination: AccountInfo<'a>,
     authority: AccountInfo<'a>,
     authority_signer_seeds: &'b [&'b [u8]],
     token_program: AccountInfo<'a>,

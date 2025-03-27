@@ -175,22 +175,6 @@ pub struct UserReward {
 }
 
 impl PoolRewardManager {
-    /// Returns all rewards that use the given vault.
-    pub fn find_rewards_with_vault(
-        &self,
-        vault: Pubkey,
-    ) -> impl Iterator<Item = (usize, &Box<PoolReward>)> {
-        self.pool_rewards
-            .iter()
-            .enumerate()
-            .filter_map(move |(index, slot)| match slot {
-                PoolRewardSlot::Occupied(pool_reward) if pool_reward.vault == vault => {
-                    Some((index, pool_reward))
-                }
-                _ => None,
-            })
-    }
-
     /// Sets the duration of the pool reward to now.
     /// Returns the amount of unallocated rewards and the vault they are in.
     pub fn cancel_pool_reward(
@@ -226,7 +210,8 @@ impl PoolRewardManager {
     }
 
     /// Closes a pool reward if it has been cancelled before.
-    pub fn close_pool_reward(&mut self, pool_reward_index: usize) -> Result<(), ProgramError> {
+    /// Returns the vault the rewards are in.
+    pub fn close_pool_reward(&mut self, pool_reward_index: usize) -> Result<Pubkey, ProgramError> {
         let Some(PoolRewardSlot::Occupied(pool_reward)) =
             self.pool_rewards.get_mut(pool_reward_index)
         else {
@@ -239,12 +224,14 @@ impl PoolRewardManager {
             return Err(LendingError::InvalidAccountInput.into());
         }
 
+        let vault = pool_reward.vault;
+
         self.pool_rewards[pool_reward_index] = PoolRewardSlot::Vacant {
             last_pool_reward_id: pool_reward.id,
             has_been_vacated_in_this_tx: true,
         };
 
-        Ok(())
+        Ok(vault)
     }
 
     /// Should be updated before any interaction with rewards.
@@ -310,48 +297,49 @@ pub enum CreatingNewUserRewardManager {
 impl UserRewardManager {
     /// Claims all rewards that the user has earned.
     /// Returns how many tokens should be transferred to the user.
+    ///
+    /// # Note
+    /// Errors if there is no pool reward with this vault.
     pub fn claim_rewards(
         &mut self,
         pool_reward_manager: &mut PoolRewardManager,
         vault: Pubkey,
         clock: &Clock,
     ) -> Result<u64, ProgramError> {
-        let mut total_reward_amount = 0;
-        let mut should_update_managers = false;
-        for user_reward in &mut self.rewards {
-            let Some(PoolRewardSlot::Occupied(pool_reward)) = pool_reward_manager
-                .pool_rewards
-                .get(user_reward.pool_reward_index)
-            else {
-                unreachable!("User reward points to a non-existent pool reward");
-            };
+        let (pool_reward_index, pool_reward) = pool_reward_manager
+            .pool_rewards
+            .iter()
+            .enumerate()
+            .find_map(move |(index, slot)| match slot {
+                PoolRewardSlot::Occupied(pool_reward) if pool_reward.vault == vault => {
+                    Some((index, pool_reward))
+                }
+                _ => None,
+            })
+            .ok_or(LendingError::NoPoolRewardMatches)?;
 
-            if pool_reward.vault != vault {
-                // not the pool reward we are looking for
-                continue;
-            }
+        let Some(user_reward) = self.rewards.iter_mut().find(|user_reward| {
+            user_reward.pool_reward_index == pool_reward_index
+                && user_reward.pool_reward_id == pool_reward.id
+        }) else {
+            // User is not tracking this reward, nothing to claim.
+            // Let's be graceful and make this a no-op.
+            // Prevents failures when multiple parties crank rewards.
+            return Ok(0);
+        };
 
-            if user_reward.pool_reward_id != pool_reward.id {
-                unreachable!("User reward points to an outdated pool reward");
-            }
+        let to_claim = user_reward.withdraw_earned_rewards()?;
 
-            total_reward_amount += user_reward.withdraw_earned_rewards()?;
-
-            if pool_reward.has_ended(clock) {
-                // if pool reward has ended then it will be removed from the user
-                // reward manager in the next update call
-                should_update_managers = true;
-            }
-        }
-
-        if should_update_managers {
-            // Only do this is we know something will change.
+        if pool_reward.has_ended(clock) {
+            // If pool reward has ended then it will be removed from the user
+            // reward manager in the next update call.
+            //
             // We could also complicate matters by doing updates in place when
             // needed to save on CU if necessary.
             self.update(pool_reward_manager, clock, CreatingNewUserRewardManager::No)?;
         }
 
-        Ok(total_reward_amount)
+        Ok(to_claim)
     }
 
     /// Should be updated before any interaction with rewards.

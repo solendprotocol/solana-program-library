@@ -1,3 +1,7 @@
+//! Adds a new pool reward to a reserve.
+//!
+//! Each pool reward has a unique vault that holds the reward tokens.
+
 use crate::processor::{
     assert_rent_exempt, spl_token_init_account, spl_token_transfer, TokenInitializeAccountParams,
     TokenTransferParams,
