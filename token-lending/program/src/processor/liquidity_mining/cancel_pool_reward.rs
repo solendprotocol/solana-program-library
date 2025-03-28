@@ -65,12 +65,10 @@ pub(crate) fn process(
 
     // 1.
 
-    let pool_reward_manager = match position_kind {
-        PositionKind::Borrow => &mut accounts.reserve.borrows_pool_reward_manager,
-        PositionKind::Deposit => &mut accounts.reserve.deposits_pool_reward_manager,
-    };
-    let (expected_vault, unallocated_rewards) =
-        pool_reward_manager.cancel_pool_reward(pool_reward_index, &Clock::get()?)?;
+    let (expected_vault, unallocated_rewards) = accounts
+        .reserve
+        .pool_reward_manager_mut(position_kind)
+        .cancel_pool_reward(pool_reward_index, &Clock::get()?)?;
 
     if expected_vault != *accounts.reward_token_vault_info.key {
         msg!("Reward vault provided does not match the reward vault pubkey stored in [Reserve]");

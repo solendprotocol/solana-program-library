@@ -593,6 +593,17 @@ impl Reserve {
                 .try_floor_u64()?,
         ))
     }
+
+    /// Returns the pool reward manager for the given position kind
+    pub fn pool_reward_manager_mut(
+        &mut self,
+        position_kind: PositionKind,
+    ) -> &mut PoolRewardManager {
+        match position_kind {
+            PositionKind::Borrow => &mut self.borrows_pool_reward_manager,
+            PositionKind::Deposit => &mut self.deposits_pool_reward_manager,
+        }
+    }
 }
 
 /// Initialize a reserve

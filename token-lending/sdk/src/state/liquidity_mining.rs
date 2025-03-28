@@ -12,7 +12,7 @@ use solana_program::{
     program_error::ProgramError,
     pubkey::{Pubkey, PUBKEY_BYTES},
 };
-use std::convert::TryFrom;
+use std::convert::{TryFrom, TryInto};
 
 /// Determines the size of [PoolRewardManager]
 pub const MAX_REWARDS: usize = 50;
@@ -175,6 +175,80 @@ pub struct UserReward {
 }
 
 impl PoolRewardManager {
+    /// Adds a new pool reward.
+    ///
+    /// Will first update itself.
+    ///
+    /// Start time will be set to now if it's in the past.
+    /// Must last at least [MIN_REWARD_PERIOD_SECS].
+    /// The amount of tokens to distribute must be greater than zero.
+    ///
+    /// Will return an error if no slot can be found for the new reward.
+    pub fn add_pool_reward(
+        &mut self,
+        vault: Pubkey,
+        start_time_secs: u64,
+        end_time_secs: u64,
+        reward_token_amount: u64,
+        clock: &Clock,
+    ) -> Result<(), ProgramError> {
+        self.update(clock)?;
+
+        let start_time_secs = start_time_secs.max(clock.unix_timestamp as u64);
+
+        if start_time_secs <= end_time_secs {
+            msg!("Pool reward must end after it starts");
+            return Err(LendingError::MathOverflow.into());
+        }
+
+        let duration_secs: u32 = {
+            // SAFETY: just checked that start time is strictly smaller
+            let d = end_time_secs - start_time_secs;
+            d.try_into().map_err(|_| {
+                msg!("Pool reward duration is too long");
+                LendingError::MathOverflow
+            })?
+        };
+        if MIN_REWARD_PERIOD_SECS > duration_secs as u64 {
+            msg!("Pool reward duration must be at least {MIN_REWARD_PERIOD_SECS} secs");
+            return Err(LendingError::PoolRewardPeriodTooShort.into());
+        }
+
+        if reward_token_amount == 0 {
+            msg!("Pool reward amount must be greater than zero");
+            return Err(LendingError::InvalidAmount.into());
+        }
+
+        let eligible_slot =
+            self.pool_rewards
+                .iter_mut()
+                .enumerate()
+                .find_map(|(slot_index, slot)| match slot {
+                    PoolRewardSlot::Vacant {
+                        last_pool_reward_id: PoolRewardId(id),
+                        ..
+                    } if *id < u32::MAX => Some((slot_index, PoolRewardId(*id + 1))),
+                    _ => None,
+                });
+
+        let Some((slot_index, next_id)) = eligible_slot else {
+            msg!("No vacant slot found for the new pool reward");
+            return Err(LendingError::NoVacantSlotForPoolReward.into());
+        };
+
+        self.pool_rewards[slot_index] = PoolRewardSlot::Occupied(Box::new(PoolReward {
+            id: next_id,
+            vault,
+            start_time_secs,
+            duration_secs,
+            total_rewards: reward_token_amount,
+            num_user_reward_managers: 0,
+            cumulative_rewards_per_share: Decimal::zero(),
+        }));
+
+        Ok(())
+    }
+
     /// Sets the duration of the pool reward to now.
     /// Returns the amount of unallocated rewards and the vault they are in.
     pub fn cancel_pool_reward(

@@ -10,10 +10,7 @@ use solana_program::{
     sysvar::Sysvar,
 };
 use solend_sdk::state::{CreatingNewUserRewardManager, Obligation};
-use solend_sdk::{
-    error::LendingError,
-    state::{PositionKind, Reserve},
-};
+use solend_sdk::{error::LendingError, state::Reserve};
 
 use super::{
     check_and_unpack_pool_reward_accounts, reward_vault_authority_seeds, unpack_token_account,
@@ -64,6 +61,8 @@ struct ClaimUserReward<'a, 'info> {
 /// 3. Transfers the withdrawn rewards to the user's token account.
 /// 4. Packs all changes into account buffers for [Obligation] and [Reserve].
 pub(crate) fn process(program_id: &Pubkey, accounts: &[AccountInfo]) -> ProgramResult {
+    let clock = &Clock::get()?;
+
     let mut accounts = ClaimUserReward::from_unchecked_iter(program_id, &mut accounts.iter())?;
 
     // 1.
@@ -81,12 +80,7 @@ pub(crate) fn process(program_id: &Pubkey, accounts: &[AccountInfo]) -> ProgramR
         return Ok(());
     };
 
-    let pool_reward_manager = match position_kind {
-        PositionKind::Borrow => &mut accounts.reserve.borrows_pool_reward_manager,
-        PositionKind::Deposit => &mut accounts.reserve.deposits_pool_reward_manager,
-    };
-
-    let clock = &Clock::get()?;
+    let pool_reward_manager = accounts.reserve.pool_reward_manager_mut(position_kind);
 
     // Syncs the pool reward manager with the user manager and accrues rewards.
     // If we wanted to optimize CU usage then we could make a dedicated update
