@@ -27,11 +27,10 @@ pub(crate) mod upgrade_reserve;
 
 use solana_program::program_pack::Pack;
 use solana_program::{account_info::AccountInfo, msg, program_error::ProgramError, pubkey::Pubkey};
-use solend_sdk::{
-    error::LendingError,
-    state::{LendingMarket, Reserve},
-};
+use solend_sdk::{error::LendingError, state::LendingMarket};
 use spl_token::state::Account as TokenAccount;
+
+use super::ReserveBorrow;
 
 /// Unpacks a spl_token [TokenAccount].
 fn unpack_token_account(data: &[u8]) -> Result<TokenAccount, LendingError> {
@@ -70,15 +69,15 @@ fn reward_vault_authority_seeds<'keys>(
 ///
 /// * ✅ `lending_market_owner_info` is a signer
 /// * ✅ `lending_market_owner_info` matches `lending_market_info`
-fn check_and_unpack_pool_reward_accounts_for_admin_ixs<'info>(
+fn check_and_unpack_pool_reward_accounts_for_admin_ixs<'a, 'info>(
     program_id: &Pubkey,
-    reserve_info: &AccountInfo<'info>,
+    reserve_info: &'a AccountInfo<'info>,
     reward_mint_info: &AccountInfo<'info>,
     reward_authority_info: &AccountInfo<'info>,
     lending_market_info: &AccountInfo<'info>,
     lending_market_owner_info: &AccountInfo<'info>,
     token_program_info: &AccountInfo<'info>,
-) -> Result<(LendingMarket, Box<Reserve>), ProgramError> {
+) -> Result<(LendingMarket, ReserveBorrow<'a, 'info>), ProgramError> {
     let (lending_market, reserve) = check_and_unpack_pool_reward_accounts(
         program_id,
         reserve_info,
@@ -110,19 +109,15 @@ fn check_and_unpack_pool_reward_accounts_for_admin_ixs<'info>(
 /// * ✅ `lending_market_info` unpacks
 /// * ✅ `token_program_info` matches `lending_market_info`
 /// * ✅ `reward_mint_info` belongs to the token program
-fn check_and_unpack_pool_reward_accounts<'info>(
+fn check_and_unpack_pool_reward_accounts<'a, 'info>(
     program_id: &Pubkey,
-    reserve_info: &AccountInfo<'info>,
+    reserve_info: &'a AccountInfo<'info>,
     reward_mint_info: &AccountInfo<'info>,
     reward_authority_info: &AccountInfo<'info>,
     lending_market_info: &AccountInfo<'info>,
     token_program_info: &AccountInfo<'info>,
-) -> Result<(LendingMarket, Box<Reserve>), ProgramError> {
-    if reserve_info.owner != program_id {
-        msg!("Reserve provided is not owned by the lending program");
-        return Err(LendingError::InvalidAccountOwner.into());
-    }
-    let reserve = Box::new(Reserve::unpack(&reserve_info.data.borrow())?);
+) -> Result<(LendingMarket, ReserveBorrow<'a, 'info>), ProgramError> {
+    let reserve = ReserveBorrow::new_mut(program_id, reserve_info)?;
 
     if lending_market_info.owner != program_id {
         msg!("Lending market provided is not owned by the lending program");

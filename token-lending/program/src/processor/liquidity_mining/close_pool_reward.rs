@@ -25,7 +25,7 @@ use crate::processor::{
 
 use super::{
     check_and_unpack_pool_reward_accounts_for_admin_ixs, reward_vault_authority_seeds,
-    unpack_token_account,
+    unpack_token_account, ReserveBorrow,
 };
 
 /// Use [Self::from_unchecked_iter] to validate the accounts.
@@ -57,7 +57,7 @@ struct ClosePoolRewardAccounts<'a, 'info> {
     /// ✅ matches `lending_market_info`
     token_program_info: &'a AccountInfo<'info>,
 
-    reserve: Box<Reserve>,
+    reserve: ReserveBorrow<'a, 'info>,
     reward_token_vault: TokenAccount,
 }
 
@@ -66,7 +66,6 @@ struct ClosePoolRewardAccounts<'a, 'info> {
 /// 1. Closes reward in the [Reserve] account if all users have claimed.
 /// 2. Transfers dust to the `reward_token_destination` account.
 /// 3. Closes reward vault token account.
-/// 3. Packs all changes into account buffers.
 pub(crate) fn process(
     program_id: &Pubkey,
     position_kind: PositionKind,
@@ -115,13 +114,6 @@ pub(crate) fn process(
         ),
         token_program: accounts.token_program_info.clone(),
     })?;
-
-    // 4.
-
-    Reserve::pack(
-        *accounts.reserve,
-        &mut accounts.reserve_info.data.borrow_mut(),
-    )?;
 
     Ok(())
 }

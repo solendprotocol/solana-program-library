@@ -54,7 +54,7 @@ async fn test_success() {
             super_unhealthy_borrow_value: Decimal::zero(),
             borrowing_isolated_asset: false,
             closeable: false,
-            user_reward_managers: Vec::new(),
+            user_reward_managers: Default::default(),
         }
     );
 }

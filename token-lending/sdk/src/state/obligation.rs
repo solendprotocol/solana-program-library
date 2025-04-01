@@ -4,8 +4,9 @@ use crate::{
     math::{Decimal, Rate, TryAdd, TryDiv, TryMul, TrySub},
 };
 use arrayref::{array_mut_ref, array_ref, array_refs, mut_array_refs};
+use core::ops::{Deref, DerefMut};
 use solana_program::{
-    clock::Slot,
+    clock::{Clock, Slot},
     entrypoint::ProgramResult,
     msg,
     program_error::ProgramError,
@@ -80,8 +81,13 @@ pub struct Obligation {
     /// # (Un)packing
     /// If there are no rewards to be collected then the obligation is packed
     /// as if there was no liquidity mining feature involved.
-    pub user_reward_managers: Vec<UserRewardManager>,
+    pub user_reward_managers: UserRewardManagers,
 }
+
+/// Wraps over user reward managers and allows mutable access to them while
+/// other obligation fields are borrowed.
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct UserRewardManagers(Vec<UserRewardManager>);
 
 /// These are the two foundational user interactions in a borrow-lending protocol.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -336,14 +342,54 @@ impl Obligation {
         Err(LendingError::InvalidAccountInput.into())
     }
 
-    /// Returns [UserRewardManager] for the given reserve
-    pub fn find_user_reward_manager_mut(
-        &mut self,
-        reserve: Pubkey,
-    ) -> Option<&mut UserRewardManager> {
-        self.user_reward_managers
+    /// Returns liability shares for borrow at given index.
+    pub fn liability_shares(&self, liquidity_index: usize) -> Result<u64, ProgramError> {
+        self.borrows[liquidity_index].liability_shares()
+    }
+}
+
+impl UserRewardManagers {
+    /// Returns [UserRewardManager] for the given reserve if any
+    pub fn find_mut(&mut self, reserve: Pubkey) -> Option<&mut UserRewardManager> {
+        self.0
             .iter_mut()
             .find(|user_reward_manager| user_reward_manager.reserve == reserve)
+    }
+
+    /// Updates the [UserRewardManager] for the given reserve.
+    ///
+    /// The caller must make sure that the provided [PoolRewardManager] is valid
+    /// for the given reserve.
+    ///
+    /// If an associated [UserRewardManager] is not found, it will be created.
+    ///
+    /// # Important
+    ///
+    /// Only call this if you're sure that the obligation should be tracking
+    /// rewards for the given reserve.
+    pub fn set_share(
+        &mut self,
+        reserve: Pubkey,
+        pool_reward_manager: &mut PoolRewardManager,
+        new_share: u64,
+        clock: &Clock,
+    ) -> Result<(), ProgramError> {
+        let user_reward_manager = if let Some(user_reward_manager) = self.find_mut(reserve) {
+            user_reward_manager.update(pool_reward_manager, clock)?;
+            user_reward_manager
+        } else {
+            let mut new_user_reward_manager = UserRewardManager::new(reserve, clock);
+            new_user_reward_manager.populate(pool_reward_manager, clock)?;
+            self.0.push(new_user_reward_manager);
+            // SAFETY: we just pushed a new item to the vector so ok to unwrap
+            self.0.last_mut().unwrap()
+        };
+
+        pool_reward_manager.total_shares =
+            pool_reward_manager.total_shares - user_reward_manager.share + new_share;
+        user_reward_manager.share = new_share;
+
+        Ok(())
     }
 }
 
@@ -469,6 +515,13 @@ impl ObligationLiquidity {
 
         Ok(())
     }
+
+    /// Calculates shares for liquidity mining.
+    pub fn liability_shares(&self) -> Result<u64, ProgramError> {
+        self.borrowed_amount_wads
+            .try_div(self.cumulative_borrow_rate_wads)?
+            .try_floor_u64()
+    }
 }
 
 const OBLIGATION_COLLATERAL_LEN: usize = 88; // 32 + 8 + 16 + 32
@@ -491,7 +544,7 @@ impl Obligation {
     pub fn size_in_bytes_when_packed(&self) -> usize {
         let mut size = OBLIGATION_LEN_V1 + 1;
 
-        for reward_manager in &self.user_reward_managers {
+        for reward_manager in self.user_reward_managers.iter() {
             size += reward_manager.size_in_bytes_when_packed();
         }
 
@@ -807,7 +860,7 @@ impl Obligation {
             super_unhealthy_borrow_value: unpack_decimal(super_unhealthy_borrow_value),
             borrowing_isolated_asset: unpack_bool(borrowing_isolated_asset)?,
             closeable: unpack_bool(closeable)?,
-            user_reward_managers,
+            user_reward_managers: UserRewardManagers(user_reward_managers),
         })
     }
 }
@@ -821,6 +874,20 @@ impl TryFrom<u8> for PositionKind {
             1 => Ok(PositionKind::Borrow),
             _ => Err(LendingError::InstructionUnpackError.into()),
         }
+    }
+}
+
+impl Deref for UserRewardManagers {
+    type Target = Vec<UserRewardManager>;
+
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
+}
+
+impl DerefMut for UserRewardManagers {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.0
     }
 }
 
@@ -871,10 +938,11 @@ mod test {
                 closeable: rng.gen(),
                 user_reward_managers: {
                     let user_reward_managers_len = rng.gen_range(0..=MAX_OBLIGATION_RESERVES);
-
-                    std::iter::repeat_with(|| UserRewardManager::new_rand(rng))
-                        .take(user_reward_managers_len)
-                        .collect()
+                    UserRewardManagers(
+                        std::iter::repeat_with(|| UserRewardManager::new_rand(rng))
+                            .take(user_reward_managers_len)
+                            .collect(),
+                    )
                 },
             }
         }

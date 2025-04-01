@@ -360,7 +360,7 @@ impl PoolRewardManager {
 
 /// When creating a new [UserRewardManager] we need to know whether we should
 /// populate it with rewards or not.
-pub enum CreatingNewUserRewardManager {
+enum CreatingNewUserRewardManager {
     /// If we are creating a [UserRewardManager] then we want to populate it.
     Yes,
     /// If we are updating an existing [UserRewardManager] then we don't want
@@ -369,6 +369,15 @@ pub enum CreatingNewUserRewardManager {
 }
 
 impl UserRewardManager {
+    /// Creates a new empty [UserRewardManager] for the given reserve.
+    pub fn new(reserve: Pubkey, clock: &Clock) -> Self {
+        Self {
+            reserve,
+            last_update_time_secs: clock.unix_timestamp as _,
+            ..Default::default()
+        }
+    }
+
     /// Claims all rewards that the user has earned.
     /// Returns how many tokens should be transferred to the user.
     ///
@@ -410,7 +419,7 @@ impl UserRewardManager {
             //
             // We could also complicate matters by doing updates in place when
             // needed to save on CU if necessary.
-            self.update(pool_reward_manager, clock, CreatingNewUserRewardManager::No)?;
+            self.update(pool_reward_manager, clock)?;
         }
 
         Ok(to_claim)
@@ -418,10 +427,40 @@ impl UserRewardManager {
 
     /// Should be updated before any interaction with rewards.
     ///
+    /// Invoker must have checked that this [PoolRewardManager] matches the
+    /// [UserRewardManager].
+    pub fn update(
+        &mut self,
+        pool_reward_manager: &mut PoolRewardManager,
+        clock: &Clock,
+    ) -> Result<(), ProgramError> {
+        self.update_(pool_reward_manager, clock, CreatingNewUserRewardManager::No)
+    }
+
+    /// When user borrows/deposits for a new reserve this function copies all
+    /// reserve rewards from the pool manager to the user manager and starts
+    /// accruing rewards.
+    ///
+    /// Invoker must have checked that this [PoolRewardManager] matches the
+    /// [UserRewardManager].
+    pub(crate) fn populate(
+        &mut self,
+        pool_reward_manager: &mut PoolRewardManager,
+        clock: &Clock,
+    ) -> Result<(), ProgramError> {
+        self.update_(
+            pool_reward_manager,
+            clock,
+            CreatingNewUserRewardManager::Yes,
+        )
+    }
+
+    /// Should be updated before any interaction with rewards.
+    ///
     /// # Assumption
     /// Invoker has checked that this [PoolRewardManager] matches the
     /// [UserRewardManager].
-    pub fn update(
+    fn update_(
         &mut self,
         pool_reward_manager: &mut PoolRewardManager,
         clock: &Clock,
