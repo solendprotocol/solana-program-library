@@ -35,6 +35,7 @@ use solana_program::{
     program_error::ProgramError,
     program_pack::{IsInitialized, Pack},
     pubkey::Pubkey,
+    system_instruction,
     system_instruction::create_account,
     sysvar::instructions::{load_current_index_checked, load_instruction_at_checked},
     sysvar::{clock::Clock, rent::Rent, Sysvar},
@@ -1165,6 +1166,7 @@ fn process_refresh_obligation(program_id: &Pubkey, accounts: &[AccountInfo]) -> 
         .borrows
         .retain(|liquidity| liquidity.borrowed_amount_wads > Decimal::zero());
 
+    realloc_obligation_if_necessary(&obligation, &obligation_info)?;
     Obligation::pack(obligation, &mut obligation_info.data.borrow_mut())?;
 
     Ok(())
@@ -1353,6 +1355,7 @@ fn _deposit_obligation_collateral<'a>(
 
     obligation.last_update.mark_stale();
 
+    realloc_obligation_if_necessary(&obligation, &obligation_info)?;
     Obligation::pack(obligation, &mut obligation_info.data.borrow_mut())?;
 
     spl_token_transfer(TokenTransferParams {
@@ -1593,7 +1596,7 @@ fn _withdraw_obligation_collateral<'a>(
         u64::MAX
     };
 
-    let max_withdraw_amount = obligation.max_withdraw_amount(collateral, &withdraw_reserve)?;
+    let max_withdraw_amount = obligation.max_withdraw_amount(collateral, withdraw_reserve)?;
     let withdraw_amount = min(
         collateral_amount,
         min(max_withdraw_amount, max_outflow_collateral_amount),
@@ -1644,6 +1647,7 @@ fn _withdraw_obligation_collateral<'a>(
 
     obligation.last_update.mark_stale();
 
+    realloc_obligation_if_necessary(&obligation, &obligation_info)?;
     Obligation::pack(obligation, &mut obligation_info.data.borrow_mut())?;
 
     spl_token_transfer(TokenTransferParams {
@@ -1913,6 +1917,7 @@ fn process_borrow_obligation_liquidity(
         next_account_info(account_info_iter)?;
     }
 
+    realloc_obligation_if_necessary(&obligation, &obligation_info)?;
     Obligation::pack(obligation, &mut obligation_info.data.borrow_mut())?;
 
     let mut owner_fee = borrow_fee;
@@ -2051,6 +2056,7 @@ fn process_repay_obligation_liquidity(
         clock,
     )?;
 
+    realloc_obligation_if_necessary(&obligation, &obligation_info)?;
     Obligation::pack(obligation, &mut obligation_info.data.borrow_mut())?;
 
     spl_token_transfer(TokenTransferParams {
@@ -2290,6 +2296,8 @@ fn _liquidate_obligation<'a>(
     repay_reserve.acquire_reload()?;
 
     obligation.last_update.mark_stale();
+
+    realloc_obligation_if_necessary(&obligation, &obligation_info)?;
     Obligation::pack(obligation, &mut obligation_info.data.borrow_mut())?;
 
     spl_token_transfer(TokenTransferParams {
@@ -3103,6 +3111,8 @@ fn process_forgive_debt(
 
     obligation.repay(forgive_amount, liquidity_index)?;
     obligation.last_update.mark_stale();
+
+    realloc_obligation_if_necessary(&obligation, &obligation_info)?;
     Obligation::pack(obligation, &mut obligation_info.data.borrow_mut())?;
 
     Ok(())
@@ -3258,6 +3268,7 @@ pub fn process_set_obligation_closeability_status(
 
     obligation.closeable = closeable;
 
+    realloc_obligation_if_necessary(&obligation, &obligation_info)?;
     Obligation::pack(obligation, &mut obligation_info.data.borrow_mut())?;
 
     Ok(())
@@ -3552,6 +3563,44 @@ fn is_cpi_call(
     }
 
     Ok(false)
+}
+
+/// Calls realloc on the obligation if the packed size is larger than the
+/// underlying buffer.
+///
+/// # Important
+///
+/// The off-chain client is responsible for making sure the obligation has
+/// enough rent to be still rent-exempt.
+fn realloc_obligation_if_necessary<'info>(
+    obligation: &Obligation,
+    obligation_info: &AccountInfo<'info>,
+) -> ProgramResult {
+    let expected_size = obligation.size_in_bytes_when_packed();
+
+    if expected_size <= obligation_info.data_len() {
+        return Ok(());
+    }
+
+    let current_rent = obligation_info.lamports();
+    let new_rent = Rent::get()?.minimum_balance(expected_size);
+
+    if let Some(extra_rent) = new_rent.checked_sub(current_rent) {
+        msg!("Obligation is missing {} lamports in rent", extra_rent);
+        return Err(ProgramError::AccountNotRentExempt);
+    }
+
+    // From the [AccountInfo::realloc] docs:
+    //
+    // > Memory used to grow is already zero-initialized upon program entrypoint
+    // > and re-zeroing it wastes compute units. If within the same call a program
+    // > reallocs from larger to smaller and back to larger again the new space
+    // > could contain stale data. Pass true for zero_init in this case,
+    // > otherwise compute units will be wasted re-zero-initializing.
+    let zero_init = false;
+    obligation_info.realloc(expected_size, zero_init)?;
+
+    Ok(())
 }
 
 struct TokenInitializeMintParams<'a: 'b, 'b> {

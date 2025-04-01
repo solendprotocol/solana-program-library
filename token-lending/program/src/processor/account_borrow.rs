@@ -45,14 +45,6 @@ pub(crate) struct ReserveBorrow<'a, 'info> {
     guard: ReserveDataGuard<'a, 'info>,
 }
 
-impl<'a, 'info> Drop for ReserveBorrow<'a, 'info> {
-    fn drop(&mut self) {
-        if let Err(e) = self.release() {
-            msg!("Failed to release reserve data: {:?}", e);
-        }
-    }
-}
-
 enum ReserveDataGuard<'a, 'info> {
     Released,
     Ref(
@@ -66,6 +58,15 @@ enum ReserveDataGuardKind {
     Release,
     Ref,
     RefMut,
+}
+
+impl Drop for ReserveBorrow<'_, '_> {
+    fn drop(&mut self) {
+        if let Err(e) = self.release() {
+            msg!("Failed to release reserve data");
+            panic!("{}", e);
+        }
+    }
 }
 
 impl Deref for ReserveBorrow<'_, '_> {

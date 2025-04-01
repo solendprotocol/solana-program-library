@@ -968,6 +968,11 @@ impl Info<LendingMarket> {
             ComputeBudgetInstruction::set_compute_unit_limit(
                 cu_budgets::DEPOSIT_RESERVE_LIQUIDITY_AND_OBLIGATION_COLLATERAL,
             ),
+            system_instruction::transfer(
+                &test.context.payer.pubkey(),
+                &obligation.pubkey,
+                Rent::minimum_balance(&Rent::default(), 30_000), // TODO
+            ),
             deposit_reserve_liquidity_and_obligation_collateral(
                 solend_program::id(),
                 liquidity_amount,
@@ -1071,6 +1076,11 @@ impl Info<LendingMarket> {
             ComputeBudgetInstruction::set_compute_unit_limit(
                 cu_budgets::DEPOSIT_OBLIGATION_COLLATERAL,
             ),
+            system_instruction::transfer(
+                &test.context.payer.pubkey(),
+                &obligation.pubkey,
+                Rent::minimum_balance(&Rent::default(), 30_000), // TODO
+            ),
             deposit_obligation_collateral(
                 solend_program::id(),
                 collateral_amount,
@@ -1166,6 +1176,12 @@ impl Info<LendingMarket> {
             r
         };
 
+        instructions.push(system_instruction::transfer(
+            &test.context.payer.pubkey(),
+            &obligation.pubkey,
+            Rent::minimum_balance(&Rent::default(), 30_000), // TODO
+        ));
+
         instructions.push(refresh_obligation(
             solend_program::id(),
             obligation.pubkey,
@@ -1219,9 +1235,16 @@ impl Info<LendingMarket> {
             .await;
         test.process_transaction(&refresh_ixs, None).await.unwrap();
 
-        let mut instructions = vec![ComputeBudgetInstruction::set_compute_unit_limit(
-            cu_budgets::BORROW_OBLIGATION_LIQUIDITY,
-        )];
+        let mut instructions = vec![
+            ComputeBudgetInstruction::set_compute_unit_limit(
+                cu_budgets::BORROW_OBLIGATION_LIQUIDITY,
+            ),
+            system_instruction::transfer(
+                &test.context.payer.pubkey(),
+                &obligation.pubkey,
+                Rent::minimum_balance(&Rent::default(), 30_000), // TODO
+            ),
+        ];
         instructions.push(borrow_obligation_liquidity(
             solend_program::id(),
             liquidity_amount,

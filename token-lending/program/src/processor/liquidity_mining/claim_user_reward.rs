@@ -7,7 +7,9 @@
 //! deposit.
 //! This ix can be used to start tracking obligation's rewards.
 
-use crate::processor::{spl_token_transfer, ReserveBorrow, TokenTransferParams};
+use crate::processor::{
+    realloc_obligation_if_necessary, spl_token_transfer, ReserveBorrow, TokenTransferParams,
+};
 use solana_program::{
     account_info::{next_account_info, AccountInfo},
     clock::Clock,
@@ -120,6 +122,12 @@ pub(crate) fn process(program_id: &Pubkey, accounts: &[AccountInfo]) -> ProgramR
             clock,
         )?;
 
+        realloc_obligation_if_necessary(&accounts.obligation, &accounts.obligation_info)?;
+        Obligation::pack(
+            *accounts.obligation,
+            &mut accounts.obligation_info.data.borrow_mut(),
+        )?;
+
         return Ok(());
     };
 
@@ -155,6 +163,7 @@ pub(crate) fn process(program_id: &Pubkey, accounts: &[AccountInfo]) -> ProgramR
 
     // 4.
 
+    realloc_obligation_if_necessary(&accounts.obligation, &accounts.obligation_info)?;
     Obligation::pack(
         *accounts.obligation,
         &mut accounts.obligation_info.data.borrow_mut(),

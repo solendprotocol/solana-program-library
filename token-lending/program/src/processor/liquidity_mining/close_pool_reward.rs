@@ -5,7 +5,6 @@
 //!
 //! The claim ix is permission-less and therefore it can be cranked.
 
-use solana_program::program_pack::Pack;
 use solana_program::{
     account_info::{next_account_info, AccountInfo},
     entrypoint::ProgramResult,
@@ -13,10 +12,7 @@ use solana_program::{
     program_error::ProgramError,
     pubkey::Pubkey,
 };
-use solend_sdk::{
-    error::LendingError,
-    state::{PositionKind, Reserve},
-};
+use solend_sdk::{error::LendingError, state::PositionKind};
 use spl_token::state::Account as TokenAccount;
 
 use crate::processor::{

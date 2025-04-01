@@ -385,6 +385,13 @@ impl UserRewardManagers {
             self.0.last_mut().unwrap()
         };
 
+        msg!(
+            "There are {} total shares. User's previous position was at {} and new is at {}",
+            pool_reward_manager.total_shares,
+            user_reward_manager.share,
+            new_share
+        );
+
         pool_reward_manager.total_shares =
             pool_reward_manager.total_shares - user_reward_manager.share + new_share;
         user_reward_manager.share = new_share;
@@ -542,6 +549,10 @@ impl Obligation {
 
     /// How many bytes are needed to pack this [UserRewardManager].
     pub fn size_in_bytes_when_packed(&self) -> usize {
+        if self.user_reward_managers.is_empty() {
+            return OBLIGATION_LEN_V1;
+        }
+
         let mut size = OBLIGATION_LEN_V1 + 1;
 
         for reward_manager in self.user_reward_managers.iter() {
