@@ -4,9 +4,8 @@ use crate::{
     math::{Decimal, Rate, TryAdd, TryDiv, TryMul, TrySub},
 };
 use arrayref::{array_mut_ref, array_ref, array_refs, mut_array_refs};
-use core::ops::{Deref, DerefMut};
 use solana_program::{
-    clock::{Clock, Slot},
+    clock::Slot,
     entrypoint::ProgramResult,
     msg,
     program_error::ProgramError,
@@ -84,13 +83,8 @@ pub struct Obligation {
     pub user_reward_managers: UserRewardManagers,
 }
 
-/// Wraps over user reward managers and allows mutable access to them while
-/// other obligation fields are borrowed.
-#[derive(Clone, Debug, Default, PartialEq)]
-pub struct UserRewardManagers(Vec<UserRewardManager>);
-
 /// These are the two foundational user interactions in a borrow-lending protocol.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Debug, PartialEq, Eq, Clone, Copy)]
 pub enum PositionKind {
     /// User is providing liquidity.
     Deposit = 0,
@@ -121,26 +115,40 @@ impl Obligation {
         self.borrowed_value.try_div(self.deposited_value)
     }
 
-    /// Repay liquidity and remove it from borrows if zeroed out
-    pub fn repay(&mut self, settle_amount: Decimal, liquidity_index: usize) -> ProgramResult {
+    /// Repay liquidity and remove it from borrows if zeroed out.
+    ///
+    /// Returns current liability shares.
+    pub fn repay(
+        &mut self,
+        settle_amount: Decimal,
+        liquidity_index: usize,
+    ) -> Result<u64, ProgramError> {
         let liquidity = &mut self.borrows[liquidity_index];
         if settle_amount == liquidity.borrowed_amount_wads {
             self.borrows.remove(liquidity_index);
+            Ok(0)
         } else {
             liquidity.repay(settle_amount)?;
+            liquidity.liability_shares()
         }
-        Ok(())
     }
 
-    /// Withdraw collateral and remove it from deposits if zeroed out
-    pub fn withdraw(&mut self, withdraw_amount: u64, collateral_index: usize) -> ProgramResult {
+    /// Withdraw collateral and remove it from deposits if zeroed out.
+    ///
+    /// Returns the new deposited amount.
+    pub fn withdraw(
+        &mut self,
+        withdraw_amount: u64,
+        collateral_index: usize,
+    ) -> Result<u64, ProgramError> {
         let collateral = &mut self.deposits[collateral_index];
         if withdraw_amount == collateral.deposited_amount {
             self.deposits.remove(collateral_index);
+            Ok(0)
         } else {
             collateral.withdraw(withdraw_amount)?;
+            Ok(collateral.deposited_amount)
         }
-        Ok(())
     }
 
     /// calculate the maximum amount of collateral that can be borrowed
@@ -340,63 +348,6 @@ impl Obligation {
 
         msg!("Reserve not found in obligation");
         Err(LendingError::InvalidAccountInput.into())
-    }
-
-    /// Returns liability shares for borrow at given index.
-    pub fn liability_shares(&self, liquidity_index: usize) -> Result<u64, ProgramError> {
-        self.borrows[liquidity_index].liability_shares()
-    }
-}
-
-impl UserRewardManagers {
-    /// Returns [UserRewardManager] for the given reserve if any
-    pub fn find_mut(&mut self, reserve: Pubkey) -> Option<&mut UserRewardManager> {
-        self.0
-            .iter_mut()
-            .find(|user_reward_manager| user_reward_manager.reserve == reserve)
-    }
-
-    /// Updates the [UserRewardManager] for the given reserve.
-    ///
-    /// The caller must make sure that the provided [PoolRewardManager] is valid
-    /// for the given reserve.
-    ///
-    /// If an associated [UserRewardManager] is not found, it will be created.
-    ///
-    /// # Important
-    ///
-    /// Only call this if you're sure that the obligation should be tracking
-    /// rewards for the given reserve.
-    pub fn set_share(
-        &mut self,
-        reserve: Pubkey,
-        pool_reward_manager: &mut PoolRewardManager,
-        new_share: u64,
-        clock: &Clock,
-    ) -> Result<(), ProgramError> {
-        let user_reward_manager = if let Some(user_reward_manager) = self.find_mut(reserve) {
-            user_reward_manager.update(pool_reward_manager, clock)?;
-            user_reward_manager
-        } else {
-            let mut new_user_reward_manager = UserRewardManager::new(reserve, clock);
-            new_user_reward_manager.populate(pool_reward_manager, clock)?;
-            self.0.push(new_user_reward_manager);
-            // SAFETY: we just pushed a new item to the vector so ok to unwrap
-            self.0.last_mut().unwrap()
-        };
-
-        msg!(
-            "There are {} total shares. User's previous position was at {} and new is at {}",
-            pool_reward_manager.total_shares,
-            user_reward_manager.share,
-            new_share
-        );
-
-        pool_reward_manager.total_shares =
-            pool_reward_manager.total_shares - user_reward_manager.share + new_share;
-        user_reward_manager.share = new_share;
-
-        Ok(())
     }
 }
 
@@ -885,20 +836,6 @@ impl TryFrom<u8> for PositionKind {
             1 => Ok(PositionKind::Borrow),
             _ => Err(LendingError::InstructionUnpackError.into()),
         }
-    }
-}
-
-impl Deref for UserRewardManagers {
-    type Target = Vec<UserRewardManager>;
-
-    fn deref(&self) -> &Self::Target {
-        &self.0
-    }
-}
-
-impl DerefMut for UserRewardManagers {
-    fn deref_mut(&mut self) -> &mut Self::Target {
-        &mut self.0
     }
 }
 

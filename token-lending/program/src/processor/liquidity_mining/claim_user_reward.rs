@@ -83,7 +83,7 @@ pub(crate) fn process(program_id: &Pubkey, accounts: &[AccountInfo]) -> ProgramR
     let Some(user_reward_manager) = accounts
         .obligation
         .user_reward_managers
-        .find_mut(reserve_key)
+        .find_mut(reserve_key, position_kind)
     else {
         // We've checked that the obligation associates this reserve but it's
         // not in the user reward managers yet.
@@ -117,6 +117,7 @@ pub(crate) fn process(program_id: &Pubkey, accounts: &[AccountInfo]) -> ProgramR
 
         accounts.obligation.user_reward_managers.set_share(
             reserve_key,
+            position_kind,
             pool_reward_manager,
             migrated_share,
             clock,

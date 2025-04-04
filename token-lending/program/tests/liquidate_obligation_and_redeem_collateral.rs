@@ -35,6 +35,7 @@ use solend_program::state::ReserveCollateral;
 use solend_program::state::ReserveLiquidity;
 use solend_program::state::LIQUIDATION_CLOSE_FACTOR;
 
+use pretty_assertions::assert_eq;
 use std::collections::HashSet;
 
 #[tokio::test]

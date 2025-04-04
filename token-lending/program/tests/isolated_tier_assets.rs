@@ -1,5 +1,7 @@
 #![cfg(feature = "test-bpf")]
 
+use pretty_assertions::assert_eq;
+
 use crate::solend_program_test::custom_scenario;
 use solend_program::state::ObligationCollateral;
 
@@ -15,7 +17,10 @@ use solend_sdk::math::Decimal;
 
 use solend_program::state::LastUpdate;
 use solend_program::state::ReserveType;
-use solend_program::state::{Obligation, ObligationLiquidity, ReserveConfig};
+use solend_program::state::{
+    Obligation, ObligationLiquidity, PositionKind, ReserveConfig, UserRewardManager,
+    UserRewardManagers,
+};
 
 use solend_sdk::state::ReserveFees;
 mod helpers;
@@ -85,6 +90,10 @@ async fn test_refresh_obligation() {
         .iter()
         .find(|r| r.account.liquidity.mint_pubkey == wsol_mint::id())
         .unwrap();
+    let usdc_reserve = reserves
+        .iter()
+        .find(|r| r.account.liquidity.mint_pubkey == usdc_mint::id())
+        .unwrap();
 
     // borrow isolated tier asset
     lending_market
@@ -105,6 +114,10 @@ async fn test_refresh_obligation() {
         .unwrap();
 
     let obligation_post = test.load_obligation(obligations[0].pubkey).await;
+
+    let last_update_time_secs =
+        obligation_post.account.user_reward_managers[0].last_update_time_secs;
+    assert_ne!(last_update_time_secs, 0,);
 
     assert_eq!(
         obligation_post.account,
@@ -127,6 +140,22 @@ async fn test_refresh_obligation() {
             unweighted_borrowed_value: Decimal::from(10u64),
             borrowed_value_upper_bound: Decimal::from(10u64),
             borrowing_isolated_asset: true,
+            user_reward_managers: UserRewardManagers(vec![
+                UserRewardManager {
+                    reserve: usdc_reserve.pubkey,
+                    position_kind: PositionKind::Deposit,
+                    share: 100000000,
+                    last_update_time_secs,
+                    rewards: Vec::new(),
+                },
+                UserRewardManager {
+                    reserve: wsol_reserve.pubkey,
+                    position_kind: PositionKind::Borrow,
+                    share: 1000000000,
+                    last_update_time_secs,
+                    rewards: Vec::new(),
+                },
+            ],),
             ..obligations[0].account.clone()
         }
     );
@@ -287,7 +316,7 @@ async fn borrow_isolated_asset_invalid() {
     assert_eq!(
         err,
         TransactionError::InstructionError(
-            1,
+            2,
             InstructionError::Custom(LendingError::IsolatedTierAssetViolation as u32)
         )
     );
@@ -381,7 +410,7 @@ async fn borrow_regular_asset_invalid() {
     assert_eq!(
         err,
         TransactionError::InstructionError(
-            1,
+            2,
             InstructionError::Custom(LendingError::IsolatedTierAssetViolation as u32)
         )
     );
@@ -485,7 +514,7 @@ async fn invalid_borrow_due_to_reserve_config_change() {
     assert_eq!(
         err,
         TransactionError::InstructionError(
-            1,
+            2,
             InstructionError::Custom(LendingError::IsolatedTierAssetViolation as u32)
         )
     );

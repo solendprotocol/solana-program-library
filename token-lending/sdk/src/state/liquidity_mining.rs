@@ -2,9 +2,13 @@ use super::pack_decimal;
 use crate::{
     error::LendingError,
     math::{Decimal, TryAdd, TryDiv, TryMul, TrySub},
-    state::unpack_decimal,
+    state::{unpack_decimal, PositionKind},
 };
 use arrayref::{array_mut_ref, array_ref, array_refs, mut_array_refs};
+use core::{
+    convert::TryInto,
+    ops::{Deref, DerefMut},
+};
 use solana_program::msg;
 use solana_program::program_pack::{Pack, Sealed};
 use solana_program::{
@@ -12,7 +16,7 @@ use solana_program::{
     program_error::ProgramError,
     pubkey::{Pubkey, PUBKEY_BYTES},
 };
-use std::convert::{TryFrom, TryInto};
+use std::convert::TryFrom;
 
 /// Determines the size of [PoolRewardManager]
 pub const MAX_REWARDS: usize = 50;
@@ -118,20 +122,23 @@ pub struct PoolReward {
     pub cumulative_rewards_per_share: Decimal,
 }
 
+/// Wraps over user reward managers and allows mutable access to them while
+/// other obligation fields are borrowed.
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct UserRewardManagers(pub Vec<UserRewardManager>);
+
 /// Tracks user's LM rewards for a specific pool (reserve.)
-#[derive(Debug, PartialEq, Eq, Default, Clone)]
+#[derive(Debug, PartialEq, Eq, Clone)]
 pub struct UserRewardManager {
-    /// User cannot both borrow and deposit in the same reserve.
-    /// This manager is unique for this reserve within an obligation.
-    ///
-    /// We know whether to use [crate::state::Reserve]'s
-    /// `deposits_pool_reward_manager` or `borrows_pool_reward_manager` based on
-    /// this field.
-    ///
-    /// One optimization we could make is to link the [UserRewardManager] via
-    /// index which would save 32 bytes per [UserRewardManager].
-    /// However, that does make the program logic more error prone.
+    /// Links this manager to a reserve.
     pub reserve: Pubkey,
+    /// Although a user cannot both borrow and deposit in the same reserve, they
+    /// can deposit, withdraw and then borrow the same reserve.
+    /// Meanwhile they could've accumulated some rewards that'd be lost.
+    ///
+    /// Also, have an explicit distinguish between borrow and deposit doesn't
+    /// suffer from an issue of misattributing rewards.
+    pub position_kind: PositionKind,
     /// For deposits, this is the amount of collateral token user has in
     /// their obligation deposit.
     ///
@@ -368,13 +375,83 @@ enum CreatingNewUserRewardManager {
     No,
 }
 
+impl UserRewardManagers {
+    /// Returns [UserRewardManager] for the given reserve if any
+    pub fn find_mut(
+        &mut self,
+        reserve: Pubkey,
+        position_kind: PositionKind,
+    ) -> Option<&mut UserRewardManager> {
+        self.0.iter_mut().find(|user_reward_manager| {
+            user_reward_manager.reserve == reserve
+                && user_reward_manager.position_kind == position_kind
+        })
+    }
+
+    /// Updates the [UserRewardManager] for the given reserve.
+    ///
+    /// The caller must make sure that the provided [PoolRewardManager] is valid
+    /// for the given reserve.
+    ///
+    /// If an associated [UserRewardManager] is not found, it will be created.
+    ///
+    /// # Important
+    ///
+    /// Only call this if you're sure that the obligation should be tracking
+    /// rewards for the given reserve.
+    pub fn set_share(
+        &mut self,
+        reserve: Pubkey,
+        position_kind: PositionKind,
+        pool_reward_manager: &mut PoolRewardManager,
+        new_share: u64,
+        clock: &Clock,
+    ) -> Result<(), ProgramError> {
+        let user_reward_manager = if let Some(user_reward_manager) =
+            self.find_mut(reserve, position_kind)
+        {
+            user_reward_manager.update(pool_reward_manager, clock)?;
+            user_reward_manager
+        } else {
+            let mut new_user_reward_manager = UserRewardManager::new(reserve, position_kind, clock);
+            new_user_reward_manager.populate(pool_reward_manager, clock)?;
+            self.0.push(new_user_reward_manager);
+            // SAFETY: we just pushed a new item to the vector so ok to unwrap
+            self.0.last_mut().unwrap()
+        };
+
+        msg!(
+            "For reserve {} there are {} total shares. \
+            User's previous position was at {} and new is at {}",
+            reserve,
+            pool_reward_manager.total_shares,
+            user_reward_manager.share,
+            new_share
+        );
+
+        // This works even for migrations.
+        // User's old share is 0 although it shouldn't be bcs they have borrowed
+        // or deposited.
+        // We only now attribute the share to the user which is fine, it's as if
+        // they just now borrowed/deposited.
+        pool_reward_manager.total_shares =
+            pool_reward_manager.total_shares - user_reward_manager.share + new_share;
+
+        user_reward_manager.share = new_share;
+
+        Ok(())
+    }
+}
+
 impl UserRewardManager {
     /// Creates a new empty [UserRewardManager] for the given reserve.
-    pub fn new(reserve: Pubkey, clock: &Clock) -> Self {
+    pub fn new(reserve: Pubkey, position_kind: PositionKind, clock: &Clock) -> Self {
         Self {
             reserve,
             last_update_time_secs: clock.unix_timestamp as _,
-            ..Default::default()
+            position_kind,
+            share: 0,
+            rewards: Vec::new(),
         }
     }
 
@@ -785,10 +862,11 @@ impl UserRewardManager {
     /// Length of data before [Self::rewards] tail.
     ///
     /// - [Self::reserve]
+    /// - [Self::position_kind]
     /// - [Self::share]
     /// - [Self::last_update_time_secs]
     /// - [Self::rewards] vector length as u8
-    const HEAD_LEN: usize = PUBKEY_BYTES + 8 + 8 + 1;
+    const HEAD_LEN: usize = PUBKEY_BYTES + 1 + 8 + 8 + 1;
 
     /// How many bytes are needed to pack this [UserRewardManager].
     pub(crate) fn size_in_bytes_when_packed(&self) -> usize {
@@ -802,17 +880,25 @@ impl UserRewardManager {
     pub(crate) fn pack_into_slice(&self, output: &mut [u8]) {
         let raw_user_reward_manager = array_mut_ref![output, 0, UserRewardManager::HEAD_LEN];
 
-        let (dst_reserve, dst_share, dst_last_update_time_secs, dst_user_rewards_len) = mut_array_refs![
+        let (
+            dst_reserve,
+            dst_position_kind,
+            dst_share,
+            dst_last_update_time_secs,
+            dst_user_rewards_len,
+        ) = mut_array_refs![
             raw_user_reward_manager,
             PUBKEY_BYTES,
+            1, // position_kind
             8, // share
             8, // last_update_time_secs
             1  // length of rewards array that's next to come
         ];
 
+        dst_reserve.copy_from_slice(self.reserve.as_ref());
+        dst_position_kind.copy_from_slice(&(self.position_kind as u8).to_le_bytes());
         dst_share.copy_from_slice(&self.share.to_le_bytes());
         dst_last_update_time_secs.copy_from_slice(&self.last_update_time_secs.to_le_bytes());
-        dst_reserve.copy_from_slice(self.reserve.as_ref());
         dst_user_rewards_len.copy_from_slice(
             &({
                 debug_assert!(MAX_REWARDS >= self.rewards.len());
@@ -854,15 +940,23 @@ impl UserRewardManager {
         let raw_user_reward_manager_head = array_ref![input, 0, UserRewardManager::HEAD_LEN];
 
         #[allow(clippy::ptr_offset_with_cast)]
-        let (src_reserve, src_share, src_last_update_time_secs, src_user_rewards_len) = array_refs![
+        let (
+            src_reserve,
+            src_position_kind,
+            src_share,
+            src_last_update_time_secs,
+            src_user_rewards_len,
+        ) = array_refs![
             raw_user_reward_manager_head,
             PUBKEY_BYTES,
+            1, // position_kind
             8, // share
             8, // last_update_time_secs
             1  // length of rewards array that's next to come
         ];
 
         let reserve = Pubkey::new_from_array(*src_reserve);
+        let position_kind = u8::from_le_bytes(*src_position_kind).try_into()?;
         let user_rewards_len = u8::from_le_bytes(*src_user_rewards_len) as _;
         let share = u64::from_le_bytes(*src_share);
         let last_update_time_secs = u64::from_le_bytes(*src_last_update_time_secs);
@@ -890,10 +984,37 @@ impl UserRewardManager {
 
         Ok(Self {
             reserve,
+            position_kind,
             share,
             last_update_time_secs,
             rewards,
         })
+    }
+}
+
+impl Deref for UserRewardManagers {
+    type Target = Vec<UserRewardManager>;
+
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
+}
+
+impl DerefMut for UserRewardManagers {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.0
+    }
+}
+
+impl Default for UserRewardManager {
+    fn default() -> Self {
+        Self {
+            reserve: Pubkey::default(),
+            position_kind: PositionKind::Deposit,
+            share: 0,
+            last_update_time_secs: 0,
+            rewards: Vec::new(),
+        }
     }
 }
 
@@ -1052,6 +1173,7 @@ mod tests {
             let rewards_len = rng.gen_range(0..MAX_REWARDS);
             Self {
                 reserve: Pubkey::new_unique(),
+                position_kind: rng.gen_range(0..=1u8).try_into().unwrap(),
                 share: rng.gen(),
                 last_update_time_secs: rng.gen(),
                 rewards: std::iter::from_fn(|| {

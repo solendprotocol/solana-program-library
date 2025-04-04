@@ -35,11 +35,11 @@ use solana_program::{
     program_error::ProgramError,
     program_pack::{IsInitialized, Pack},
     pubkey::Pubkey,
-    system_instruction,
     system_instruction::create_account,
     sysvar::instructions::{load_current_index_checked, load_instruction_at_checked},
     sysvar::{clock::Clock, rent::Rent, Sysvar},
 };
+use solend_sdk::state::PositionKind;
 use solend_sdk::{
     math::SaturatingSub,
     state::{LendingMarketMetadata, RateLimiter, RateLimiterConfig, ReserveType},
@@ -1348,6 +1348,7 @@ fn _deposit_obligation_collateral<'a>(
     let new_share = collateral.deposited_amount;
     obligation.user_reward_managers.set_share(
         deposit_reserve.key(),
+        PositionKind::Deposit,
         &mut deposit_reserve.deposits_pool_reward_manager,
         new_share,
         clock,
@@ -1634,12 +1635,12 @@ fn _withdraw_obligation_collateral<'a>(
 
     // obligation.withdraw must be called after updating borrow attribution values, since we can
     // lose information if an entire deposit is removed, making the former calculation incorrect
-    obligation.withdraw(withdraw_amount, collateral_index)?;
+    let new_share = obligation.withdraw(withdraw_amount, collateral_index)?;
 
     // liq. mining
-    let new_share = obligation.deposits[collateral_index].deposited_amount;
     obligation.user_reward_managers.set_share(
         withdraw_reserve.key(),
+        PositionKind::Deposit,
         &mut withdraw_reserve.deposits_pool_reward_manager,
         new_share,
         clock,
@@ -1891,6 +1892,7 @@ fn process_borrow_obligation_liquidity(
     let new_share = obligation_liquidity.liability_shares()?;
     obligation.user_reward_managers.set_share(
         borrow_reserve.key(),
+        PositionKind::Borrow,
         &mut borrow_reserve.borrows_pool_reward_manager,
         new_share,
         clock,
@@ -2044,13 +2046,13 @@ fn process_repay_obligation_liquidity(
     repay_reserve.liquidity.repay(repay_amount, settle_amount)?;
     repay_reserve.last_update.mark_stale();
 
-    obligation.repay(settle_amount, liquidity_index)?;
+    let new_share = obligation.repay(settle_amount, liquidity_index)?;
     obligation.last_update.mark_stale();
 
     // liq. mining
-    let new_share = obligation.liability_shares(liquidity_index)?;
     obligation.user_reward_managers.set_share(
         repay_reserve.key(),
+        PositionKind::Borrow,
         &mut repay_reserve.borrows_pool_reward_manager,
         new_share,
         clock,
@@ -2246,12 +2248,12 @@ fn _liquidate_obligation<'a>(
 
         repay_reserve.liquidity.repay(repay_amount, settle_amount)?;
         repay_reserve.last_update.mark_stale();
-        obligation.repay(settle_amount, liquidity_index)?;
+        let new_share = obligation.repay(settle_amount, liquidity_index)?;
 
         // liq. mining
-        let new_share = obligation.liability_shares(liquidity_index)?;
         obligation.user_reward_managers.set_share(
             repay_reserve.key(),
+            PositionKind::Borrow,
             &mut repay_reserve.borrows_pool_reward_manager,
             new_share,
             clock,
@@ -2276,12 +2278,12 @@ fn _liquidate_obligation<'a>(
                 .saturating_sub(collateral_market_value);
         }
 
-        obligation.withdraw(withdraw_amount, collateral_index)?;
+        let new_share = obligation.withdraw(withdraw_amount, collateral_index)?;
 
         // liq. mining
-        let new_share = obligation.deposits[collateral_index].deposited_amount;
         obligation.user_reward_managers.set_share(
             withdraw_reserve.key(),
+            PositionKind::Deposit,
             &mut withdraw_reserve.deposits_pool_reward_manager,
             new_share,
             clock,
@@ -3109,8 +3111,17 @@ fn process_forgive_debt(
     reserve.liquidity.forgive_debt(forgive_amount)?;
     reserve.last_update.mark_stale();
 
-    obligation.repay(forgive_amount, liquidity_index)?;
+    let new_share = obligation.repay(forgive_amount, liquidity_index)?;
     obligation.last_update.mark_stale();
+
+    // liq. mining
+    obligation.user_reward_managers.set_share(
+        reserve.key(),
+        PositionKind::Borrow,
+        &mut reserve.borrows_pool_reward_manager,
+        new_share,
+        &Clock::get()?,
+    )?;
 
     realloc_obligation_if_necessary(&obligation, &obligation_info)?;
     Obligation::pack(obligation, &mut obligation_info.data.borrow_mut())?;
