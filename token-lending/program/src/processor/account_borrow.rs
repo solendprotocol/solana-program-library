@@ -38,9 +38,6 @@ use std::result::Result;
 /// The write happens on [Self::release] or in any function that calls it and on
 /// [drop].
 pub(crate) struct ReserveBorrow<'a, 'info> {
-    // /// "Locks" the data so that no other borrow can read or write it.
-    // // _data_ref: std::cell::RefMut<'a, &'info mut [u8]>,
-    // data_ref: Option<std::cell::RefMut<'a, &'info mut [u8]>>,
     info: &'a AccountInfo<'info>,
     guard: ReserveDataGuard<'a, 'info>,
 }
