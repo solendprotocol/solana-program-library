@@ -974,8 +974,9 @@ mod test {
         fn repay_partial_amounts()(amount in 1..=u64::MAX)(
             repay_amount in Just(WAD as u128 * amount as u128),
             borrowed_amount in (WAD as u128 * amount as u128 + 1)..=MAX_BORROWED,
-        ) -> (u128, u128) {
-            (repay_amount, borrowed_amount)
+            cumulative_borrow_rate in (WAD as u128)..=(WAD as u128 * MAX_COMPOUNDED_INTEREST as u128),
+        ) -> (u128, u128, u128) {
+            (repay_amount, borrowed_amount, cumulative_borrow_rate)
         }
     }
 
@@ -991,19 +992,22 @@ mod test {
     proptest! {
         #[test]
         fn repay_partial(
-            (repay_amount, borrowed_amount) in repay_partial_amounts(),
+            (repay_amount, borrowed_amount, cumulative_borrow_rate) in repay_partial_amounts(),
         ) {
             let borrowed_amount_wads = Decimal::from_scaled_val(borrowed_amount);
             let repay_amount_wads = Decimal::from_scaled_val(repay_amount);
+            let cumulative_borrow_rate_wads = Decimal::from_scaled_val(cumulative_borrow_rate);
             let mut obligation = Obligation {
                 borrows: vec![ObligationLiquidity {
                     borrowed_amount_wads,
+                    cumulative_borrow_rate_wads,
                     ..ObligationLiquidity::default()
                 }],
                 ..Obligation::default()
             };
 
-            obligation.repay(repay_amount_wads, 0)?;
+            let liability_shares = obligation.repay(repay_amount_wads, 0)?;
+            assert_ne!(liability_shares, 0);
             assert!(obligation.borrows[0].borrowed_amount_wads < borrowed_amount_wads);
             assert!(obligation.borrows[0].borrowed_amount_wads > Decimal::zero());
         }
@@ -1014,9 +1018,11 @@ mod test {
         ) {
             let borrowed_amount_wads = Decimal::from_scaled_val(borrowed_amount);
             let repay_amount_wads = Decimal::from_scaled_val(repay_amount);
+            let cumulative_borrow_rate_wads = Decimal::one();
             let mut obligation = Obligation {
                 borrows: vec![ObligationLiquidity {
                     borrowed_amount_wads,
+                    cumulative_borrow_rate_wads,
                     ..ObligationLiquidity::default()
                 }],
                 ..Obligation::default()
