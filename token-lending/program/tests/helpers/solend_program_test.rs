@@ -58,23 +58,30 @@ use super::mock_pyth::{init, set_price};
 use super::mock_pyth_pull::{init as init_pull, set_price as set_price_pull};
 
 mod cu_budgets {
-    pub(super) const INIT_OBLIGATION: u32 = 5_001;
-    pub(super) const DEPOSIT_OBLIGATION_COLLATERAL: u32 = 70_002;
+    pub(super) const INIT_OBLIGATION: u32 = 10_001;
+    pub(super) const DEPOSIT_OBLIGATION_COLLATERAL: u32 = 38_002;
     pub(super) const REFRESH_RESERVE: u32 = 2_000_003;
     pub(super) const REFRESH_OBLIGATION: u32 = 1_000_004;
-    pub(super) const BORROW_OBLIGATION_LIQUIDITY: u32 = 140_005;
-    pub(super) const REPAY_OBLIGATION_LIQUIDITY: u32 = 70_006;
+    pub(super) const BORROW_OBLIGATION_LIQUIDITY: u32 = 100_005;
+    pub(super) const REPAY_OBLIGATION_LIQUIDITY: u32 = 35_006;
     pub(super) const REDEEM_FEES: u32 = 80_007;
-    pub(super) const LIQUIDATE_OBLIGATION_AND_REDEEM_RESERVE_COLLATERAL: u32 = 200_008;
-    pub(super) const WITHDRAW_OBLIGATION_COLLATERAL_AND_REDEEM_RESERVE_COLLATERAL: u32 = 200_009;
+    pub(super) const LIQUIDATE_OBLIGATION_AND_REDEEM_RESERVE_COLLATERAL: u32 = 110_008;
+    pub(super) const WITHDRAW_OBLIGATION_COLLATERAL_AND_REDEEM_RESERVE_COLLATERAL: u32 = 110_009;
     pub(super) const WITHDRAW_OBLIGATION_COLLATERAL: u32 = 100_010;
     pub(super) const INIT_RESERVE: u32 = 90_011;
-    pub(super) const DEPOSIT: u32 = 70_012;
+    pub(super) const DEPOSIT: u32 = 50_012;
     pub(super) const DONATE_TO_RESERVE: u32 = 50_013;
-    pub(super) const UPDATE_RESERVE_CONFIG: u32 = 25_014;
-    pub(super) const DEPOSIT_RESERVE_LIQUIDITY_AND_OBLIGATION_COLLATERAL: u32 = 130_015;
-    pub(super) const REDEEM: u32 = 130_016;
+    pub(super) const UPDATE_RESERVE_CONFIG: u32 = 30_014;
+    pub(super) const DEPOSIT_RESERVE_LIQUIDITY_AND_OBLIGATION_COLLATERAL: u32 = 70_015;
+    pub(super) const REDEEM: u32 = 58_016;
 }
+
+/// This is at most how many bytes can an obligation grow.
+/// An obligation grows dynamically as needed when new rewards are being tracked.
+/// These tests don't need to care about correctly transferring just the amount
+/// needed, we'll just transfer lamports to cover the rent of the largest
+/// possible obligation there can be.
+const OBLIGATION_EXTRA_SIZE: usize = Obligation::MAX_LEN - Obligation::MIN_LEN;
 
 pub struct SolendProgramTest {
     pub context: ProgramTestContext,
@@ -971,7 +978,7 @@ impl Info<LendingMarket> {
             system_instruction::transfer(
                 &test.context.payer.pubkey(),
                 &obligation.pubkey,
-                Rent::minimum_balance(&Rent::default(), 30_000), // TODO
+                Rent::minimum_balance(&Rent::default(), OBLIGATION_EXTRA_SIZE),
             ),
             deposit_reserve_liquidity_and_obligation_collateral(
                 solend_program::id(),
@@ -1079,7 +1086,7 @@ impl Info<LendingMarket> {
             system_instruction::transfer(
                 &test.context.payer.pubkey(),
                 &obligation.pubkey,
-                Rent::minimum_balance(&Rent::default(), 30_000), // TODO
+                Rent::minimum_balance(&Rent::default(), OBLIGATION_EXTRA_SIZE),
             ),
             deposit_obligation_collateral(
                 solend_program::id(),
@@ -1179,7 +1186,7 @@ impl Info<LendingMarket> {
         instructions.push(system_instruction::transfer(
             &test.context.payer.pubkey(),
             &obligation.pubkey,
-            Rent::minimum_balance(&Rent::default(), 30_000), // TODO
+            Rent::minimum_balance(&Rent::default(), OBLIGATION_EXTRA_SIZE),
         ));
 
         instructions.push(refresh_obligation(
@@ -1242,7 +1249,7 @@ impl Info<LendingMarket> {
             system_instruction::transfer(
                 &test.context.payer.pubkey(),
                 &obligation.pubkey,
-                Rent::minimum_balance(&Rent::default(), 30_000), // TODO
+                Rent::minimum_balance(&Rent::default(), OBLIGATION_EXTRA_SIZE),
             ),
         ];
         instructions.push(borrow_obligation_liquidity(
@@ -1343,6 +1350,11 @@ impl Info<LendingMarket> {
                 ComputeBudgetInstruction::set_compute_unit_limit(
                     cu_budgets::LIQUIDATE_OBLIGATION_AND_REDEEM_RESERVE_COLLATERAL,
                 ),
+                system_instruction::transfer(
+                    &test.context.payer.pubkey(),
+                    &obligation.pubkey,
+                    Rent::minimum_balance(&Rent::default(), OBLIGATION_EXTRA_SIZE),
+                ),
                 liquidate_obligation_and_redeem_reserve_collateral(
                     solend_program::id(),
                     liquidity_amount,
@@ -1382,6 +1394,11 @@ impl Info<LendingMarket> {
             .build_refresh_instructions(test, obligation, None)
             .await;
 
+        instructions.push(system_instruction::transfer(
+            &test.context.payer.pubkey(),
+            &obligation.pubkey,
+            Rent::minimum_balance(&Rent::default(), OBLIGATION_EXTRA_SIZE),
+        ));
         instructions.push(liquidate_obligation(
             solend_program::id(),
             liquidity_amount,

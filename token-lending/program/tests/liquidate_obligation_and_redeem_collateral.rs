@@ -373,7 +373,7 @@ async fn test_whitelisting_liquidator() {
     assert_eq!(
         err,
         TransactionError::InstructionError(
-            1,
+            2,
             InstructionError::Custom(LendingError::NotWhitelistedLiquidator as u32)
         )
     );
@@ -699,7 +699,7 @@ async fn test_liquidity_ordering() {
     assert_eq!(
         err,
         TransactionError::InstructionError(
-            1,
+            2,
             InstructionError::Custom(LendingError::InvalidAccountInput as u32)
         )
     );

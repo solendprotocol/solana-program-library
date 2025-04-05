@@ -137,7 +137,7 @@ pub struct UserRewardManager {
     /// Meanwhile they could've accumulated some rewards that'd be lost.
     ///
     /// Also, have an explicit distinguish between borrow and deposit doesn't
-    /// suffer from an issue of misattributing rewards.
+    /// suffer from a footgun of misattributing rewards.
     pub position_kind: PositionKind,
     /// For deposits, this is the amount of collateral token user has in
     /// their obligation deposit.

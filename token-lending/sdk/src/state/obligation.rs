@@ -496,7 +496,8 @@ impl Obligation {
     ///
     /// - [Self::user_reward_managers] vec length in u8
     /// - [Self::user_reward_managers] vector
-    const MAX_LEN: usize = Self::MIN_LEN + 1 + MAX_OBLIGATION_RESERVES * UserRewardManager::MAX_LEN;
+    pub const MAX_LEN: usize =
+        Self::MIN_LEN + 1 + MAX_OBLIGATION_RESERVES * UserRewardManager::MAX_LEN;
 
     /// How many bytes are needed to pack this [UserRewardManager].
     pub fn size_in_bytes_when_packed(&self) -> usize {
