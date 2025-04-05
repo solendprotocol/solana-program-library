@@ -144,7 +144,7 @@ async fn test_borrow() {
     assert_eq!(
         err,
         TransactionError::InstructionError(
-            1,
+            2,
             InstructionError::Custom(LendingError::BorrowTooLarge as u32)
         )
     );

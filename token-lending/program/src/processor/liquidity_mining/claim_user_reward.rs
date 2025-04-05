@@ -123,7 +123,7 @@ pub(crate) fn process(program_id: &Pubkey, accounts: &[AccountInfo]) -> ProgramR
             clock,
         )?;
 
-        realloc_obligation_if_necessary(&accounts.obligation, &accounts.obligation_info)?;
+        realloc_obligation_if_necessary(&accounts.obligation, accounts.obligation_info)?;
         Obligation::pack(
             *accounts.obligation,
             &mut accounts.obligation_info.data.borrow_mut(),
@@ -164,7 +164,7 @@ pub(crate) fn process(program_id: &Pubkey, accounts: &[AccountInfo]) -> ProgramR
 
     // 4.
 
-    realloc_obligation_if_necessary(&accounts.obligation, &accounts.obligation_info)?;
+    realloc_obligation_if_necessary(&accounts.obligation, accounts.obligation_info)?;
     Obligation::pack(
         *accounts.obligation,
         &mut accounts.obligation_info.data.borrow_mut(),
