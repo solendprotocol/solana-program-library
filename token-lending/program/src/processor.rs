@@ -1166,7 +1166,7 @@ fn process_refresh_obligation(program_id: &Pubkey, accounts: &[AccountInfo]) -> 
         .borrows
         .retain(|liquidity| liquidity.borrowed_amount_wads > Decimal::zero());
 
-    realloc_obligation_if_necessary(&obligation, &obligation_info)?;
+    realloc_obligation_if_necessary(&obligation, obligation_info)?;
     Obligation::pack(obligation, &mut obligation_info.data.borrow_mut())?;
 
     Ok(())
@@ -1356,7 +1356,7 @@ fn _deposit_obligation_collateral<'a>(
 
     obligation.last_update.mark_stale();
 
-    realloc_obligation_if_necessary(&obligation, &obligation_info)?;
+    realloc_obligation_if_necessary(&obligation, obligation_info)?;
     Obligation::pack(obligation, &mut obligation_info.data.borrow_mut())?;
 
     spl_token_transfer(TokenTransferParams {
@@ -1648,7 +1648,7 @@ fn _withdraw_obligation_collateral<'a>(
 
     obligation.last_update.mark_stale();
 
-    realloc_obligation_if_necessary(&obligation, &obligation_info)?;
+    realloc_obligation_if_necessary(&obligation, obligation_info)?;
     Obligation::pack(obligation, &mut obligation_info.data.borrow_mut())?;
 
     spl_token_transfer(TokenTransferParams {
@@ -1919,7 +1919,7 @@ fn process_borrow_obligation_liquidity(
         next_account_info(account_info_iter)?;
     }
 
-    realloc_obligation_if_necessary(&obligation, &obligation_info)?;
+    realloc_obligation_if_necessary(&obligation, obligation_info)?;
     Obligation::pack(obligation, &mut obligation_info.data.borrow_mut())?;
 
     let mut owner_fee = borrow_fee;
@@ -2058,7 +2058,7 @@ fn process_repay_obligation_liquidity(
         clock,
     )?;
 
-    realloc_obligation_if_necessary(&obligation, &obligation_info)?;
+    realloc_obligation_if_necessary(&obligation, obligation_info)?;
     Obligation::pack(obligation, &mut obligation_info.data.borrow_mut())?;
 
     spl_token_transfer(TokenTransferParams {
@@ -2299,7 +2299,7 @@ fn _liquidate_obligation<'a>(
 
     obligation.last_update.mark_stale();
 
-    realloc_obligation_if_necessary(&obligation, &obligation_info)?;
+    realloc_obligation_if_necessary(&obligation, obligation_info)?;
     Obligation::pack(obligation, &mut obligation_info.data.borrow_mut())?;
 
     spl_token_transfer(TokenTransferParams {
@@ -3123,7 +3123,7 @@ fn process_forgive_debt(
         &Clock::get()?,
     )?;
 
-    realloc_obligation_if_necessary(&obligation, &obligation_info)?;
+    realloc_obligation_if_necessary(&obligation, obligation_info)?;
     Obligation::pack(obligation, &mut obligation_info.data.borrow_mut())?;
 
     Ok(())
@@ -3279,7 +3279,7 @@ pub fn process_set_obligation_closeability_status(
 
     obligation.closeable = closeable;
 
-    realloc_obligation_if_necessary(&obligation, &obligation_info)?;
+    realloc_obligation_if_necessary(&obligation, obligation_info)?;
     Obligation::pack(obligation, &mut obligation_info.data.borrow_mut())?;
 
     Ok(())
@@ -3583,9 +3583,9 @@ fn is_cpi_call(
 ///
 /// The off-chain client is responsible for making sure the obligation has
 /// enough rent to be still rent-exempt.
-fn realloc_obligation_if_necessary<'info>(
+fn realloc_obligation_if_necessary(
     obligation: &Obligation,
-    obligation_info: &AccountInfo<'info>,
+    obligation_info: &AccountInfo<'_>,
 ) -> ProgramResult {
     let expected_size = obligation.size_in_bytes_when_packed();
 
