@@ -72,7 +72,7 @@ mod cu_budgets {
     pub(super) const DEPOSIT: u32 = 50_012;
     pub(super) const DONATE_TO_RESERVE: u32 = 50_013;
     pub(super) const UPDATE_RESERVE_CONFIG: u32 = 30_014;
-    pub(super) const DEPOSIT_RESERVE_LIQUIDITY_AND_OBLIGATION_COLLATERAL: u32 = 70_015;
+    pub(super) const DEPOSIT_RESERVE_LIQUIDITY_AND_OBLIGATION_COLLATERAL: u32 = 100_015;
     pub(super) const REDEEM: u32 = 58_016;
 }
 

@@ -203,7 +203,7 @@ impl PoolRewardManager {
 
         let start_time_secs = start_time_secs.max(clock.unix_timestamp as u64);
 
-        if start_time_secs <= end_time_secs {
+        if start_time_secs >= end_time_secs {
             msg!("Pool reward must end after it starts");
             return Err(LendingError::MathOverflow.into());
         }
@@ -420,24 +420,7 @@ impl UserRewardManagers {
             self.0.last_mut().unwrap()
         };
 
-        msg!(
-            "For reserve {} there are {} total shares. \
-            User's previous position was at {} and new is at {}",
-            reserve,
-            pool_reward_manager.total_shares,
-            user_reward_manager.share,
-            new_share
-        );
-
-        // This works even for migrations.
-        // User's old share is 0 although it shouldn't be bcs they have borrowed
-        // or deposited.
-        // We only now attribute the share to the user which is fine, it's as if
-        // they just now borrowed/deposited.
-        pool_reward_manager.total_shares =
-            pool_reward_manager.total_shares - user_reward_manager.share + new_share;
-
-        user_reward_manager.share = new_share;
+        user_reward_manager.set_share(pool_reward_manager, new_share);
 
         Ok(())
     }
@@ -455,10 +438,33 @@ impl UserRewardManager {
         }
     }
 
+    /// Sets new share value for this manager.
+    fn set_share(&mut self, pool_reward_manager: &mut PoolRewardManager, new_share: u64) {
+        msg!(
+            "For reserve {} there are {} total shares. \
+            User's previous position was at {} and new is at {}",
+            self.reserve,
+            pool_reward_manager.total_shares,
+            self.share,
+            new_share
+        );
+
+        // This works even for migrations.
+        // User's old share is 0 although it shouldn't be bcs they have borrowed
+        // or deposited.
+        // We only now attribute the share to the user which is fine, it's as if
+        // they just now borrowed/deposited.
+        pool_reward_manager.total_shares =
+            pool_reward_manager.total_shares - self.share + new_share;
+
+        self.share = new_share;
+    }
+
     /// Claims all rewards that the user has earned.
     /// Returns how many tokens should be transferred to the user.
     ///
     /// # Note
+    ///
     /// Errors if there is no pool reward with this vault.
     pub fn claim_rewards(
         &mut self,
@@ -466,6 +472,8 @@ impl UserRewardManager {
         vault: Pubkey,
         clock: &Clock,
     ) -> Result<u64, ProgramError> {
+        self.update(pool_reward_manager, clock)?;
+
         let (pool_reward_index, pool_reward) = pool_reward_manager
             .pool_rewards
             .iter()
@@ -1024,8 +1032,11 @@ mod tests {
     //! TODO: Calculate test coverage and add tests for missing branches.
 
     use super::*;
+    use pretty_assertions::assert_eq;
     use proptest::prelude::*;
     use rand::Rng;
+
+    const MILLISECONDS_IN_DAY: u64 = 86_400_000;
 
     fn pool_reward_manager_strategy() -> impl Strategy<Value = PoolRewardManager> {
         (0..1u32).prop_perturb(|_, mut rng| PoolRewardManager::new_rand(&mut rng))
@@ -1109,9 +1120,110 @@ mod tests {
         assert!(required_realloc <= MAX_REALLOC);
     }
 
+    /// This tests replicates calculations from Suilend's
+    /// "test_pool_reward_manager_basic" test.
     #[test]
     fn it_tests_pool_reward_manager_basic() {
-        // TODO: rewrite Suilend "test_pool_reward_manager_basic" test
+        let usdc = Pubkey::new_unique(); // reserve pubkey
+        let slnd_vault = Pubkey::new_unique(); // where rewards are stored
+
+        let mut clock = Clock {
+            unix_timestamp: 0,
+            ..Default::default()
+        };
+
+        let mut pool_reward_manager = PoolRewardManager::default();
+        {
+            // setup pool reward manager with one reward
+
+            pool_reward_manager
+                .add_pool_reward(
+                    slnd_vault,
+                    0,
+                    20 * MILLISECONDS_IN_DAY,
+                    100 * 1_000_000,
+                    &clock,
+                )
+                .expect("It adds pool reward");
+            assert_eq!(
+                pool_reward_manager.pool_rewards[0],
+                PoolRewardSlot::Occupied(Box::new(PoolReward {
+                    id: PoolRewardId(1),
+                    vault: slnd_vault,
+                    start_time_secs: 0,
+                    duration_secs: 20 * MILLISECONDS_IN_DAY as u32,
+                    total_rewards: 100 * 1_000_000,
+                    cumulative_rewards_per_share: Decimal::zero(),
+                    num_user_reward_managers: 0,
+                }))
+            );
+        }
+
+        let mut user_reward_manager_1 = UserRewardManager::new(usdc, PositionKind::Deposit, &clock);
+        {
+            // setup user reward manager with 100/100 shares
+
+            user_reward_manager_1
+                .populate(&mut pool_reward_manager, &clock)
+                .expect("It populates user reward manager");
+            user_reward_manager_1.set_share(&mut pool_reward_manager, 100);
+        }
+
+        {
+            // 1/4 of the reward time passes
+            clock.unix_timestamp = 5 * MILLISECONDS_IN_DAY as i64;
+
+            let claimed_slnd = user_reward_manager_1
+                .claim_rewards(&mut pool_reward_manager, slnd_vault, &clock)
+                .expect("It claims rewards");
+            assert_eq!(claimed_slnd, 25 * 1_000_000);
+        }
+
+        let mut user_reward_manager_2 = UserRewardManager::new(usdc, PositionKind::Deposit, &clock);
+        {
+            // setup user reward manager with 400/500 shares
+
+            user_reward_manager_2
+                .populate(&mut pool_reward_manager, &clock)
+                .expect("It populates user reward manager");
+            user_reward_manager_2.set_share(&mut pool_reward_manager, 400);
+        }
+
+        {
+            // 1/2 of the reward time passes
+            clock.unix_timestamp = 10 * MILLISECONDS_IN_DAY as i64;
+
+            let claimed_slnd = user_reward_manager_1
+                .claim_rewards(&mut pool_reward_manager, slnd_vault, &clock)
+                .expect("It claims rewards");
+            assert_eq!(claimed_slnd, 5 * 1_000_000);
+
+            let claimed_slnd = user_reward_manager_2
+                .claim_rewards(&mut pool_reward_manager, slnd_vault, &clock)
+                .expect("It claims rewards");
+            assert_eq!(claimed_slnd, 20 * 1_000_000);
+        }
+
+        {
+            // set both user reward managers to 250/500 shares
+            user_reward_manager_1.set_share(&mut pool_reward_manager, 250);
+            user_reward_manager_2.set_share(&mut pool_reward_manager, 250);
+        }
+
+        {
+            // the reward is finished
+            clock.unix_timestamp = 20 * MILLISECONDS_IN_DAY as i64;
+
+            let claimed_slnd = user_reward_manager_1
+                .claim_rewards(&mut pool_reward_manager, slnd_vault, &clock)
+                .expect("It claims rewards");
+            assert_eq!(claimed_slnd, 25 * 1_000_000);
+
+            let claimed_slnd = user_reward_manager_2
+                .claim_rewards(&mut pool_reward_manager, slnd_vault, &clock)
+                .expect("It claims rewards");
+            assert_eq!(claimed_slnd, 25 * 1_000_000);
+        }
     }
 
     #[test]

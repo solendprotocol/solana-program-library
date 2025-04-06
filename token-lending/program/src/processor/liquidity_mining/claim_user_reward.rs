@@ -65,7 +65,7 @@ struct ClaimUserReward<'a, 'info> {
 
 /// # Effects
 ///
-/// 1. Updates the user reward manager with the pool reward manager and accrues rewards
+/// 1. Finds the [UserRewardManager] for the reserve and obligation.
 /// 2. Withdraws all eligible rewards from [UserRewardManager].
 ///    Eligible rewards are those that match the vault and user has earned any.
 /// 3. Transfers the withdrawn rewards to the user's token account.
@@ -133,11 +133,6 @@ pub(crate) fn process(program_id: &Pubkey, accounts: &[AccountInfo]) -> ProgramR
     };
 
     let pool_reward_manager = accounts.reserve.pool_reward_manager_mut(position_kind);
-
-    // Syncs the pool reward manager with the user manager and accrues rewards.
-    // If we wanted to optimize CU usage then we could make a dedicated update
-    // function only for claiming rewards to avoid iterating twice over the rewards.
-    user_reward_manager.update(pool_reward_manager, clock)?;
 
     // 2.
 
