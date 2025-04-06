@@ -59,21 +59,21 @@ use super::mock_pyth_pull::{init as init_pull, set_price as set_price_pull};
 
 mod cu_budgets {
     pub(super) const INIT_OBLIGATION: u32 = 10_001;
-    pub(super) const DEPOSIT_OBLIGATION_COLLATERAL: u32 = 38_002;
+    pub(super) const DEPOSIT_OBLIGATION_COLLATERAL: u32 = 70_002;
     pub(super) const REFRESH_RESERVE: u32 = 2_000_003;
     pub(super) const REFRESH_OBLIGATION: u32 = 1_000_004;
     pub(super) const BORROW_OBLIGATION_LIQUIDITY: u32 = 180_005;
-    pub(super) const REPAY_OBLIGATION_LIQUIDITY: u32 = 35_006;
+    pub(super) const REPAY_OBLIGATION_LIQUIDITY: u32 = 70_006;
     pub(super) const REDEEM_FEES: u32 = 80_007;
-    pub(super) const LIQUIDATE_OBLIGATION_AND_REDEEM_RESERVE_COLLATERAL: u32 = 180_008;
-    pub(super) const WITHDRAW_OBLIGATION_COLLATERAL_AND_REDEEM_RESERVE_COLLATERAL: u32 = 110_009;
+    pub(super) const LIQUIDATE_OBLIGATION_AND_REDEEM_RESERVE_COLLATERAL: u32 = 230_008;
+    pub(super) const WITHDRAW_OBLIGATION_COLLATERAL_AND_REDEEM_RESERVE_COLLATERAL: u32 = 200_009;
     pub(super) const WITHDRAW_OBLIGATION_COLLATERAL: u32 = 130_010;
     pub(super) const INIT_RESERVE: u32 = 90_011;
-    pub(super) const DEPOSIT: u32 = 50_012;
+    pub(super) const DEPOSIT: u32 = 70_012;
     pub(super) const DONATE_TO_RESERVE: u32 = 50_013;
     pub(super) const UPDATE_RESERVE_CONFIG: u32 = 30_014;
-    pub(super) const DEPOSIT_RESERVE_LIQUIDITY_AND_OBLIGATION_COLLATERAL: u32 = 100_015;
-    pub(super) const REDEEM: u32 = 58_016;
+    pub(super) const DEPOSIT_RESERVE_LIQUIDITY_AND_OBLIGATION_COLLATERAL: u32 = 130_015;
+    pub(super) const REDEEM: u32 = 90_016;
 }
 
 /// This is at most how many bytes can an obligation grow.

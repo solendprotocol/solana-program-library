@@ -68,7 +68,9 @@ pub enum PoolRewardSlot {
         last_pool_reward_id: PoolRewardId,
         /// An optimization to avoid writing data that has not changed.
         /// When vacating a slot we set this to true.
-        has_been_vacated_in_this_tx: bool,
+        /// That way the packing logic knows whether it's fine to skip the
+        /// packing or not.
+        has_been_just_vacated: bool,
     },
     /// Reward has not been closed yet.
     ///
@@ -309,7 +311,7 @@ impl PoolRewardManager {
 
         self.pool_rewards[pool_reward_index] = PoolRewardSlot::Vacant {
             last_pool_reward_id: pool_reward.id,
-            has_been_vacated_in_this_tx: true,
+            has_been_just_vacated: true,
         };
 
         Ok(vault)
@@ -689,7 +691,7 @@ impl Default for PoolRewardSlot {
             last_pool_reward_id: PoolRewardId(0),
             // this is used for initialization of the pool reward manager so
             // it makes sense as there are 0s in the account data already
-            has_been_vacated_in_this_tx: false,
+            has_been_just_vacated: false,
         }
     }
 }
@@ -793,7 +795,7 @@ impl Pack for PoolRewardManager {
                 PoolRewardSlot::Vacant {
                     last_pool_reward_id: pool_reward_id,
                     // nope, has been vacant since unpack
-                    has_been_vacated_in_this_tx: false,
+                    has_been_just_vacated: false,
                 }
             } else {
                 let raw_pool_reward_tail =
@@ -838,7 +840,7 @@ impl PoolRewardSlot {
         let for_sure_has_not_changed = matches!(
             self,
             Self::Vacant {
-                has_been_vacated_in_this_tx: false,
+                has_been_just_vacated: false,
                 ..
             }
         );
@@ -1084,7 +1086,7 @@ mod tests {
         let mut m = PoolRewardManager::default();
         m.pool_rewards[0] = PoolRewardSlot::Vacant {
             last_pool_reward_id: PoolRewardId(69),
-            has_been_vacated_in_this_tx: true,
+            has_been_just_vacated: true,
         };
 
         let mut packed = vec![0u8; PoolRewardManager::LEN];
@@ -1095,7 +1097,7 @@ mod tests {
             unpacked.pool_rewards[0],
             PoolRewardSlot::Vacant {
                 last_pool_reward_id: PoolRewardId(69),
-                has_been_vacated_in_this_tx: false,
+                has_been_just_vacated: false,
             }
         );
     }
@@ -1112,7 +1114,7 @@ mod tests {
                 pool_reward,
                 PoolRewardSlot::Vacant {
                     last_pool_reward_id: PoolRewardId(0),
-                    has_been_vacated_in_this_tx: false,
+                    has_been_just_vacated: false,
                 }
             )
         });
@@ -1595,7 +1597,7 @@ mod tests {
                     if is_vacant {
                         PoolRewardSlot::Vacant {
                             last_pool_reward_id: Default::default(),
-                            has_been_vacated_in_this_tx: false,
+                            has_been_just_vacated: false,
                         }
                     } else {
                         PoolRewardSlot::Occupied(Box::new(PoolReward {

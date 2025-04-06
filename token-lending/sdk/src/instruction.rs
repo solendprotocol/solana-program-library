@@ -1630,7 +1630,7 @@ pub fn withdraw_obligation_collateral_and_redeem_reserve_collateral(
         AccountMeta::new(destination_liquidity_pubkey, false),
         AccountMeta::new(reserve_collateral_mint_pubkey, false),
         AccountMeta::new(reserve_liquidity_supply_pubkey, false),
-        AccountMeta::new_readonly(obligation_owner_pubkey, true),
+        AccountMeta::new(obligation_owner_pubkey, true),
         AccountMeta::new_readonly(user_transfer_authority_pubkey, true),
         AccountMeta::new_readonly(spl_token::id(), false),
     ];
@@ -1672,7 +1672,7 @@ pub fn withdraw_obligation_collateral(
     let mut accounts = vec![
         AccountMeta::new(source_collateral_pubkey, false),
         AccountMeta::new(destination_collateral_pubkey, false),
-        AccountMeta::new_readonly(withdraw_reserve_pubkey, false),
+        AccountMeta::new(withdraw_reserve_pubkey, false),
         AccountMeta::new(obligation_pubkey, false),
         AccountMeta::new_readonly(lending_market_pubkey, false),
         AccountMeta::new_readonly(lending_market_authority_pubkey, false),
@@ -1790,7 +1790,7 @@ pub fn liquidate_obligation(
             AccountMeta::new(destination_collateral_pubkey, false),
             AccountMeta::new(repay_reserve_pubkey, false),
             AccountMeta::new(repay_reserve_liquidity_supply_pubkey, false),
-            AccountMeta::new_readonly(withdraw_reserve_pubkey, false),
+            AccountMeta::new(withdraw_reserve_pubkey, false),
             AccountMeta::new(withdraw_reserve_collateral_supply_pubkey, false),
             AccountMeta::new(obligation_pubkey, false),
             AccountMeta::new_readonly(lending_market_pubkey, false),
