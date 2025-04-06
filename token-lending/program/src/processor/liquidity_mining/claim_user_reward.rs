@@ -1,5 +1,15 @@
-use crate::processor::{spl_token_transfer, TokenTransferParams};
-use solana_program::program_pack::Pack;
+//! Permission-less way to claim allocated user liquidity mining rewards.
+//!
+//! # Migration
+//!
+//! Prior to version @2.1.0 there was no concept of liq. mining.
+//! That means user shares are going to be 0 even if they have a borrow or
+//! deposit.
+//! This ix can be used to start tracking obligation's rewards.
+
+use crate::processor::{
+    realloc_obligation_if_necessary, spl_token_transfer, ReserveBorrow, TokenTransferParams,
+};
 use solana_program::{
     account_info::{next_account_info, AccountInfo},
     clock::Clock,
@@ -9,8 +19,8 @@ use solana_program::{
     pubkey::Pubkey,
     sysvar::Sysvar,
 };
-use solend_sdk::state::{CreatingNewUserRewardManager, Obligation};
-use solend_sdk::{error::LendingError, state::Reserve};
+use solend_sdk::error::LendingError;
+use solend_sdk::state::{Obligation, PositionKind};
 
 use super::{
     check_and_unpack_pool_reward_accounts, reward_vault_authority_seeds, unpack_token_account,
@@ -32,7 +42,7 @@ struct ClaimUserReward<'a, 'info> {
     /// ✅ unpacks
     /// ✅ belongs to `lending_market_info`
     /// ✅ is writable
-    reserve_info: &'a AccountInfo<'info>,
+    _reserve_info: &'a AccountInfo<'info>,
     /// ✅ belongs to the token program
     reward_mint_info: &'a AccountInfo<'info>,
     /// ✅ seed of `lending_market_info`, `reserve_info`, `reward_mint_info`
@@ -50,12 +60,12 @@ struct ClaimUserReward<'a, 'info> {
     token_program_info: &'a AccountInfo<'info>,
 
     obligation: Box<Obligation>,
-    reserve: Box<Reserve>,
+    reserve: ReserveBorrow<'a, 'info>,
 }
 
 /// # Effects
 ///
-/// 1. Updates the user reward manager with the pool reward manager and accrues rewards
+/// 1. Finds the [UserRewardManager] for the reserve and obligation.
 /// 2. Withdraws all eligible rewards from [UserRewardManager].
 ///    Eligible rewards are those that match the vault and user has earned any.
 /// 3. Transfers the withdrawn rewards to the user's token account.
@@ -64,28 +74,65 @@ pub(crate) fn process(program_id: &Pubkey, accounts: &[AccountInfo]) -> ProgramR
     let clock = &Clock::get()?;
 
     let mut accounts = ClaimUserReward::from_unchecked_iter(program_id, &mut accounts.iter())?;
+    let reserve_key = accounts.reserve.key();
 
     // 1.
 
-    let position_kind = accounts
-        .obligation
-        .find_position_kind(*accounts.reserve_info.key)?;
+    let position_kind = accounts.obligation.find_position_kind(reserve_key)?;
 
     let Some(user_reward_manager) = accounts
         .obligation
-        .find_user_reward_manager_mut(*accounts.reserve_info.key)
+        .user_reward_managers
+        .find_mut(reserve_key, position_kind)
     else {
-        // Let's not error if a user has no rewards to claim for this reserve.
-        // Having this ix idempotent makes cranking easier.
+        // We've checked that the obligation associates this reserve but it's
+        // not in the user reward managers yet.
+        // This means that the obligation hasn't been migrated to track the
+        // pool reward manager.
+        //
+        // We'll upgrade it here.
+
+        let reserve_key = accounts.reserve.key();
+
+        let (pool_reward_manager, migrated_share) = match position_kind {
+            PositionKind::Borrow => {
+                let share = accounts
+                    .obligation
+                    .find_liquidity_in_borrows(reserve_key)?
+                    .0
+                    .liability_shares()?;
+
+                (&mut accounts.reserve.borrows_pool_reward_manager, share)
+            }
+            PositionKind::Deposit => {
+                let share = accounts
+                    .obligation
+                    .find_collateral_in_deposits(reserve_key)?
+                    .0
+                    .deposited_amount;
+
+                (&mut accounts.reserve.deposits_pool_reward_manager, share)
+            }
+        };
+
+        accounts.obligation.user_reward_managers.set_share(
+            reserve_key,
+            position_kind,
+            pool_reward_manager,
+            migrated_share,
+            clock,
+        )?;
+
+        realloc_obligation_if_necessary(&accounts.obligation, accounts.obligation_info)?;
+        Obligation::pack(
+            *accounts.obligation,
+            &mut accounts.obligation_info.data.borrow_mut(),
+        )?;
+
         return Ok(());
     };
 
     let pool_reward_manager = accounts.reserve.pool_reward_manager_mut(position_kind);
-
-    // Syncs the pool reward manager with the user manager and accrues rewards.
-    // If we wanted to optimize CU usage then we could make a dedicated update
-    // function only for claiming rewards to avoid iterating twice over the rewards.
-    user_reward_manager.update(pool_reward_manager, clock, CreatingNewUserRewardManager::No)?;
 
     // 2.
 
@@ -104,7 +151,7 @@ pub(crate) fn process(program_id: &Pubkey, accounts: &[AccountInfo]) -> ProgramR
         authority: accounts.reward_authority_info.clone(),
         authority_signer_seeds: &reward_vault_authority_seeds(
             accounts.lending_market_info.key,
-            accounts.reserve_info.key,
+            &reserve_key,
             accounts.reward_mint_info.key,
         ),
         token_program: accounts.token_program_info.clone(),
@@ -112,15 +159,13 @@ pub(crate) fn process(program_id: &Pubkey, accounts: &[AccountInfo]) -> ProgramR
 
     // 4.
 
+    realloc_obligation_if_necessary(&accounts.obligation, accounts.obligation_info)?;
     Obligation::pack(
         *accounts.obligation,
         &mut accounts.obligation_info.data.borrow_mut(),
     )?;
 
-    Reserve::pack(
-        *accounts.reserve,
-        &mut accounts.reserve_info.data.borrow_mut(),
-    )?;
+    // reserve is packed on drop
 
     Ok(())
 }
@@ -215,7 +260,7 @@ impl<'a, 'info> ClaimUserReward<'a, 'info> {
         Ok(Self {
             obligation_info,
             obligation_owner_token_account_info,
-            reserve_info,
+            _reserve_info: reserve_info,
             reward_mint_info,
             reward_authority_info,
             reward_token_vault_info,

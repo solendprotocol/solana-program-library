@@ -3,6 +3,7 @@
 mod helpers;
 
 use crate::solend_program_test::scenario_1;
+use pretty_assertions::assert_eq;
 use std::collections::HashSet;
 
 use helpers::solend_program_test::{BalanceChecker, TokenBalanceChange};
@@ -14,7 +15,7 @@ use solend_program::math::TryDiv;
 use solend_program::state::{LastUpdate, ObligationLiquidity, ReserveLiquidity, SLOTS_PER_YEAR};
 use solend_program::{
     math::{Decimal, TryAdd, TryMul, TrySub},
-    state::{Obligation, Reserve},
+    state::{Obligation, PoolRewardManager, Reserve},
 };
 
 #[tokio::test]
@@ -73,6 +74,7 @@ async fn test_success() {
         .try_sub(Decimal::from(10 * LAMPORTS_TO_SOL))
         .unwrap();
 
+    let expected_wsol_reserve_post_borrow_total_shares = 47;
     assert_eq!(
         wsol_reserve_post.account,
         Reserve {
@@ -86,11 +88,26 @@ async fn test_success() {
                 cumulative_borrow_rate_wads: new_cumulative_borrow_rate,
                 ..wsol_reserve.account.liquidity
             },
+            borrows_pool_reward_manager: Box::new(PoolRewardManager {
+                total_shares: {
+                    assert_eq!(
+                        wsol_reserve
+                            .account
+                            .borrows_pool_reward_manager
+                            .total_shares,
+                        10 * LAMPORTS_PER_SOL,
+                    );
+
+                    expected_wsol_reserve_post_borrow_total_shares
+                },
+                ..*wsol_reserve.account.borrows_pool_reward_manager
+            }),
             ..wsol_reserve.account
         }
     );
 
     let obligation_post = test.load_obligation(obligation.pubkey).await;
+    let borrow_reserve = wsol_reserve.pubkey;
     assert_eq!(
         obligation_post.account,
         Obligation {
@@ -100,12 +117,22 @@ async fn test_success() {
                 stale: true
             },
             borrows: [ObligationLiquidity {
-                borrow_reserve: wsol_reserve.pubkey,
+                borrow_reserve,
                 cumulative_borrow_rate_wads: new_cumulative_borrow_rate,
                 borrowed_amount_wads: new_borrowed_amount_wads,
                 ..obligation.account.borrows[0]
             }]
             .to_vec(),
+            user_reward_managers: {
+                let mut og = obligation.account.user_reward_managers.clone();
+
+                og.iter_mut()
+                    .find(|m| m.reserve == borrow_reserve)
+                    .unwrap()
+                    .share = expected_wsol_reserve_post_borrow_total_shares;
+
+                og
+            },
             ..obligation.account
         }
     );

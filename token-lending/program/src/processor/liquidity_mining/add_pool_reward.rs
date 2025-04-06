@@ -6,7 +6,6 @@ use crate::processor::{
     assert_rent_exempt, spl_token_init_account, spl_token_transfer, TokenInitializeAccountParams,
     TokenTransferParams,
 };
-use solana_program::program_pack::Pack;
 use solana_program::{
     account_info::{next_account_info, AccountInfo},
     clock::Clock,
@@ -17,12 +16,11 @@ use solana_program::{
     rent::Rent,
     sysvar::Sysvar,
 };
-use solend_sdk::{
-    error::LendingError,
-    state::{PositionKind, Reserve},
-};
+use solend_sdk::{error::LendingError, state::PositionKind};
 
-use super::{check_and_unpack_pool_reward_accounts_for_admin_ixs, unpack_token_account};
+use super::{
+    check_and_unpack_pool_reward_accounts_for_admin_ixs, unpack_token_account, ReserveBorrow,
+};
 
 /// Use [Self::from_unchecked_iter] to validate the accounts except for
 /// * `reward_token_vault_info`
@@ -32,7 +30,7 @@ struct AddPoolRewardAccounts<'a, 'info> {
     /// ✅ unpacks
     /// ✅ belongs to `lending_market_info`
     /// ✅ is writable
-    reserve_info: &'a AccountInfo<'info>,
+    _reserve_info: &'a AccountInfo<'info>,
     /// ✅ belongs to the token program
     reward_mint_info: &'a AccountInfo<'info>,
     /// ✅ belongs to the token program
@@ -62,7 +60,7 @@ struct AddPoolRewardAccounts<'a, 'info> {
     /// ✅ matches `lending_market_info`
     token_program_info: &'a AccountInfo<'info>,
 
-    reserve: Box<Reserve>,
+    reserve: ReserveBorrow<'a, 'info>,
 }
 
 /// # Effects
@@ -71,7 +69,6 @@ struct AddPoolRewardAccounts<'a, 'info> {
 ///    `reward_token_amount` tokens from the `reward_token_source` account to
 ///     the new reward vault account.
 /// 2. Finds an empty slot in the [Reserve]'s LM reward vector and adds it there.
-/// 3. Packs all changes into account buffers.
 pub(crate) fn process(
     program_id: &Pubkey,
     position_kind: PositionKind,
@@ -118,13 +115,6 @@ pub(crate) fn process(
             reward_token_amount,
             clock,
         )?;
-
-    // 3.
-
-    Reserve::pack(
-        *accounts.reserve,
-        &mut accounts.reserve_info.data.borrow_mut(),
-    )?;
 
     Ok(())
 }
@@ -193,7 +183,7 @@ impl<'a, 'info> AddPoolRewardAccounts<'a, 'info> {
         }
 
         Ok(Self {
-            reserve_info,
+            _reserve_info: reserve_info,
             reward_mint_info,
             reward_token_source_info,
             reward_authority_info,

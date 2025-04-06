@@ -80,11 +80,11 @@ pub struct Obligation {
     /// # (Un)packing
     /// If there are no rewards to be collected then the obligation is packed
     /// as if there was no liquidity mining feature involved.
-    pub user_reward_managers: Vec<UserRewardManager>,
+    pub user_reward_managers: UserRewardManagers,
 }
 
 /// These are the two foundational user interactions in a borrow-lending protocol.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Debug, PartialEq, Eq, Clone, Copy)]
 pub enum PositionKind {
     /// User is providing liquidity.
     Deposit = 0,
@@ -115,26 +115,40 @@ impl Obligation {
         self.borrowed_value.try_div(self.deposited_value)
     }
 
-    /// Repay liquidity and remove it from borrows if zeroed out
-    pub fn repay(&mut self, settle_amount: Decimal, liquidity_index: usize) -> ProgramResult {
+    /// Repay liquidity and remove it from borrows if zeroed out.
+    ///
+    /// Returns current liability shares.
+    pub fn repay(
+        &mut self,
+        settle_amount: Decimal,
+        liquidity_index: usize,
+    ) -> Result<u64, ProgramError> {
         let liquidity = &mut self.borrows[liquidity_index];
         if settle_amount == liquidity.borrowed_amount_wads {
             self.borrows.remove(liquidity_index);
+            Ok(0)
         } else {
             liquidity.repay(settle_amount)?;
+            liquidity.liability_shares()
         }
-        Ok(())
     }
 
-    /// Withdraw collateral and remove it from deposits if zeroed out
-    pub fn withdraw(&mut self, withdraw_amount: u64, collateral_index: usize) -> ProgramResult {
+    /// Withdraw collateral and remove it from deposits if zeroed out.
+    ///
+    /// Returns the new deposited amount.
+    pub fn withdraw(
+        &mut self,
+        withdraw_amount: u64,
+        collateral_index: usize,
+    ) -> Result<u64, ProgramError> {
         let collateral = &mut self.deposits[collateral_index];
         if withdraw_amount == collateral.deposited_amount {
             self.deposits.remove(collateral_index);
+            Ok(0)
         } else {
             collateral.withdraw(withdraw_amount)?;
+            Ok(collateral.deposited_amount)
         }
-        Ok(())
     }
 
     /// calculate the maximum amount of collateral that can be borrowed
@@ -335,16 +349,6 @@ impl Obligation {
         msg!("Reserve not found in obligation");
         Err(LendingError::InvalidAccountInput.into())
     }
-
-    /// Returns [UserRewardManager] for the given reserve
-    pub fn find_user_reward_manager_mut(
-        &mut self,
-        reserve: Pubkey,
-    ) -> Option<&mut UserRewardManager> {
-        self.user_reward_managers
-            .iter_mut()
-            .find(|user_reward_manager| user_reward_manager.reserve == reserve)
-    }
 }
 
 /// Initialize an obligation
@@ -469,6 +473,13 @@ impl ObligationLiquidity {
 
         Ok(())
     }
+
+    /// Calculates shares for liquidity mining.
+    pub fn liability_shares(&self) -> Result<u64, ProgramError> {
+        self.borrowed_amount_wads
+            .try_div(self.cumulative_borrow_rate_wads)?
+            .try_floor_u64()
+    }
 }
 
 const OBLIGATION_COLLATERAL_LEN: usize = 88; // 32 + 8 + 16 + 32
@@ -485,13 +496,18 @@ impl Obligation {
     ///
     /// - [Self::user_reward_managers] vec length in u8
     /// - [Self::user_reward_managers] vector
-    const MAX_LEN: usize = Self::MIN_LEN + 1 + MAX_OBLIGATION_RESERVES * UserRewardManager::MAX_LEN;
+    pub const MAX_LEN: usize =
+        Self::MIN_LEN + 1 + MAX_OBLIGATION_RESERVES * UserRewardManager::MAX_LEN;
 
     /// How many bytes are needed to pack this [UserRewardManager].
     pub fn size_in_bytes_when_packed(&self) -> usize {
+        if self.user_reward_managers.is_empty() {
+            return OBLIGATION_LEN_V1;
+        }
+
         let mut size = OBLIGATION_LEN_V1 + 1;
 
-        for reward_manager in &self.user_reward_managers {
+        for reward_manager in self.user_reward_managers.iter() {
             size += reward_manager.size_in_bytes_when_packed();
         }
 
@@ -807,7 +823,7 @@ impl Obligation {
             super_unhealthy_borrow_value: unpack_decimal(super_unhealthy_borrow_value),
             borrowing_isolated_asset: unpack_bool(borrowing_isolated_asset)?,
             closeable: unpack_bool(closeable)?,
-            user_reward_managers,
+            user_reward_managers: UserRewardManagers(user_reward_managers),
         })
     }
 }
@@ -871,10 +887,11 @@ mod test {
                 closeable: rng.gen(),
                 user_reward_managers: {
                     let user_reward_managers_len = rng.gen_range(0..=MAX_OBLIGATION_RESERVES);
-
-                    std::iter::repeat_with(|| UserRewardManager::new_rand(rng))
-                        .take(user_reward_managers_len)
-                        .collect()
+                    UserRewardManagers(
+                        std::iter::repeat_with(|| UserRewardManager::new_rand(rng))
+                            .take(user_reward_managers_len)
+                            .collect(),
+                    )
                 },
             }
         }
@@ -958,8 +975,9 @@ mod test {
         fn repay_partial_amounts()(amount in 1..=u64::MAX)(
             repay_amount in Just(WAD as u128 * amount as u128),
             borrowed_amount in (WAD as u128 * amount as u128 + 1)..=MAX_BORROWED,
-        ) -> (u128, u128) {
-            (repay_amount, borrowed_amount)
+            cumulative_borrow_rate in (WAD as u128)..=(WAD as u128 * MAX_COMPOUNDED_INTEREST as u128),
+        ) -> (u128, u128, u128) {
+            (repay_amount, borrowed_amount, cumulative_borrow_rate)
         }
     }
 
@@ -975,19 +993,22 @@ mod test {
     proptest! {
         #[test]
         fn repay_partial(
-            (repay_amount, borrowed_amount) in repay_partial_amounts(),
+            (repay_amount, borrowed_amount, cumulative_borrow_rate) in repay_partial_amounts(),
         ) {
             let borrowed_amount_wads = Decimal::from_scaled_val(borrowed_amount);
             let repay_amount_wads = Decimal::from_scaled_val(repay_amount);
+            let cumulative_borrow_rate_wads = Decimal::from_scaled_val(cumulative_borrow_rate);
             let mut obligation = Obligation {
                 borrows: vec![ObligationLiquidity {
                     borrowed_amount_wads,
+                    cumulative_borrow_rate_wads,
                     ..ObligationLiquidity::default()
                 }],
                 ..Obligation::default()
             };
 
-            obligation.repay(repay_amount_wads, 0)?;
+            let liability_shares = obligation.repay(repay_amount_wads, 0)?;
+            assert_ne!(liability_shares, 0);
             assert!(obligation.borrows[0].borrowed_amount_wads < borrowed_amount_wads);
             assert!(obligation.borrows[0].borrowed_amount_wads > Decimal::zero());
         }
@@ -998,9 +1019,11 @@ mod test {
         ) {
             let borrowed_amount_wads = Decimal::from_scaled_val(borrowed_amount);
             let repay_amount_wads = Decimal::from_scaled_val(repay_amount);
+            let cumulative_borrow_rate_wads = Decimal::one();
             let mut obligation = Obligation {
                 borrows: vec![ObligationLiquidity {
                     borrowed_amount_wads,
+                    cumulative_borrow_rate_wads,
                     ..ObligationLiquidity::default()
                 }],
                 ..Obligation::default()

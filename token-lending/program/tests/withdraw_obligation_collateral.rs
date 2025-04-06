@@ -9,7 +9,9 @@ use solend_sdk::math::Decimal;
 
 use solana_program_test::*;
 
+use pretty_assertions::assert_eq;
 use solend_program::state::{LastUpdate, Obligation, ObligationCollateral, Reserve};
+use solend_sdk::state::PoolRewardManager;
 use std::collections::HashSet;
 use std::u64;
 
@@ -21,8 +23,16 @@ async fn test_success_withdraw_fixed_amount() {
     let balance_checker =
         BalanceChecker::start(&mut test, &[&usdc_reserve, &user, &wsol_reserve]).await;
 
+    let withdraw_amount = 1_000_000;
+
     lending_market
-        .withdraw_obligation_collateral(&mut test, &usdc_reserve, &obligation, &user, 1_000_000)
+        .withdraw_obligation_collateral(
+            &mut test,
+            &usdc_reserve,
+            &obligation,
+            &user,
+            withdraw_amount,
+        )
         .await
         .unwrap();
 
@@ -34,21 +44,35 @@ async fn test_success_withdraw_fixed_amount() {
                 .get_account(&usdc_reserve.account.collateral.mint_pubkey)
                 .unwrap(),
             mint: usdc_reserve.account.collateral.mint_pubkey,
-            diff: 1_000_000,
+            diff: withdraw_amount as _,
         },
         TokenBalanceChange {
             token_account: usdc_reserve.account.collateral.supply_pubkey,
             mint: usdc_reserve.account.collateral.mint_pubkey,
-            diff: -1_000_000,
+            diff: -(withdraw_amount as i128),
         },
     ]);
     assert_eq!(balance_changes, expected_balance_changes);
     assert_eq!(mint_supply_changes, HashSet::new());
 
     let usdc_reserve_post = test.load_account::<Reserve>(usdc_reserve.pubkey).await;
-    assert_eq!(usdc_reserve_post.account, usdc_reserve.account);
+    assert_eq!(
+        usdc_reserve_post.account,
+        Reserve {
+            deposits_pool_reward_manager: Box::new(PoolRewardManager {
+                total_shares: usdc_reserve
+                    .account
+                    .deposits_pool_reward_manager
+                    .total_shares
+                    - withdraw_amount,
+                ..*usdc_reserve.account.deposits_pool_reward_manager
+            }),
+            ..usdc_reserve.account
+        }
+    );
 
     let obligation_post = test.load_obligation(obligation.pubkey).await;
+    let deposit_reserve = usdc_reserve.pubkey;
     assert_eq!(
         obligation_post.account,
         Obligation {
@@ -57,13 +81,27 @@ async fn test_success_withdraw_fixed_amount() {
                 stale: true
             },
             deposits: [ObligationCollateral {
-                deposit_reserve: usdc_reserve.pubkey,
-                deposited_amount: 100_000_000_000 - 1_000_000,
+                deposit_reserve,
+                deposited_amount: 100_000_000_000 - withdraw_amount,
                 market_value: Decimal::from(99_999u64),
                 ..obligation.account.deposits[0]
             }]
             .to_vec(),
             deposited_value: Decimal::from(99_999u64),
+            user_reward_managers: {
+                let mut og = obligation.account.user_reward_managers.clone();
+
+                og.iter_mut()
+                    .find(|m| m.reserve == deposit_reserve)
+                    .unwrap()
+                    .share = usdc_reserve
+                    .account
+                    .deposits_pool_reward_manager
+                    .total_shares
+                    - withdraw_amount;
+
+                og
+            },
             ..obligation.account
         }
     );
@@ -111,9 +149,19 @@ async fn test_success_withdraw_max() {
     assert_eq!(mint_supply_changes, HashSet::new());
 
     let usdc_reserve_post = test.load_account::<Reserve>(usdc_reserve.pubkey).await;
-    assert_eq!(usdc_reserve_post.account, usdc_reserve.account);
+    assert_eq!(
+        usdc_reserve_post.account,
+        Reserve {
+            deposits_pool_reward_manager: Box::new(PoolRewardManager {
+                total_shares: expected_remaining_collateral,
+                ..*usdc_reserve.account.deposits_pool_reward_manager
+            }),
+            ..usdc_reserve.account
+        }
+    );
 
     let obligation_post = test.load_obligation(obligation.pubkey).await;
+    let deposit_reserve = usdc_reserve.pubkey;
     assert_eq!(
         obligation_post.account,
         Obligation {
@@ -122,13 +170,23 @@ async fn test_success_withdraw_max() {
                 stale: true
             },
             deposits: [ObligationCollateral {
-                deposit_reserve: usdc_reserve.pubkey,
+                deposit_reserve,
                 deposited_amount: expected_remaining_collateral,
                 market_value: Decimal::from(200u64),
                 ..obligation.account.deposits[0]
             }]
             .to_vec(),
             deposited_value: Decimal::from(200u64),
+            user_reward_managers: {
+                let mut og = obligation.account.user_reward_managers.clone();
+
+                og.iter_mut()
+                    .find(|m| m.reserve == deposit_reserve)
+                    .unwrap()
+                    .share = expected_remaining_collateral;
+
+                og
+            },
             ..obligation.account
         }
     );

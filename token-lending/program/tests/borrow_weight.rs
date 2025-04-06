@@ -340,7 +340,7 @@ async fn test_liquidation() {
         assert_eq!(
             res,
             TransactionError::InstructionError(
-                1,
+                2,
                 InstructionError::Custom(LendingError::ObligationHealthy as u32)
             )
         );

@@ -33,7 +33,7 @@ async fn test_fail_deprecated() {
     assert_eq!(
         res,
         TransactionError::InstructionError(
-            3,
+            5,
             InstructionError::Custom(LendingError::DeprecatedInstruction as u32)
         )
     );

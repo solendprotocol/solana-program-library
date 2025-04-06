@@ -2,7 +2,6 @@ use crate::processor::liquidity_mining::{
     check_and_unpack_pool_reward_accounts_for_admin_ixs, unpack_token_account,
 };
 use crate::processor::{spl_token_transfer, TokenTransferParams};
-use solana_program::program_pack::Pack;
 use solana_program::sysvar::Sysvar;
 use solana_program::{
     account_info::{next_account_info, AccountInfo},
@@ -12,12 +11,9 @@ use solana_program::{
     program_error::ProgramError,
     pubkey::Pubkey,
 };
-use solend_sdk::{
-    error::LendingError,
-    state::{PositionKind, Reserve},
-};
+use solend_sdk::{error::LendingError, state::PositionKind};
 
-use super::reward_vault_authority_seeds;
+use super::{reward_vault_authority_seeds, ReserveBorrow};
 
 /// Use [Self::from_unchecked_iter] to validate the accounts.
 struct CancelPoolRewardAccounts<'a, 'info> {
@@ -25,7 +21,7 @@ struct CancelPoolRewardAccounts<'a, 'info> {
     /// ✅ unpacks
     /// ✅ belongs to `lending_market_info`
     /// ✅ is writable
-    reserve_info: &'a AccountInfo<'info>,
+    _reserve_info: &'a AccountInfo<'info>,
     /// ✅ belongs to the token program
     reward_mint_info: &'a AccountInfo<'info>,
     /// ✅ belongs to the token program
@@ -46,14 +42,13 @@ struct CancelPoolRewardAccounts<'a, 'info> {
     /// ✅ matches `lending_market_info`
     token_program_info: &'a AccountInfo<'info>,
 
-    reserve: Box<Reserve>,
+    reserve: ReserveBorrow<'a, 'info>,
 }
 
 /// # Effects
 ///
 /// 1. Cancels any further reward emission, effectively setting end time to now.
 /// 2. Transfers any unallocated rewards to the `reward_token_destination` account.
-/// 3. Packs all changes into account buffers.
 pub(crate) fn process(
     program_id: &Pubkey,
     position_kind: PositionKind,
@@ -84,18 +79,11 @@ pub(crate) fn process(
         authority: accounts.reward_authority_info.clone(),
         authority_signer_seeds: &reward_vault_authority_seeds(
             accounts.lending_market_info.key,
-            accounts.reserve_info.key,
+            &accounts.reserve.key(),
             accounts.reward_mint_info.key,
         ),
         token_program: accounts.token_program_info.clone(),
     })?;
-
-    // 3.
-
-    Reserve::pack(
-        *accounts.reserve,
-        &mut accounts.reserve_info.data.borrow_mut(),
-    )?;
 
     Ok(())
 }
@@ -151,7 +139,7 @@ impl<'a, 'info> CancelPoolRewardAccounts<'a, 'info> {
         }
 
         Ok(Self {
-            reserve_info,
+            _reserve_info: reserve_info,
             reward_mint_info,
             reward_token_destination_info,
             reward_authority_info,

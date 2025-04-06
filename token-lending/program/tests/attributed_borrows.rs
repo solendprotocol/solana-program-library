@@ -4,6 +4,7 @@ use crate::solend_program_test::custom_scenario;
 
 use crate::solend_program_test::User;
 
+use pretty_assertions::assert_eq;
 use solend_program::math::TryDiv;
 
 use solana_sdk::instruction::InstructionError;
@@ -12,6 +13,7 @@ use solend_program::math::TryAdd;
 use solend_program::state::LastUpdate;
 use solend_program::state::Reserve;
 use solend_sdk::error::LendingError;
+use solend_sdk::state::PoolRewardManager;
 use solend_sdk::state::ReserveLiquidity;
 
 use crate::solend_program_test::ObligationArgs;
@@ -314,7 +316,7 @@ async fn test_calculations() {
     assert_eq!(
         err,
         TransactionError::InstructionError(
-            1,
+            2, // ix 0 is CU budget, ix 1 is transfer to obligation for realloc, ix 2 is borrow
             InstructionError::Custom(LendingError::BorrowAttributionLimitExceeded as u32)
         )
     );
@@ -355,6 +357,7 @@ async fn test_calculations() {
     {
         let usdc_reserve = reserves[0].account.clone();
         let usdc_reserve_post = test.load_account::<Reserve>(reserves[0].pubkey).await;
+
         let expected_usdc_reserve_post = Reserve {
             last_update: LastUpdate {
                 slot: 1001,
@@ -382,6 +385,20 @@ async fn test_calculations() {
                 attributed_borrow_limit_open: 120,
                 ..usdc_reserve.config
             },
+            borrows_pool_reward_manager: Box::new(PoolRewardManager {
+                total_shares: {
+                    assert!(
+                        usdc_reserve.borrows_pool_reward_manager.total_shares
+                            < usdc_reserve_post
+                                .account
+                                .borrows_pool_reward_manager
+                                .total_shares
+                    );
+
+                    120_000_000
+                },
+                ..*usdc_reserve.borrows_pool_reward_manager
+            }),
             ..usdc_reserve
         };
         assert_eq!(usdc_reserve_post.account, expected_usdc_reserve_post);
