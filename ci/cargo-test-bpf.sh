@@ -8,7 +8,7 @@ source ./ci/solana-version.sh
 
 export RUSTFLAGS="-D warnings"
 export RUSTBACKTRACE=1
-
+export RUST_LOG="warn,tarpc=error,solana_runtime::message_processor=debug"
 
 usage() {
   exitcode=0
@@ -33,11 +33,11 @@ run_dir=$(pwd)
 if [[ -d $run_dir/program ]]; then
   # Build/test just one BPF program
   cd $run_dir/program
-  RUST_LOG="error" cargo +"$rust_stable" test-bpf --features test-bpf -j 1 -- --nocapture
+  cargo +"$rust_stable" test-bpf --features test-bpf -j 1 -- --nocapture
 else
   # Build/test all BPF programs
   for directory in $(ls -d $run_dir/*/); do
     cd $directory
-    RUST_LOG="error" cargo +"$rust_stable" test-bpf --features test-bpf -j 1 -- --nocapture
+    cargo +"$rust_stable" test-bpf --features test-bpf -j 1 -- --nocapture
   done
 fi
