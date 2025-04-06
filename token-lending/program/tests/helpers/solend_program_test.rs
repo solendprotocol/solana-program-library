@@ -62,7 +62,7 @@ mod cu_budgets {
     pub(super) const DEPOSIT_OBLIGATION_COLLATERAL: u32 = 38_002;
     pub(super) const REFRESH_RESERVE: u32 = 2_000_003;
     pub(super) const REFRESH_OBLIGATION: u32 = 1_000_004;
-    pub(super) const BORROW_OBLIGATION_LIQUIDITY: u32 = 140_005;
+    pub(super) const BORROW_OBLIGATION_LIQUIDITY: u32 = 180_005;
     pub(super) const REPAY_OBLIGATION_LIQUIDITY: u32 = 35_006;
     pub(super) const REDEEM_FEES: u32 = 80_007;
     pub(super) const LIQUIDATE_OBLIGATION_AND_REDEEM_RESERVE_COLLATERAL: u32 = 110_008;

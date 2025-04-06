@@ -1313,19 +1313,131 @@ mod tests {
         }
     }
 
+    /// This tests replicates calculations from Suilend's
+    /// "test_pool_reward_manager_zero_share" test.
     #[test]
     fn it_tests_pool_reward_zero_share() {
-        // TODO: rewrite Suilend "test_pool_reward_manager_zero_share"
+        let usdc = Pubkey::new_unique(); // reserve pubkey
+        let slnd_vault = Pubkey::new_unique(); // where rewards are stored
+
+        let mut clock = Clock {
+            unix_timestamp: 0,
+            ..Default::default()
+        };
+
+        let mut pool_reward_manager = PoolRewardManager::default();
+        {
+            // setup pool reward manager with one reward
+
+            pool_reward_manager
+                .add_pool_reward(
+                    slnd_vault,
+                    0,
+                    20 * MILLISECONDS_IN_DAY,
+                    100 * 1_000_000,
+                    &clock,
+                )
+                .expect("It adds pool reward");
+        }
+
+        clock.unix_timestamp = 10 * MILLISECONDS_IN_DAY as i64;
+        let mut user_reward_manager_1 = UserRewardManager::new(usdc, PositionKind::Deposit, &clock);
+        user_reward_manager_1
+            .populate(&mut pool_reward_manager, &clock)
+            .expect("It populates user reward manager");
+        user_reward_manager_1.set_share(&mut pool_reward_manager, 1);
+
+        clock.unix_timestamp = 20 * MILLISECONDS_IN_DAY as i64;
+        let claimed_slnd = user_reward_manager_1
+            .claim_rewards(&mut pool_reward_manager, slnd_vault, &clock)
+            .expect("It claims rewards");
+        // 50 usdc is unallocated since there was zero share from 0-10 seconds
+        assert_eq!(claimed_slnd, 50 * 1_000_000);
     }
 
+    /// This tests replicates calculations from Suilend's
+    /// "test_pool_reward_manager_auto_farm" test.
     #[test]
     fn it_tests_pool_reward_manager_auto_farm() {
-        // TODO: rewrite Suilend "test_pool_reward_manager_auto_farm"
+        let usdc = Pubkey::new_unique(); // reserve pubkey
+        let slnd_vault = Pubkey::new_unique(); // where rewards are stored
+
+        let mut clock = Clock {
+            unix_timestamp: 0,
+            ..Default::default()
+        };
+
+        let mut pool_reward_manager = PoolRewardManager::default();
+
+        let mut user_reward_manager_1 = UserRewardManager::new(usdc, PositionKind::Deposit, &clock);
+        user_reward_manager_1
+            .populate(&mut pool_reward_manager, &clock)
+            .expect("It populates user reward manager");
+        user_reward_manager_1.set_share(&mut pool_reward_manager, 1);
+
+        pool_reward_manager
+            .add_pool_reward(
+                slnd_vault,
+                0,
+                20 * MILLISECONDS_IN_DAY,
+                100 * 1_000_000,
+                &clock,
+            )
+            .expect("It adds pool reward");
+
+        clock.unix_timestamp = 10 * MILLISECONDS_IN_DAY as i64;
+
+        let mut user_reward_manager_2 = UserRewardManager::new(usdc, PositionKind::Deposit, &clock);
+        user_reward_manager_2
+            .populate(&mut pool_reward_manager, &clock)
+            .expect("It populates user reward manager");
+        user_reward_manager_2.set_share(&mut pool_reward_manager, 1);
+
+        {
+            clock.unix_timestamp = 20 * MILLISECONDS_IN_DAY as i64;
+
+            let claimed_slnd = user_reward_manager_1
+                .claim_rewards(&mut pool_reward_manager, slnd_vault, &clock)
+                .expect("It claims rewards");
+            assert_eq!(claimed_slnd, 75 * 1_000_000);
+
+            user_reward_manager_2.set_share(&mut pool_reward_manager, 1);
+            let claimed_slnd = user_reward_manager_2
+                .claim_rewards(&mut pool_reward_manager, slnd_vault, &clock)
+                .expect("It claims rewards");
+            assert_eq!(claimed_slnd, 25 * 1_000_000);
+        }
     }
 
+    /// This tests replicates Suilend's "test_add_too_many_pool_rewards" test.
     #[test]
     fn it_tests_add_too_many_pool_rewards() {
-        // TODO: rewrite Suilend "test_add_too_many_pool_rewards"
+        let clock = Clock::default();
+
+        let mut pool_reward_manager = PoolRewardManager::default();
+
+        for _ in 0..MAX_REWARDS {
+            let slnd_vault = Pubkey::new_unique(); // where rewards are stored
+            pool_reward_manager
+                .add_pool_reward(
+                    slnd_vault,
+                    0,
+                    20 * MILLISECONDS_IN_DAY,
+                    100 * 1_000_000,
+                    &clock,
+                )
+                .expect("It adds pool reward");
+        }
+
+        pool_reward_manager
+            .add_pool_reward(
+                Pubkey::new_unique(),
+                0,
+                20 * MILLISECONDS_IN_DAY,
+                100 * 1_000_000,
+                &clock,
+            )
+            .expect_err("It fails to add pool reward");
     }
 
     #[test]
