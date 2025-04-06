@@ -26,11 +26,11 @@ use solana_program::{
 #[derive(Clone, Debug, PartialEq)]
 pub struct PoolRewardManager {
     /// Is updated when we change user shares in the reserve.
-    pub(crate) total_shares: u64,
+    pub total_shares: u64,
     /// Monotonically increasing time taken from clock sysvar.
-    last_update_time_secs: u64,
+    pub last_update_time_secs: u64,
     /// New [PoolReward] are added to the first vacant slot.
-    pub(crate) pool_rewards: [PoolRewardSlot; MAX_REWARDS],
+    pub pool_rewards: [PoolRewardSlot; MAX_REWARDS],
 }
 
 /// Each pool reward gets an ID which is monotonically increasing with each
@@ -48,7 +48,7 @@ pub struct PoolRewardManager {
 /// half a million years before we need to worry about wrapping in a single slot.
 /// I'd call that someone else's problem.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
-pub(crate) struct PoolRewardId(pub(crate) u32);
+pub struct PoolRewardId(pub(crate) u32);
 
 /// # (Un)Packing
 /// This is unpacked representation.
@@ -57,7 +57,7 @@ pub(crate) struct PoolRewardId(pub(crate) u32);
 ///
 /// If the pubkey is eq to default pubkey then slot is vacant.
 #[derive(Clone, Debug, PartialEq)]
-pub(crate) enum PoolRewardSlot {
+pub enum PoolRewardSlot {
     /// New reward can be added to this slot.
     Vacant {
         /// Increment this ID when adding new [PoolReward].
@@ -86,7 +86,7 @@ pub(crate) enum PoolRewardSlot {
 /// However, this can be calculated dynamically which avoids storing extra
 /// [Decimal] on each [PoolReward].
 #[derive(Clone, Debug, Default, PartialEq)]
-pub(crate) struct PoolReward {
+pub struct PoolReward {
     /// Unique ID for this slot that has never been used before, and will never
     /// be used again.
     pub(crate) id: PoolRewardId,

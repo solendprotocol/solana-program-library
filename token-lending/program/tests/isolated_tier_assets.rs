@@ -19,7 +19,6 @@ use solend_program::state::LastUpdate;
 use solend_program::state::ReserveType;
 use solend_program::state::{
     Obligation, ObligationLiquidity, PositionKind, ReserveConfig, UserRewardManager,
-    UserRewardManagers,
 };
 
 use solend_sdk::state::ReserveFees;
@@ -140,7 +139,7 @@ async fn test_refresh_obligation() {
             unweighted_borrowed_value: Decimal::from(10u64),
             borrowed_value_upper_bound: Decimal::from(10u64),
             borrowing_isolated_asset: true,
-            user_reward_managers: UserRewardManagers(vec![
+            user_reward_managers: vec![
                 UserRewardManager {
                     reserve: usdc_reserve.pubkey,
                     position_kind: PositionKind::Deposit,
@@ -155,7 +154,8 @@ async fn test_refresh_obligation() {
                     last_update_time_secs,
                     rewards: Vec::new(),
                 },
-            ],),
+            ]
+            .into(),
             ..obligations[0].account.clone()
         }
     );

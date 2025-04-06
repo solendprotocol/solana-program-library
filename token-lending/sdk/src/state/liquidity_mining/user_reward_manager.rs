@@ -31,34 +31,34 @@ pub struct UserRewardManagers(Vec<UserRewardManager>);
 #[derive(Debug, PartialEq, Eq, Clone)]
 pub struct UserRewardManager {
     /// Links this manager to a reserve.
-    reserve: Pubkey,
+    pub reserve: Pubkey,
     /// Although a user cannot both borrow and deposit in the same reserve, they
     /// can deposit, withdraw and then borrow the same reserve.
     /// Meanwhile they could've accumulated some rewards that'd be lost.
     ///
     /// Also, have an explicit distinguish between borrow and deposit doesn't
     /// suffer from a footgun of misattributing rewards.
-    position_kind: PositionKind,
+    pub position_kind: PositionKind,
     /// For deposits, this is the amount of collateral token user has in
     /// their obligation deposit.
     ///
     /// For borrows, this is (borrow_amount / cumulative_borrow_rate) user
     /// has in their obligation borrow.
-    share: u64,
+    pub share: u64,
     /// Monotonically increasing time taken from clock sysvar.
-    last_update_time_secs: u64,
+    pub last_update_time_secs: u64,
     /// The indices on [Self::rewards] are _not_ correlated with
     /// [PoolRewardManager::pool_rewards].
     /// Instead, this vector only tracks meaningful rewards for the user.
     /// See [UserReward::pool_reward_index].
     ///
     /// This is a diversion from the Suilend implementation.
-    rewards: Vec<UserReward>,
+    pub rewards: Vec<UserReward>,
 }
 
 /// Track user rewards for a specific [PoolReward].
 #[derive(Debug, PartialEq, Eq, Default, Clone)]
-struct UserReward {
+pub struct UserReward {
     /// Which [PoolReward] within the reserve's index does this [UserReward]
     /// correspond to.
     ///

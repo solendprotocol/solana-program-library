@@ -17,7 +17,7 @@ use solana_sdk::transaction::TransactionError;
 use solend_program::math::Decimal;
 use solend_program::state::{
     LastUpdate, LendingMarket, Obligation, ObligationCollateral, PoolRewardManager, PositionKind,
-    Reserve, UserRewardManager, UserRewardManagers,
+    Reserve, UserRewardManager,
 };
 
 async fn setup() -> (
@@ -116,13 +116,14 @@ async fn test_success() {
                 market_value: Decimal::zero(), // this field only gets updated on a refresh
                 attributed_borrow_value: Decimal::zero()
             }],
-            user_reward_managers: UserRewardManagers(vec![UserRewardManager {
+            user_reward_managers: vec![UserRewardManager {
                 reserve: usdc_reserve.pubkey,
                 position_kind: PositionKind::Deposit,
                 share: deposit_amount,
                 last_update_time_secs,
                 rewards: Vec::new(),
-            }]),
+            }]
+            .into(),
             ..obligation.account
         }
     );

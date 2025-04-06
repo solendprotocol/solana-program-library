@@ -16,7 +16,7 @@ use solana_sdk::signature::Keypair;
 use solend_program::math::Decimal;
 use solend_program::state::{
     LastUpdate, LendingMarket, Obligation, ObligationCollateral, PoolRewardManager, PositionKind,
-    Reserve, ReserveCollateral, ReserveLiquidity, UserRewardManager, UserRewardManagers,
+    Reserve, ReserveCollateral, ReserveLiquidity, UserRewardManager,
 };
 
 async fn setup() -> (
@@ -145,13 +145,14 @@ async fn test_success() {
                 attributed_borrow_value: Decimal::zero()
             }]
             .to_vec(),
-            user_reward_managers: UserRewardManagers(vec![UserRewardManager {
+            user_reward_managers: vec![UserRewardManager {
                 reserve: usdc_reserve.pubkey,
                 position_kind: PositionKind::Deposit,
                 share: deposit_amount,
                 last_update_time_secs: last_update_time_secs,
                 rewards: Vec::new(),
-            }]),
+            }]
+            .into(),
             ..obligation.account
         }
     );
