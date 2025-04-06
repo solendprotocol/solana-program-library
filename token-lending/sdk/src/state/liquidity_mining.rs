@@ -1226,9 +1226,91 @@ mod tests {
         }
     }
 
+    /// This tests replicates calculations from Suilend's
+    /// "test_pool_reward_manager_multiple_rewards" test.
     #[test]
     fn it_tests_pool_reward_manager_multiple_rewards() {
-        // TODO: rewrite Suilend "test_pool_reward_manager_multiple_rewards"
+        let usdc = Pubkey::new_unique(); // reserve pubkey
+        let slnd_vault1 = Pubkey::new_unique(); // where rewards are stored
+        let slnd_vault2 = Pubkey::new_unique(); // where rewards are stored
+
+        let mut clock = Clock {
+            unix_timestamp: 0,
+            ..Default::default()
+        };
+
+        let mut pool_reward_manager = PoolRewardManager::default();
+        {
+            // setup a reward that starts now and lasts for 20 days
+
+            pool_reward_manager
+                .add_pool_reward(
+                    slnd_vault1,
+                    0,
+                    20 * MILLISECONDS_IN_DAY,
+                    100 * 1_000_000,
+                    &clock,
+                )
+                .expect("It adds pool reward");
+
+            // and another reward that starts in 10 days and lasts for 10 days
+
+            pool_reward_manager
+                .add_pool_reward(
+                    slnd_vault2,
+                    10 * MILLISECONDS_IN_DAY,
+                    20 * MILLISECONDS_IN_DAY,
+                    100 * 1_000_000,
+                    &clock,
+                )
+                .expect("It adds pool reward");
+        }
+
+        let mut user_reward_manager_1 = UserRewardManager::new(usdc, PositionKind::Deposit, &clock);
+        {
+            // setup user reward manager with 100/100 shares
+
+            user_reward_manager_1
+                .populate(&mut pool_reward_manager, &clock)
+                .expect("It populates user reward manager");
+            user_reward_manager_1.set_share(&mut pool_reward_manager, 100);
+        }
+
+        clock.unix_timestamp = 15 * MILLISECONDS_IN_DAY as i64;
+
+        let mut user_reward_manager_2 = UserRewardManager::new(usdc, PositionKind::Deposit, &clock);
+        {
+            // setup user reward manager with 100/200 shares
+
+            user_reward_manager_2
+                .populate(&mut pool_reward_manager, &clock)
+                .expect("It populates user reward manager");
+            user_reward_manager_2.set_share(&mut pool_reward_manager, 100);
+        }
+
+        {
+            clock.unix_timestamp = 30 * MILLISECONDS_IN_DAY as i64;
+
+            let claimed_slnd = user_reward_manager_1
+                .claim_rewards(&mut pool_reward_manager, slnd_vault1, &clock)
+                .expect("It claims rewards");
+            assert_eq!(claimed_slnd, 87_500_000);
+
+            let claimed_slnd = user_reward_manager_1
+                .claim_rewards(&mut pool_reward_manager, slnd_vault2, &clock)
+                .expect("It claims rewards");
+            assert_eq!(claimed_slnd, 75 * 1_000_000);
+
+            let claimed_slnd = user_reward_manager_2
+                .claim_rewards(&mut pool_reward_manager, slnd_vault1, &clock)
+                .expect("It claims rewards");
+            assert_eq!(claimed_slnd, 12_500_000);
+
+            let claimed_slnd = user_reward_manager_2
+                .claim_rewards(&mut pool_reward_manager, slnd_vault2, &clock)
+                .expect("It claims rewards");
+            assert_eq!(claimed_slnd, 25 * 1_000_000);
+        }
     }
 
     #[test]
