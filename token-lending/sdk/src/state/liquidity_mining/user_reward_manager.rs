@@ -65,10 +65,10 @@ pub struct UserReward {
     /// # (Un)packing
     /// There are ever only going to be at most [MAX_REWARDS].
     /// We therefore pack this value into a byte.
-    pool_reward_index: usize,
+    pub pool_reward_index: usize,
     /// Each pool reward gets an ID which is monotonically increasing with each
     /// new reward added to the pool.
-    pool_reward_id: PoolRewardId,
+    pub pool_reward_id: PoolRewardId,
     /// Before [UserReward.cumulative_rewards_per_share] is copied we find
     /// time difference between current global rewards and last user update
     /// rewards:
@@ -76,9 +76,9 @@ pub struct UserReward {
     ///
     /// Then, we multiply that difference by [UserRewardManager.share] and
     /// add the result to this counter.
-    earned_rewards: Decimal,
+    pub earned_rewards: Decimal,
     /// copied from [PoolReward.cumulative_rewards_per_share] at the time of the last update
-    cumulative_rewards_per_share: Decimal,
+    pub cumulative_rewards_per_share: Decimal,
 }
 
 /// When creating a new [UserRewardManager] we need to know whether we should

@@ -55,7 +55,7 @@ struct AddPoolRewardAccounts<'a, 'info> {
     /// TBD: do we want to create another signer authority to be able to
     /// delegate reward management to a softer multisig?
     lending_market_owner_info: &'a AccountInfo<'info>,
-    /// ❓ we don't yet whether this is rent info
+    /// ❓ we don't yet know whether this is rent info
     rent_info: &'a AccountInfo<'info>,
     /// ✅ matches `lending_market_info`
     token_program_info: &'a AccountInfo<'info>,
@@ -77,6 +77,8 @@ pub(crate) fn process(
     reward_token_amount: u64,
     accounts: &[AccountInfo],
 ) -> ProgramResult {
+    msg!("Adding {position_kind:?} pool reward from {start_time_secs}s to {end_time_secs}s",);
+
     let clock = &Clock::get()?;
 
     let mut accounts =
@@ -161,10 +163,6 @@ impl<'a, 'info> AddPoolRewardAccounts<'a, 'info> {
         if reward_token_vault_info.owner != token_program_info.key {
             msg!("Reward token vault provided must be owned by the token program");
             return Err(LendingError::InvalidTokenOwner.into());
-        }
-        if !reward_token_vault_info.data.borrow().is_empty() {
-            msg!("Reward token vault provided must be empty");
-            return Err(LendingError::InvalidAccountInput.into());
         }
 
         // check that accounts that should be writable are writable

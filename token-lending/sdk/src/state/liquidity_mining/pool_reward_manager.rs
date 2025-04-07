@@ -48,7 +48,7 @@ pub struct PoolRewardManager {
 /// half a million years before we need to worry about wrapping in a single slot.
 /// I'd call that someone else's problem.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
-pub struct PoolRewardId(pub(crate) u32);
+pub struct PoolRewardId(pub u32);
 
 /// # (Un)Packing
 /// This is unpacked representation.
@@ -89,27 +89,27 @@ pub enum PoolRewardSlot {
 pub struct PoolReward {
     /// Unique ID for this slot that has never been used before, and will never
     /// be used again.
-    pub(crate) id: PoolRewardId,
+    pub id: PoolRewardId,
     /// # (Un)Packing
     /// When we pack the reward we set this to default pubkey for vacant slots.
-    pub(crate) vault: Pubkey,
+    pub vault: Pubkey,
     /// Monotonically increasing time taken from clock sysvar.
-    pub(crate) start_time_secs: u64,
+    pub start_time_secs: u64,
     /// For how long (since start time) will this reward be releasing tokens.
     ///
     /// # Reward cancellation
     ///
     /// Is cut short if the reward is cancelled.
-    pub(crate) duration_secs: u32,
+    pub duration_secs: u32,
     /// Total token amount to distribute.
     /// The token account that holds the rewards holds at least this much in
     /// the beginning.
-    pub(crate) total_rewards: u64,
+    pub total_rewards: u64,
     /// How many users are still tracking this reward.
     /// Once this reaches zero we can close this reward.
     /// There's a permission-less ix with which user rewards can be distributed
     /// that's used for cranking remaining rewards.
-    pub(crate) num_user_reward_managers: u64,
+    pub num_user_reward_managers: u64,
     /// We keep adding `(unlocked_rewards) / (total_shares)` every time
     /// someone interacts with the manager ([update_pool_reward_manager])
     /// where
@@ -117,7 +117,7 @@ pub struct PoolReward {
     ///
     /// # (Un)Packing
     /// We only store 16 most significant digits.
-    pub(crate) cumulative_rewards_per_share: Decimal,
+    pub cumulative_rewards_per_share: Decimal,
 }
 
 impl PoolRewardManager {
@@ -144,7 +144,7 @@ impl PoolRewardManager {
 
         if start_time_secs >= end_time_secs {
             msg!("Pool reward must end after it starts");
-            return Err(LendingError::MathOverflow.into());
+            return Err(LendingError::PoolRewardPeriodTooShort.into());
         }
 
         let duration_secs: u32 = {

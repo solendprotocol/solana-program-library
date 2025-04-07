@@ -2101,6 +2101,91 @@ pub fn upgrade_reserve_to_v2_1_0(
     }
 }
 
+/// Creates a `AddPoolReward` instruction
+#[allow(clippy::too_many_arguments)]
+pub fn add_pool_reward(
+    program_id: Pubkey,
+    position_kind: PositionKind,
+    start_time_secs: u64,
+    end_time_secs: u64,
+    token_amount: u64,
+    reserve_pubkey: Pubkey,
+    reward_mint_pubkey: Pubkey,
+    source_reward_token_account_pubkey: Pubkey,
+    reward_vault_authority_pubkey: Pubkey,
+    reward_vault_pubkey: Pubkey,
+    lending_market_pubkey: Pubkey,
+    lending_market_owner_pubkey: Pubkey,
+) -> Instruction {
+    Instruction {
+        program_id,
+        accounts: vec![
+            AccountMeta::new(reserve_pubkey, false),
+            AccountMeta::new(reward_mint_pubkey, false),
+            AccountMeta::new(source_reward_token_account_pubkey, false),
+            AccountMeta::new(reward_vault_authority_pubkey, false),
+            AccountMeta::new(reward_vault_pubkey, false),
+            AccountMeta::new_readonly(lending_market_pubkey, false),
+            AccountMeta::new_readonly(lending_market_owner_pubkey, true),
+            AccountMeta::new_readonly(sysvar::rent::id(), false),
+            AccountMeta::new_readonly(spl_token::id(), false),
+        ],
+        data: LendingInstruction::AddPoolReward {
+            position_kind,
+            start_time_secs,
+            end_time_secs,
+            token_amount,
+        }
+        .pack(),
+    }
+}
+
+/// Derives the reward vault authority PDA address.
+pub fn find_reward_vault_authority(
+    program_id: &Pubkey,
+    lending_market_key: &Pubkey,
+    reserve_key: &Pubkey,
+    reward_mint_key: &Pubkey,
+) -> (Pubkey, u8) {
+    Pubkey::find_program_address(
+        &reward_vault_authority_seeds(lending_market_key, reserve_key, reward_mint_key),
+        program_id,
+    )
+}
+
+/// Creates a reward vault authority PDA address.
+pub fn create_reward_vault_authority(
+    program_id: &Pubkey,
+    lending_market_key: &Pubkey,
+    reserve_key: &Pubkey,
+    reward_mint_key: &Pubkey,
+    bump: u8,
+) -> Result<Pubkey, solana_program::pubkey::PubkeyError> {
+    Pubkey::create_program_address(
+        &[
+            reward_vault_authority_seeds(lending_market_key, reserve_key, reward_mint_key)
+                .as_slice(),
+            &[&[bump]],
+        ]
+        .concat(),
+        program_id,
+    )
+}
+
+/// Returns seeds to derive the reward vault authority PDA address.
+pub fn reward_vault_authority_seeds<'keys>(
+    lending_market_key: &'keys Pubkey,
+    reserve_key: &'keys Pubkey,
+    reward_mint_key: &'keys Pubkey,
+) -> [&'keys [u8]; 4] {
+    [
+        b"RewardVaultAuthority",
+        lending_market_key.as_ref(),
+        reserve_key.as_ref(),
+        reward_mint_key.as_ref(),
+    ]
+}
+
 #[cfg(test)]
 mod test {
     use super::*;
