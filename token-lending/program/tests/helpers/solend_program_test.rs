@@ -65,7 +65,7 @@ mod cu_budgets {
     pub(super) const BORROW_OBLIGATION_LIQUIDITY: u32 = 180_005;
     pub(super) const REPAY_OBLIGATION_LIQUIDITY: u32 = 70_006;
     pub(super) const REDEEM_FEES: u32 = 80_007;
-    pub(super) const LIQUIDATE_OBLIGATION_AND_REDEEM_RESERVE_COLLATERAL: u32 = 230_008;
+    pub(super) const LIQUIDATE_OBLIGATION_AND_REDEEM_RESERVE_COLLATERAL: u32 = 250_008;
     pub(super) const WITHDRAW_OBLIGATION_COLLATERAL_AND_REDEEM_RESERVE_COLLATERAL: u32 = 200_009;
     pub(super) const WITHDRAW_OBLIGATION_COLLATERAL: u32 = 130_010;
     pub(super) const INIT_RESERVE: u32 = 90_011;
@@ -74,6 +74,7 @@ mod cu_budgets {
     pub(super) const UPDATE_RESERVE_CONFIG: u32 = 30_014;
     pub(super) const DEPOSIT_RESERVE_LIQUIDITY_AND_OBLIGATION_COLLATERAL: u32 = 130_015;
     pub(super) const REDEEM: u32 = 90_016;
+    pub(super) const ADD_POOL_REWARD: u32 = 80_017;
 }
 
 /// This is at most how many bytes can an obligation grow.
@@ -104,6 +105,11 @@ pub struct Oracle {
 pub struct Info<T> {
     pub pubkey: Pubkey,
     pub account: T,
+}
+
+pub struct LiqMiningReward {
+    pub mint: Pubkey,
+    pub vault: Keypair,
 }
 
 impl SolendProgramTest {
@@ -364,6 +370,12 @@ impl SolendProgramTest {
             .unwrap();
 
         keypair.pubkey()
+    }
+
+    pub async fn create_mint_as_test_authority(&mut self) -> Pubkey {
+        let mint = self.create_mint(&self.authority.pubkey()).await;
+        self.mints.insert(mint, None);
+        mint
     }
 
     pub async fn create_mint(&mut self, mint_authority: &Pubkey) -> Pubkey {
@@ -900,6 +912,56 @@ impl Info<LendingMarket> {
         ];
 
         test.process_transaction(&instructions, Some(&[&user.keypair]))
+            .await
+    }
+
+    pub async fn add_pool_reward(
+        &self,
+        test: &mut SolendProgramTest,
+        reserve: &Info<Reserve>,
+        user: &mut User,
+        reward: &LiqMiningReward,
+        position_kind: PositionKind,
+        start_time_secs: u64,
+        end_time_secs: u64,
+        reward_amount: u64,
+    ) -> Result<(), BanksClientError> {
+        let token_account = user.create_token_account(&reward.mint, test).await;
+        test.mint_to(&reward.mint, &token_account.pubkey, reward_amount)
+            .await;
+
+        let instructions = [
+            ComputeBudgetInstruction::set_compute_unit_limit(cu_budgets::ADD_POOL_REWARD),
+            system_instruction::create_account(
+                &test.context.payer.pubkey(),
+                &reward.vault.pubkey(),
+                test.rent.minimum_balance(Token::LEN),
+                spl_token::state::Account::LEN as u64,
+                &spl_token::id(),
+            ),
+            add_pool_reward(
+                solend_program::id(),
+                position_kind,
+                start_time_secs,
+                end_time_secs,
+                reward_amount,
+                reserve.pubkey,
+                reward.mint,
+                token_account.pubkey,
+                find_reward_vault_authority(
+                    &solend_program::id(),
+                    &self.pubkey,
+                    &reserve.pubkey,
+                    &reward.mint,
+                )
+                .0,
+                reward.vault.pubkey(),
+                self.pubkey,
+                user.keypair.pubkey(),
+            ),
+        ];
+
+        test.process_transaction(&instructions, Some(&[&user.keypair, &reward.vault]))
             .await
     }
 

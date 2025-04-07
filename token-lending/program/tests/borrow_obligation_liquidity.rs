@@ -286,7 +286,7 @@ async fn test_success() {
                 let last_update_time_secs =
                     obligation.account.user_reward_managers[0].last_update_time_secs;
 
-                UserRewardManagers(vec![
+                vec![
                     UserRewardManager {
                         reserve: usdc_reserve.pubkey,
                         position_kind: PositionKind::Deposit,
@@ -301,7 +301,8 @@ async fn test_success() {
                         last_update_time_secs,
                         rewards: Vec::new(),
                     },
-                ])
+                ]
+                .into()
             },
             ..obligation.account
         },

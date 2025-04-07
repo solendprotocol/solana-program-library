@@ -823,7 +823,7 @@ impl Obligation {
             super_unhealthy_borrow_value: unpack_decimal(super_unhealthy_borrow_value),
             borrowing_isolated_asset: unpack_bool(borrowing_isolated_asset)?,
             closeable: unpack_bool(closeable)?,
-            user_reward_managers: UserRewardManagers(user_reward_managers),
+            user_reward_managers: user_reward_managers.into(),
         })
     }
 }
@@ -887,11 +887,10 @@ mod test {
                 closeable: rng.gen(),
                 user_reward_managers: {
                     let user_reward_managers_len = rng.gen_range(0..=MAX_OBLIGATION_RESERVES);
-                    UserRewardManagers(
-                        std::iter::repeat_with(|| UserRewardManager::new_rand(rng))
-                            .take(user_reward_managers_len)
-                            .collect(),
-                    )
+                    std::iter::repeat_with(|| UserRewardManager::new_rand(rng))
+                        .take(user_reward_managers_len)
+                        .collect::<Vec<_>>()
+                        .into()
                 },
             }
         }
