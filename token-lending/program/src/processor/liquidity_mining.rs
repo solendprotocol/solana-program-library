@@ -7,9 +7,9 @@
 //! implementation of the same feature.
 //!
 //! There are three admin-only ixs:
-//! - [add_pool_reward] 
-//! - [cancel_pool_reward] 
-//! - [close_pool_reward] (TODO: add bpf tests)
+//! - [add_pool_reward]
+//! - [cancel_pool_reward]
+//! - [close_pool_reward]
 //!
 //! There is an ix related to migration:
 //! - [upgrade_reserve] (TODO: add bpf tests)
