@@ -1,6 +1,10 @@
 //! Adds a new pool reward to a reserve.
 //!
 //! Each pool reward has a unique vault that holds the reward tokens.
+//! This vault account must be created for the token program before calling this
+//! ix.
+//! In this ix we initialize the account as token account and transfer the
+//! reward tokens to it.
 
 use crate::processor::{
     assert_rent_exempt, spl_token_init_account, spl_token_transfer, TokenInitializeAccountParams,
@@ -19,7 +23,7 @@ use solana_program::{
 use solend_sdk::{error::LendingError, state::PositionKind};
 
 use super::{
-    check_and_unpack_pool_reward_accounts_for_admin_ixs, unpack_token_account, ReserveBorrow,
+    check_and_unpack_pool_reward_accounts_for_admin_ixs, unpack_token_account, Bumps, ReserveBorrow,
 };
 
 /// Use [Self::from_unchecked_iter] to validate the accounts except for
@@ -71,6 +75,7 @@ struct AddPoolRewardAccounts<'a, 'info> {
 /// 2. Finds an empty slot in the [Reserve]'s LM reward vector and adds it there.
 pub(crate) fn process(
     program_id: &Pubkey,
+    reward_authority_bump: u8,
     position_kind: PositionKind,
     start_time_secs: u64,
     end_time_secs: u64,
@@ -81,8 +86,13 @@ pub(crate) fn process(
 
     let clock = &Clock::get()?;
 
-    let mut accounts =
-        AddPoolRewardAccounts::from_unchecked_iter(program_id, &mut accounts.iter())?;
+    let mut accounts = AddPoolRewardAccounts::from_unchecked_iter(
+        program_id,
+        Bumps {
+            reward_authority: reward_authority_bump,
+        },
+        &mut accounts.iter(),
+    )?;
 
     // 1.
 
@@ -124,6 +134,7 @@ pub(crate) fn process(
 impl<'a, 'info> AddPoolRewardAccounts<'a, 'info> {
     fn from_unchecked_iter(
         program_id: &Pubkey,
+        bumps: Bumps,
         iter: &mut impl Iterator<Item = &'a AccountInfo<'info>>,
     ) -> Result<AddPoolRewardAccounts<'a, 'info>, ProgramError> {
         let reserve_info = next_account_info(iter)?;
@@ -138,6 +149,7 @@ impl<'a, 'info> AddPoolRewardAccounts<'a, 'info> {
 
         let (_, reserve) = check_and_unpack_pool_reward_accounts_for_admin_ixs(
             program_id,
+            bumps,
             reserve_info,
             reward_mint_info,
             reward_authority_info,

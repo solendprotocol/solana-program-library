@@ -1,3 +1,9 @@
+//! Cancel a pool reward.
+//!
+//! This ix sets the end time of the pool reward to now are returns any
+//! unallocated rewards to the admin.
+//! Users will still be able to claim rewards.
+
 use crate::processor::liquidity_mining::{
     check_and_unpack_pool_reward_accounts_for_admin_ixs, unpack_token_account,
 };
@@ -11,9 +17,10 @@ use solana_program::{
     program_error::ProgramError,
     pubkey::Pubkey,
 };
+use solend_sdk::instruction::reward_vault_authority_seeds;
 use solend_sdk::{error::LendingError, state::PositionKind};
 
-use super::{reward_vault_authority_seeds, ReserveBorrow};
+use super::{Bumps, ReserveBorrow};
 
 /// Use [Self::from_unchecked_iter] to validate the accounts.
 struct CancelPoolRewardAccounts<'a, 'info> {
@@ -51,12 +58,18 @@ struct CancelPoolRewardAccounts<'a, 'info> {
 /// 2. Transfers any unallocated rewards to the `reward_token_destination` account.
 pub(crate) fn process(
     program_id: &Pubkey,
+    reward_authority_bump: u8,
     position_kind: PositionKind,
     pool_reward_index: usize,
     accounts: &[AccountInfo],
 ) -> ProgramResult {
-    let mut accounts =
-        CancelPoolRewardAccounts::from_unchecked_iter(program_id, &mut accounts.iter())?;
+    let mut accounts = CancelPoolRewardAccounts::from_unchecked_iter(
+        program_id,
+        Bumps {
+            reward_authority: reward_authority_bump,
+        },
+        &mut accounts.iter(),
+    )?;
 
     // 1.
 
@@ -77,11 +90,16 @@ pub(crate) fn process(
         destination: accounts.reward_token_destination_info.clone(),
         amount: unallocated_rewards,
         authority: accounts.reward_authority_info.clone(),
-        authority_signer_seeds: &reward_vault_authority_seeds(
-            accounts.lending_market_info.key,
-            &accounts.reserve.key(),
-            accounts.reward_mint_info.key,
-        ),
+        authority_signer_seeds: &[
+            reward_vault_authority_seeds(
+                accounts.lending_market_info.key,
+                &accounts.reserve.key(),
+                accounts.reward_mint_info.key,
+            )
+            .as_slice(),
+            &[&[reward_authority_bump]],
+        ]
+        .concat(),
         token_program: accounts.token_program_info.clone(),
     })?;
 
@@ -91,6 +109,7 @@ pub(crate) fn process(
 impl<'a, 'info> CancelPoolRewardAccounts<'a, 'info> {
     fn from_unchecked_iter(
         program_id: &Pubkey,
+        bump: Bumps,
         iter: &mut impl Iterator<Item = &'a AccountInfo<'info>>,
     ) -> Result<CancelPoolRewardAccounts<'a, 'info>, ProgramError> {
         let reserve_info = next_account_info(iter)?;
@@ -104,6 +123,7 @@ impl<'a, 'info> CancelPoolRewardAccounts<'a, 'info> {
 
         let (_, reserve) = check_and_unpack_pool_reward_accounts_for_admin_ixs(
             program_id,
+            bump,
             reserve_info,
             reward_mint_info,
             reward_authority_info,

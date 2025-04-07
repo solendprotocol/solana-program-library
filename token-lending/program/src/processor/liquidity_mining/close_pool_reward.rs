@@ -12,7 +12,9 @@ use solana_program::{
     program_error::ProgramError,
     pubkey::Pubkey,
 };
-use solend_sdk::{error::LendingError, state::PositionKind};
+use solend_sdk::{
+    error::LendingError, instruction::reward_vault_authority_seeds, state::PositionKind,
+};
 use spl_token::state::Account as TokenAccount;
 
 use crate::processor::{
@@ -20,8 +22,7 @@ use crate::processor::{
 };
 
 use super::{
-    check_and_unpack_pool_reward_accounts_for_admin_ixs, reward_vault_authority_seeds,
-    unpack_token_account, ReserveBorrow,
+    check_and_unpack_pool_reward_accounts_for_admin_ixs, unpack_token_account, Bumps, ReserveBorrow,
 };
 
 /// Use [Self::from_unchecked_iter] to validate the accounts.
@@ -64,12 +65,18 @@ struct ClosePoolRewardAccounts<'a, 'info> {
 /// 3. Closes reward vault token account.
 pub(crate) fn process(
     program_id: &Pubkey,
+    reward_authority_bump: u8,
     position_kind: PositionKind,
     pool_reward_index: usize,
     accounts: &[AccountInfo],
 ) -> ProgramResult {
-    let mut accounts =
-        ClosePoolRewardAccounts::from_unchecked_iter(program_id, &mut accounts.iter())?;
+    let mut accounts = ClosePoolRewardAccounts::from_unchecked_iter(
+        program_id,
+        Bumps {
+            reward_authority: reward_authority_bump,
+        },
+        &mut accounts.iter(),
+    )?;
 
     // 1.
 
@@ -84,16 +91,24 @@ pub(crate) fn process(
 
     // 2.
 
+    let bump_seed = [reward_authority_bump];
+    let signer_seeds = [
+        reward_vault_authority_seeds(
+            accounts.lending_market_info.key,
+            accounts.reserve_info.key,
+            accounts.reward_mint_info.key,
+        )
+        .as_slice(),
+        &[&bump_seed],
+    ]
+    .concat();
+
     spl_token_transfer(TokenTransferParams {
         source: accounts.reward_token_vault_info.clone(),
         destination: accounts.reward_token_destination_info.clone(),
         amount: accounts.reward_token_vault.amount,
         authority: accounts.reward_authority_info.clone(),
-        authority_signer_seeds: &reward_vault_authority_seeds(
-            accounts.lending_market_info.key,
-            accounts.reserve_info.key,
-            accounts.reward_mint_info.key,
-        ),
+        authority_signer_seeds: &signer_seeds,
         token_program: accounts.token_program_info.clone(),
     })?;
 
@@ -103,11 +118,7 @@ pub(crate) fn process(
         account: accounts.reward_token_vault_info.clone(),
         destination: accounts.lending_market_owner_info.clone(),
         authority: accounts.reward_authority_info.clone(),
-        authority_signer_seeds: &reward_vault_authority_seeds(
-            accounts.lending_market_info.key,
-            accounts.reserve_info.key,
-            accounts.reward_mint_info.key,
-        ),
+        authority_signer_seeds: &signer_seeds,
         token_program: accounts.token_program_info.clone(),
     })?;
 
@@ -117,6 +128,7 @@ pub(crate) fn process(
 impl<'a, 'info> ClosePoolRewardAccounts<'a, 'info> {
     fn from_unchecked_iter(
         program_id: &Pubkey,
+        bumps: Bumps,
         iter: &mut impl Iterator<Item = &'a AccountInfo<'info>>,
     ) -> Result<ClosePoolRewardAccounts<'a, 'info>, ProgramError> {
         let reserve_info = next_account_info(iter)?;
@@ -130,6 +142,7 @@ impl<'a, 'info> ClosePoolRewardAccounts<'a, 'info> {
 
         let (_, reserve) = check_and_unpack_pool_reward_accounts_for_admin_ixs(
             program_id,
+            bumps,
             reserve_info,
             reward_mint_info,
             reward_authority_info,

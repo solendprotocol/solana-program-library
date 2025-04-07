@@ -208,6 +208,7 @@ pub fn process_instruction(
             process_donate_to_reserve(program_id, liquidity_amount, accounts)
         }
         LendingInstruction::AddPoolReward {
+            reward_authority_bump,
             position_kind,
             start_time_secs,
             end_time_secs,
@@ -216,6 +217,7 @@ pub fn process_instruction(
             msg!("Instruction: Add Pool Reward");
             liquidity_mining::add_pool_reward::process(
                 program_id,
+                reward_authority_bump,
                 position_kind,
                 start_time_secs,
                 end_time_secs,
@@ -224,32 +226,42 @@ pub fn process_instruction(
             )
         }
         LendingInstruction::CancelPoolReward {
+            reward_authority_bump,
             position_kind,
             pool_reward_index,
         } => {
             msg!("Instruction: Cancel Pool Reward");
             liquidity_mining::cancel_pool_reward::process(
                 program_id,
+                reward_authority_bump,
                 position_kind,
-                pool_reward_index,
+                pool_reward_index as _,
                 accounts,
             )
         }
         LendingInstruction::ClosePoolReward {
+            reward_authority_bump,
             position_kind,
             pool_reward_index,
         } => {
             msg!("Instruction: Close Pool Reward");
             liquidity_mining::close_pool_reward::process(
                 program_id,
+                reward_authority_bump,
                 position_kind,
-                pool_reward_index,
+                pool_reward_index as _,
                 accounts,
             )
         }
-        LendingInstruction::ClaimReward => {
+        LendingInstruction::ClaimReward {
+            reward_authority_bump,
+        } => {
             msg!("Instruction: Claim Reward");
-            liquidity_mining::claim_user_reward::process(program_id, accounts)
+            liquidity_mining::claim_user_reward::process(
+                program_id,
+                reward_authority_bump,
+                accounts,
+            )
         }
 
         // temporary ix for upgrade

@@ -6,8 +6,16 @@ pub mod user_reward_manager;
 pub use pool_reward_manager::*;
 pub use user_reward_manager::*;
 
-/// Determines the size of [PoolRewardManager]
-pub const MAX_REWARDS: usize = 50;
+/// Determines the size of [PoolRewardManager].
+///
+/// On Suilend this is 50.
+/// However, Sui dynamic object model let's us store more data easily.
+/// In Save we're storing the data on the reserve and this means packing and
+/// unpacking it frequently which negatively impacts CU limits.
+///
+/// In Save, if we want to add new rewards we will crank old ones to make space
+/// in the reserve.
+pub const MAX_REWARDS: usize = 30;
 
 /// Cannot create a reward shorter than this.
 pub const MIN_REWARD_PERIOD_SECS: u64 = 3_600;

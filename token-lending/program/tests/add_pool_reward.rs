@@ -62,7 +62,7 @@ async fn test_success(position_kind: PositionKind) {
         total_shares: 0,
         last_update_time_secs: current_time as _,
         pool_rewards: {
-            let mut og = usdc_reserve_post
+            let mut og = usdc_reserve
                 .account
                 .deposits_pool_reward_manager
                 .pool_rewards

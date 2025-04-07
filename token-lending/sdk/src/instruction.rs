@@ -550,6 +550,8 @@ pub enum LendingInstruction {
     ///    `[]` Rent sysvar.
     ///    `[]` Token program.
     AddPoolReward {
+        /// The bump seed of the reward authority.
+        reward_authority_bump: u8,
         /// Whether this reward applies to deposits or borrows
         position_kind: PositionKind,
         /// If in the past according to the Clock sysvar then started immediately.
@@ -580,10 +582,12 @@ pub enum LendingInstruction {
     ///    `[signer]` Lending market owner.
     ///    `[]` Token program.
     ClosePoolReward {
+        /// The bump seed of the reward authority.
+        reward_authority_bump: u8,
         /// Whether this reward applies to deposits or borrows
         position_kind: PositionKind,
         /// Identifies a reward within a reserve's deposits/borrows rewards.
-        pool_reward_index: usize,
+        pool_reward_index: u64,
     },
 
     // 27
@@ -606,10 +610,12 @@ pub enum LendingInstruction {
     ///    `[signer]` Lending market owner.
     ///    `[]` Token program.
     CancelPoolReward {
+        /// The bump seed of the reward authority.
+        reward_authority_bump: u8,
         /// Whether this reward applies to deposits or borrows
         position_kind: PositionKind,
         /// Identifies a reward within a reserve's deposits/borrows rewards.
-        pool_reward_index: usize,
+        pool_reward_index: u64,
     },
 
     /// 28
@@ -629,7 +635,10 @@ pub enum LendingInstruction {
     ///   `[writable]` Reward vault token account.
     ///   `[]` Lending market account.
     ///   `[]` Token program.
-    ClaimReward,
+    ClaimReward {
+        /// The bump seed of the reward authority.
+        reward_authority_bump: u8,
+    },
 
     // 255
     /// UpgradeReserveToV2_1_0
@@ -901,11 +910,13 @@ impl LendingInstruction {
                 Self::DonateToReserve { liquidity_amount }
             }
             25 => {
+                let (reward_authority_bump, rest) = Self::unpack_u8(rest)?;
                 let (position_kind, rest) = Self::unpack_try_from_u8(rest)?;
                 let (start_time_secs, rest) = Self::unpack_u64(rest)?;
                 let (end_time_secs, rest) = Self::unpack_u64(rest)?;
                 let (token_amount, _rest) = Self::unpack_u64(rest)?;
                 Self::AddPoolReward {
+                    reward_authority_bump,
                     position_kind,
                     start_time_secs,
                     end_time_secs,
@@ -913,22 +924,31 @@ impl LendingInstruction {
                 }
             }
             26 => {
+                let (reward_authority_bump, rest) = Self::unpack_u8(rest)?;
                 let (position_kind, rest) = Self::unpack_try_from_u8(rest)?;
                 let (pool_reward_index, _rest) = Self::unpack_u64(rest)?;
                 Self::ClosePoolReward {
+                    reward_authority_bump,
                     position_kind,
                     pool_reward_index: pool_reward_index as _,
                 }
             }
             27 => {
+                let (reward_authority_bump, rest) = Self::unpack_u8(rest)?;
                 let (position_kind, rest) = Self::unpack_try_from_u8(rest)?;
                 let (pool_reward_index, _rest) = Self::unpack_u64(rest)?;
                 Self::CancelPoolReward {
+                    reward_authority_bump,
                     position_kind,
                     pool_reward_index: pool_reward_index as _,
                 }
             }
-            28 => Self::ClaimReward,
+            28 => {
+                let (reward_authority_bump, _rest) = Self::unpack_u8(rest)?;
+                Self::ClaimReward {
+                    reward_authority_bump,
+                }
+            }
             255 => Self::UpgradeReserveToV2_1_0,
             _ => {
                 msg!("Instruction cannot be unpacked");
@@ -1239,35 +1259,44 @@ impl LendingInstruction {
                 buf.extend_from_slice(&liquidity_amount.to_le_bytes());
             }
             Self::AddPoolReward {
+                reward_authority_bump,
                 position_kind,
                 start_time_secs,
                 end_time_secs,
                 token_amount,
             } => {
                 buf.push(25);
+                buf.extend_from_slice(&reward_authority_bump.to_le_bytes());
                 buf.extend_from_slice(&(position_kind as u8).to_le_bytes());
                 buf.extend_from_slice(&start_time_secs.to_le_bytes());
                 buf.extend_from_slice(&end_time_secs.to_le_bytes());
                 buf.extend_from_slice(&token_amount.to_le_bytes());
             }
             Self::ClosePoolReward {
+                reward_authority_bump,
                 position_kind,
                 pool_reward_index,
             } => {
                 buf.push(26);
+                buf.extend_from_slice(&reward_authority_bump.to_le_bytes());
                 buf.extend_from_slice(&(position_kind as u8).to_le_bytes());
                 buf.extend_from_slice(&pool_reward_index.to_le_bytes());
             }
             Self::CancelPoolReward {
+                reward_authority_bump,
                 position_kind,
                 pool_reward_index,
             } => {
                 buf.push(27);
+                buf.extend_from_slice(&reward_authority_bump.to_le_bytes());
                 buf.extend_from_slice(&(position_kind as u8).to_le_bytes());
                 buf.extend_from_slice(&pool_reward_index.to_le_bytes());
             }
-            Self::ClaimReward => {
+            Self::ClaimReward {
+                reward_authority_bump,
+            } => {
                 buf.push(28);
+                buf.extend_from_slice(&reward_authority_bump.to_le_bytes());
             }
             Self::UpgradeReserveToV2_1_0 => {
                 buf.push(255);
@@ -2105,36 +2134,74 @@ pub fn upgrade_reserve_to_v2_1_0(
 #[allow(clippy::too_many_arguments)]
 pub fn add_pool_reward(
     program_id: Pubkey,
+    reward_authority_bump: u8,
     position_kind: PositionKind,
     start_time_secs: u64,
     end_time_secs: u64,
     token_amount: u64,
-    reserve_pubkey: Pubkey,
-    reward_mint_pubkey: Pubkey,
-    source_reward_token_account_pubkey: Pubkey,
-    reward_vault_authority_pubkey: Pubkey,
-    reward_vault_pubkey: Pubkey,
-    lending_market_pubkey: Pubkey,
-    lending_market_owner_pubkey: Pubkey,
+    reserve: Pubkey,
+    reward_mint: Pubkey,
+    source_reward_token_account: Pubkey,
+    reward_vault_authority: Pubkey,
+    reward_vault: Pubkey,
+    lending_market: Pubkey,
+    lending_market_owner: Pubkey,
 ) -> Instruction {
     Instruction {
         program_id,
         accounts: vec![
-            AccountMeta::new(reserve_pubkey, false),
-            AccountMeta::new(reward_mint_pubkey, false),
-            AccountMeta::new(source_reward_token_account_pubkey, false),
-            AccountMeta::new(reward_vault_authority_pubkey, false),
-            AccountMeta::new(reward_vault_pubkey, false),
-            AccountMeta::new_readonly(lending_market_pubkey, false),
-            AccountMeta::new_readonly(lending_market_owner_pubkey, true),
+            AccountMeta::new(reserve, false),
+            AccountMeta::new_readonly(reward_mint, false),
+            AccountMeta::new(source_reward_token_account, false),
+            AccountMeta::new_readonly(reward_vault_authority, false),
+            AccountMeta::new(reward_vault, false),
+            AccountMeta::new_readonly(lending_market, false),
+            AccountMeta::new_readonly(lending_market_owner, true),
             AccountMeta::new_readonly(sysvar::rent::id(), false),
             AccountMeta::new_readonly(spl_token::id(), false),
         ],
         data: LendingInstruction::AddPoolReward {
+            reward_authority_bump,
             position_kind,
             start_time_secs,
             end_time_secs,
             token_amount,
+        }
+        .pack(),
+    }
+}
+
+/// Creates a `CancelPoolReward` instruction
+#[allow(clippy::too_many_arguments)]
+pub fn cancel_pool_reward(
+    program_id: Pubkey,
+    reward_authority_bump: u8,
+    position_kind: PositionKind,
+    pool_reward_index: u64,
+    reserve: Pubkey,
+    reward_mint: Pubkey,
+    destination_reward_token_account: Pubkey,
+    reward_vault_authority: Pubkey,
+    reward_vault: Pubkey,
+    lending_market: Pubkey,
+    lending_market_owner: Pubkey,
+) -> Instruction {
+    Instruction {
+        program_id,
+        accounts: vec![
+            AccountMeta::new(reserve, false),
+            AccountMeta::new_readonly(reward_mint, false),
+            AccountMeta::new(destination_reward_token_account, false),
+            AccountMeta::new_readonly(reward_vault_authority, false),
+            AccountMeta::new(reward_vault, false),
+            AccountMeta::new_readonly(lending_market, false),
+            AccountMeta::new_readonly(lending_market_owner, true),
+            AccountMeta::new_readonly(spl_token::id(), false),
+        ],
+        data: LendingInstruction::CancelPoolReward {
+            reward_authority_bump,
+            position_kind,
+            pool_reward_index,
         }
         .pack(),
     }

@@ -19,12 +19,10 @@ use solana_program::{
     pubkey::Pubkey,
     sysvar::Sysvar,
 };
-use solend_sdk::error::LendingError;
 use solend_sdk::state::{Obligation, PositionKind};
+use solend_sdk::{error::LendingError, instruction::reward_vault_authority_seeds};
 
-use super::{
-    check_and_unpack_pool_reward_accounts, reward_vault_authority_seeds, unpack_token_account,
-};
+use super::{check_and_unpack_pool_reward_accounts, unpack_token_account, Bumps};
 
 /// Use [Self::from_unchecked_iter] to validate the accounts.
 struct ClaimUserReward<'a, 'info> {
@@ -70,10 +68,20 @@ struct ClaimUserReward<'a, 'info> {
 ///    Eligible rewards are those that match the vault and user has earned any.
 /// 3. Transfers the withdrawn rewards to the user's token account.
 /// 4. Packs all changes into account buffers for [Obligation] and [Reserve].
-pub(crate) fn process(program_id: &Pubkey, accounts: &[AccountInfo]) -> ProgramResult {
+pub(crate) fn process(
+    program_id: &Pubkey,
+    reward_authority_bump: u8,
+    accounts: &[AccountInfo],
+) -> ProgramResult {
     let clock = &Clock::get()?;
 
-    let mut accounts = ClaimUserReward::from_unchecked_iter(program_id, &mut accounts.iter())?;
+    let mut accounts = ClaimUserReward::from_unchecked_iter(
+        program_id,
+        Bumps {
+            reward_authority: reward_authority_bump,
+        },
+        &mut accounts.iter(),
+    )?;
     let reserve_key = accounts.reserve.key();
 
     // 1.
@@ -149,11 +157,16 @@ pub(crate) fn process(program_id: &Pubkey, accounts: &[AccountInfo]) -> ProgramR
         destination: accounts.obligation_owner_token_account_info.clone(),
         amount: total_reward_amount,
         authority: accounts.reward_authority_info.clone(),
-        authority_signer_seeds: &reward_vault_authority_seeds(
-            accounts.lending_market_info.key,
-            &reserve_key,
-            accounts.reward_mint_info.key,
-        ),
+        authority_signer_seeds: &[
+            reward_vault_authority_seeds(
+                accounts.lending_market_info.key,
+                &accounts.reserve.key(),
+                accounts.reward_mint_info.key,
+            )
+            .as_slice(),
+            &[&[reward_authority_bump]],
+        ]
+        .concat(),
         token_program: accounts.token_program_info.clone(),
     })?;
 
@@ -173,6 +186,7 @@ pub(crate) fn process(program_id: &Pubkey, accounts: &[AccountInfo]) -> ProgramR
 impl<'a, 'info> ClaimUserReward<'a, 'info> {
     fn from_unchecked_iter(
         program_id: &Pubkey,
+        bumps: Bumps,
         iter: &mut impl Iterator<Item = &'a AccountInfo<'info>>,
     ) -> Result<ClaimUserReward<'a, 'info>, ProgramError> {
         let obligation_info = next_account_info(iter)?;
@@ -186,6 +200,7 @@ impl<'a, 'info> ClaimUserReward<'a, 'info> {
 
         let (_, reserve) = check_and_unpack_pool_reward_accounts(
             program_id,
+            bumps,
             reserve_info,
             reward_mint_info,
             reward_authority_info,
