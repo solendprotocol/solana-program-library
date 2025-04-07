@@ -16,7 +16,16 @@ use solend_sdk::state::{PoolReward, PoolRewardSlot, UserReward};
 
 #[tokio::test]
 async fn test_success_for_deposit() {
-    let (mut test, lending_market, usdc_reserve, _, mut lending_market_owner, user) =
+    test_success(PositionKind::Deposit).await;
+}
+
+#[tokio::test]
+async fn test_success_for_borrow() {
+    test_success(PositionKind::Borrow).await;
+}
+
+async fn test_success(position_kind: PositionKind) {
+    let (mut test, lending_market, usdc_reserve, wsol_reserve, mut lending_market_owner, user) =
         setup_world(&test_reserve_config(), &test_reserve_config()).await;
 
     let reward_mint = test.create_mint_as_test_authority().await;
@@ -34,7 +43,7 @@ async fn test_success_for_deposit() {
                 mint: reward_mint,
                 vault: reward_vault.insecure_clone(),
             },
-            PositionKind::Deposit,
+            position_kind,
             current_time,
             current_time + duration_secs as u64,
             total_rewards,
@@ -42,63 +51,105 @@ async fn test_success_for_deposit() {
         .await
         .expect("Should add pool reward");
 
-    let usdc_reserve_post = test.load_account::<Reserve>(usdc_reserve.pubkey).await;
-
-    assert_eq!(
-        usdc_reserve_post.account,
-        Reserve {
-            deposits_pool_reward_manager: Box::new(PoolRewardManager {
-                total_shares: 0,
-                last_update_time_secs: current_time as _,
-                pool_rewards: {
-                    let mut og = usdc_reserve_post
-                        .account
-                        .deposits_pool_reward_manager
-                        .pool_rewards
-                        .clone();
-
-                    og[0] = PoolRewardSlot::Occupied(Box::new(PoolReward {
-                        id: PoolRewardId(1),
-                        vault: reward_vault.pubkey(),
-                        start_time_secs: current_time,
-                        duration_secs,
-                        total_rewards,
-                        num_user_reward_managers: 0,
-                        cumulative_rewards_per_share: Decimal::zero(),
-                    }));
-
-                    og
-                }
-            }),
-            ..usdc_reserve.clone().account
-        }
-    );
-
     let obligation = lending_market
         .init_obligation(&mut test, Keypair::new(), &user)
         .await
         .expect("This should succeed");
 
-    let deposit_amount = 1_000_000;
-    lending_market
-        .deposit_reserve_liquidity_and_obligation_collateral(
-            &mut test,
-            &usdc_reserve,
-            &obligation,
-            &user,
-            deposit_amount,
-        )
-        .await
-        .expect("This should succeed");
+    let usdc_reserve_post = test.load_account::<Reserve>(usdc_reserve.pubkey).await;
+
+    let expected_reward_manager = Box::new(PoolRewardManager {
+        total_shares: 0,
+        last_update_time_secs: current_time as _,
+        pool_rewards: {
+            let mut og = usdc_reserve_post
+                .account
+                .deposits_pool_reward_manager
+                .pool_rewards
+                .clone();
+
+            og[0] = PoolRewardSlot::Occupied(Box::new(PoolReward {
+                id: PoolRewardId(1),
+                vault: reward_vault.pubkey(),
+                start_time_secs: current_time,
+                duration_secs,
+                total_rewards,
+                num_user_reward_managers: 0,
+                cumulative_rewards_per_share: Decimal::zero(),
+            }));
+
+            og
+        },
+    });
+
+    let expected_share = match position_kind {
+        PositionKind::Deposit => {
+            assert_eq!(
+                usdc_reserve_post.account,
+                Reserve {
+                    deposits_pool_reward_manager: expected_reward_manager,
+                    ..usdc_reserve.clone().account
+                }
+            );
+
+            let deposit_amount = 1_000_000;
+            lending_market
+                .deposit_reserve_liquidity_and_obligation_collateral(
+                    &mut test,
+                    &usdc_reserve,
+                    &obligation,
+                    &user,
+                    deposit_amount,
+                )
+                .await
+                .expect("This should succeed");
+
+            deposit_amount
+        }
+        PositionKind::Borrow => {
+            assert_eq!(
+                usdc_reserve_post.account,
+                Reserve {
+                    borrows_pool_reward_manager: expected_reward_manager,
+                    ..usdc_reserve.clone().account
+                }
+            );
+
+            lending_market
+                .deposit_reserve_liquidity_and_obligation_collateral(
+                    &mut test,
+                    &wsol_reserve,
+                    &obligation,
+                    &user,
+                    420_000_000,
+                )
+                .await
+                .expect("This should succeed");
+
+            lending_market
+                .borrow_obligation_liquidity(
+                    &mut test,
+                    &usdc_reserve,
+                    &obligation,
+                    &user,
+                    None,
+                    690,
+                )
+                .await
+                .unwrap();
+
+            690
+        }
+    };
 
     let obligation_post = test.load_obligation(obligation.pubkey).await;
 
     assert_eq!(
-        obligation_post.account.user_reward_managers,
-        vec![UserRewardManager {
+        obligation_post.account.user_reward_managers.last().unwrap(),
+        &UserRewardManager {
             reserve: usdc_reserve.pubkey,
-            position_kind: PositionKind::Deposit,
-            share: deposit_amount,
+            position_kind,
+            share: expected_share,
             last_update_time_secs: current_time as _,
             rewards: vec![UserReward {
                 pool_reward_index: 0,
@@ -106,7 +157,6 @@ async fn test_success_for_deposit() {
                 earned_rewards: Decimal::zero(),
                 cumulative_rewards_per_share: Decimal::zero(),
             }],
-        }]
-        .into()
+        }
     );
 }
