@@ -5,26 +5,23 @@ mod helpers;
 use std::collections::HashSet;
 
 use helpers::solend_program_test::{
-    setup_world, BalanceChecker, LiqMiningReward, TokenAccount, TokenBalanceChange,
+    setup_world, BalanceChecker, LiqMiningReward, TokenBalanceChange,
 };
 use helpers::test_reserve_config;
 
 use pretty_assertions::assert_eq;
 use solana_program_test::*;
-use solana_sdk::signature::{Keypair, Signer};
-use solend_program::{
-    math::Decimal,
-    state::{PoolRewardId, PoolRewardManager, PositionKind, Reserve},
-};
-use solend_sdk::state::{PoolReward, PoolRewardSlot};
+use solana_sdk::signature::Keypair;
+use solend_program::state::{PoolRewardId, PoolRewardManager, PositionKind, Reserve};
+use solend_sdk::state::PoolRewardSlot;
 
 #[tokio::test]
-async fn test_cancel_pool_reward_for_deposit() {
+async fn test_close_pool_reward_for_deposit() {
     test_(PositionKind::Deposit).await;
 }
 
 #[tokio::test]
-async fn test_cancel_pool_reward_for_borrow() {
+async fn test_close_pool_reward_for_borrow() {
     test_(PositionKind::Borrow).await;
 }
 
@@ -57,19 +54,15 @@ async fn test_(position_kind: PositionKind) {
         .await
         .expect("Should add pool reward");
 
-    let balance_checker = BalanceChecker::start(
-        &mut test,
-        &[&TokenAccount(reward.vault.pubkey()), &lending_market_owner],
-    )
-    .await;
+    let balance_checker = BalanceChecker::start(&mut test, &[&lending_market_owner]).await;
 
-    clock.unix_timestamp += duration_secs as i64 / 2;
+    // doesn't matter when we close as long as there are no obligations
+    clock.unix_timestamp += 1;
     test.context.set_sysvar(&clock);
-    let time_when_cancelling = clock.unix_timestamp as u64;
 
     let pool_reward_index = 0;
     lending_market
-        .cancel_pool_reward(
+        .close_pool_reward(
             &mut test,
             &usdc_reserve,
             &mut lending_market_owner,
@@ -78,29 +71,22 @@ async fn test_(position_kind: PositionKind) {
             pool_reward_index,
         )
         .await
-        .expect("Should cancel pool reward");
+        .expect("Should close pool reward");
 
     let (balance_changes, _) = balance_checker.find_balance_changes(&mut test).await;
 
-    let expected_balance_changes = HashSet::from([
-        TokenBalanceChange {
-            token_account: reward.vault.pubkey(),
-            mint: reward.mint,
-            diff: -(total_rewards as i128) / 2,
-        },
-        TokenBalanceChange {
-            token_account: lending_market_owner.get_account(&reward.mint).unwrap(),
-            mint: reward.mint,
-            diff: (total_rewards as i128) / 2,
-        },
-    ]);
+    let expected_balance_changes = HashSet::from([TokenBalanceChange {
+        token_account: lending_market_owner.get_account(&reward.mint).unwrap(),
+        mint: reward.mint,
+        diff: total_rewards as _,
+    }]);
     assert_eq!(balance_changes, expected_balance_changes);
 
     let usdc_reserve_post = test.load_account::<Reserve>(usdc_reserve.pubkey).await;
 
     let expected_reward_manager = Box::new(PoolRewardManager {
         total_shares: 0,
-        last_update_time_secs: time_when_cancelling as _,
+        last_update_time_secs: initial_time as _,
         pool_rewards: {
             let mut og = usdc_reserve
                 .account
@@ -108,15 +94,10 @@ async fn test_(position_kind: PositionKind) {
                 .pool_rewards
                 .clone();
 
-            og[0] = PoolRewardSlot::Occupied(Box::new(PoolReward {
-                id: PoolRewardId(1),
-                vault: reward_vault.pubkey(),
-                start_time_secs: initial_time,
-                duration_secs: duration_secs / 2,
-                total_rewards,
-                num_user_reward_managers: 0,
-                cumulative_rewards_per_share: Decimal::zero(),
-            }));
+            og[0] = PoolRewardSlot::Vacant {
+                last_pool_reward_id: PoolRewardId(1),
+                has_been_just_vacated: false,
+            };
 
             og
         },

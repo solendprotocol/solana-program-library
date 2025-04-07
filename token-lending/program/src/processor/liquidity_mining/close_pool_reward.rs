@@ -103,6 +103,11 @@ pub(crate) fn process(
     ]
     .concat();
 
+    msg!(
+        "Transferring {} reward tokens to {}",
+        accounts.reward_token_vault.amount,
+        accounts.reward_token_destination_info.key
+    );
     spl_token_transfer(TokenTransferParams {
         source: accounts.reward_token_vault_info.clone(),
         destination: accounts.reward_token_destination_info.clone(),
@@ -114,6 +119,10 @@ pub(crate) fn process(
 
     // 3.
 
+    msg!(
+        "Closing reward token vault {}",
+        accounts.reward_token_vault_info.key
+    );
     spl_token_close_account(TokenCloseAccountParams {
         account: accounts.reward_token_vault_info.clone(),
         destination: accounts.lending_market_owner_info.clone(),

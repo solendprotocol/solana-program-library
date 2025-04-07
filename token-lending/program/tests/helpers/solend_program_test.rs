@@ -76,6 +76,7 @@ mod cu_budgets {
     pub(super) const REDEEM: u32 = 90_016;
     pub(super) const ADD_POOL_REWARD: u32 = 80_017;
     pub(super) const CANCEL_POOL_REWARD: u32 = 80_018;
+    pub(super) const CLOSE_POOL_REWARD: u32 = 80_019;
 }
 
 /// This is at most how many bytes can an obligation grow.
@@ -992,6 +993,43 @@ impl Info<LendingMarket> {
         let instructions = [
             ComputeBudgetInstruction::set_compute_unit_limit(cu_budgets::CANCEL_POOL_REWARD),
             cancel_pool_reward(
+                solend_program::id(),
+                reward_authority_bump,
+                position_kind,
+                pool_reward_index,
+                reserve.pubkey,
+                reward.mint,
+                lending_market_owner.get_account(&reward.mint).unwrap(),
+                reward_authority_pda,
+                reward.vault.pubkey(),
+                self.pubkey,
+                lending_market_owner.keypair.pubkey(),
+            ),
+        ];
+
+        test.process_transaction(&instructions, Some(&[&lending_market_owner.keypair]))
+            .await
+    }
+
+    pub async fn close_pool_reward(
+        &self,
+        test: &mut SolendProgramTest,
+        reserve: &Info<Reserve>,
+        lending_market_owner: &mut User,
+        reward: &LiqMiningReward,
+        position_kind: PositionKind,
+        pool_reward_index: u64,
+    ) -> Result<(), BanksClientError> {
+        let (reward_authority_pda, reward_authority_bump) = find_reward_vault_authority(
+            &solend_program::id(),
+            &self.pubkey,
+            &reserve.pubkey,
+            &reward.mint,
+        );
+
+        let instructions = [
+            ComputeBudgetInstruction::set_compute_unit_limit(cu_budgets::CLOSE_POOL_REWARD),
+            close_pool_reward(
                 solend_program::id(),
                 reward_authority_bump,
                 position_kind,

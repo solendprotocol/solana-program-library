@@ -2207,6 +2207,42 @@ pub fn cancel_pool_reward(
     }
 }
 
+/// Creates a `ClosePoolReward` instruction
+#[allow(clippy::too_many_arguments)]
+pub fn close_pool_reward(
+    program_id: Pubkey,
+    reward_authority_bump: u8,
+    position_kind: PositionKind,
+    pool_reward_index: u64,
+    reserve: Pubkey,
+    reward_mint: Pubkey,
+    destination_reward_token_account: Pubkey,
+    reward_vault_authority: Pubkey,
+    reward_vault: Pubkey,
+    lending_market: Pubkey,
+    lending_market_owner: Pubkey,
+) -> Instruction {
+    Instruction {
+        program_id,
+        accounts: vec![
+            AccountMeta::new(reserve, false),
+            AccountMeta::new_readonly(reward_mint, false),
+            AccountMeta::new(destination_reward_token_account, false),
+            AccountMeta::new_readonly(reward_vault_authority, false),
+            AccountMeta::new(reward_vault, false),
+            AccountMeta::new_readonly(lending_market, false),
+            AccountMeta::new(lending_market_owner, true),
+            AccountMeta::new_readonly(spl_token::id(), false),
+        ],
+        data: LendingInstruction::ClosePoolReward {
+            reward_authority_bump,
+            position_kind,
+            pool_reward_index,
+        }
+        .pack(),
+    }
+}
+
 /// Derives the reward vault authority PDA address.
 pub fn find_reward_vault_authority(
     program_id: &Pubkey,
