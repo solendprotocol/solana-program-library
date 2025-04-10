@@ -12,10 +12,10 @@
 //! - [close_pool_reward]
 //!
 //! There is an ix related to migration:
-//! - [upgrade_reserve] (TODO: add bpf tests)
+//! - [upgrade_reserve] (has anchor integration test)
 //!
 //! There is one user ix:
-//! - [claim_user_reward] (TODO: add bpf tests)
+//! - [claim_user_reward]
 //!
 //! [suilend-lm]: https://github.com/solendprotocol/suilend/blob/dc53150416f352053ac3acbb320ee143409c4a5d/contracts/suilend/sources/liquidity_mining.move#L2
 

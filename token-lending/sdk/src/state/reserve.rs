@@ -595,6 +595,14 @@ impl Reserve {
     }
 
     /// Returns the pool reward manager for the given position kind
+    pub fn pool_reward_manager(&self, position_kind: PositionKind) -> &PoolRewardManager {
+        match position_kind {
+            PositionKind::Borrow => &self.borrows_pool_reward_manager,
+            PositionKind::Deposit => &self.deposits_pool_reward_manager,
+        }
+    }
+
+    /// Returns the pool reward manager for the given position kind
     pub fn pool_reward_manager_mut(
         &mut self,
         position_kind: PositionKind,

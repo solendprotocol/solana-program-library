@@ -54,7 +54,7 @@ async fn test_(position_kind: PositionKind) {
     let obligation = lending_market
         .init_obligation(&mut test, Keypair::new(), &user)
         .await
-        .expect("This should succeed");
+        .expect("Should init obligation");
 
     let usdc_reserve_post = test.load_account::<Reserve>(usdc_reserve.pubkey).await;
 
@@ -62,11 +62,7 @@ async fn test_(position_kind: PositionKind) {
         total_shares: 0,
         last_update_time_secs: current_time as _,
         pool_rewards: {
-            let mut og = usdc_reserve
-                .account
-                .deposits_pool_reward_manager
-                .pool_rewards
-                .clone();
+            let mut og = PoolRewardManager::default().pool_rewards;
 
             og[0] = PoolRewardSlot::Occupied(Box::new(PoolReward {
                 id: PoolRewardId(1),
@@ -102,7 +98,7 @@ async fn test_(position_kind: PositionKind) {
                     deposit_amount,
                 )
                 .await
-                .expect("This should succeed");
+                .expect("Should deposit $USDC");
 
             deposit_amount
         }
@@ -124,7 +120,7 @@ async fn test_(position_kind: PositionKind) {
                     420_000_000,
                 )
                 .await
-                .expect("This should succeed");
+                .expect("Should borrow $wSOL");
 
             lending_market
                 .borrow_obligation_liquidity(
@@ -136,7 +132,7 @@ async fn test_(position_kind: PositionKind) {
                     690,
                 )
                 .await
-                .unwrap();
+                .expect("Should borrow $USDC");
 
             690
         }

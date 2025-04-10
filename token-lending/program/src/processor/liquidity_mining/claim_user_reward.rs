@@ -74,6 +74,7 @@ struct ClaimUserReward<'a, 'info> {
 pub(crate) fn process(
     program_id: &Pubkey,
     reward_authority_bump: u8,
+    position_kind: PositionKind,
     accounts: &[AccountInfo],
 ) -> ProgramResult {
     let clock = &Clock::get()?;
@@ -89,13 +90,57 @@ pub(crate) fn process(
 
     // 1.
 
-    let position_kind = accounts.obligation.find_position_kind(reserve_key)?;
+    let pool_reward_manager = accounts.reserve.pool_reward_manager_mut(position_kind);
 
-    let Some(user_reward_manager) = accounts
+    if let Some(user_reward_manager) = accounts
         .obligation
         .user_reward_managers
         .find_mut(reserve_key, position_kind)
-    else {
+    {
+        msg!(
+            "Found user reward manager that was last updated at {} and has {}/{} shares",
+            user_reward_manager.last_update_time_secs,
+            user_reward_manager.share,
+            pool_reward_manager.total_shares
+        );
+
+        // 2.
+
+        let total_reward_amount = user_reward_manager.claim_rewards(
+            pool_reward_manager,
+            *accounts.reward_token_vault_info.key,
+            clock,
+        )?;
+
+        // 3.
+
+        if total_reward_amount > 0 {
+            spl_token_transfer(TokenTransferParams {
+                source: accounts.reward_token_vault_info.clone(),
+                destination: accounts.obligation_owner_token_account_info.clone(),
+                amount: total_reward_amount,
+                authority: accounts.reward_authority_info.clone(),
+                authority_signer_seeds: &[
+                    reward_vault_authority_seeds(
+                        accounts.lending_market_info.key,
+                        &accounts.reserve.key(),
+                        accounts.reward_mint_info.key,
+                    )
+                    .as_slice(),
+                    &[&[reward_authority_bump]],
+                ]
+                .concat(),
+                token_program: accounts.token_program_info.clone(),
+            })?;
+        }
+    } else {
+        let expected_position_kind = accounts.obligation.find_position_kind(reserve_key)?;
+
+        if expected_position_kind != position_kind {
+            msg!("Obligation does not have {:?} for reserve", position_kind);
+            return Err(LendingError::InvalidAccountInput.into());
+        }
+
         // We've checked that the obligation associates this reserve but it's
         // not in the user reward managers yet.
         // This means that the obligation hasn't been migrated to track the
@@ -103,28 +148,26 @@ pub(crate) fn process(
         //
         // We'll upgrade it here.
 
-        let reserve_key = accounts.reserve.key();
-
-        let (pool_reward_manager, migrated_share) = match position_kind {
-            PositionKind::Borrow => {
-                let share = accounts
-                    .obligation
-                    .find_liquidity_in_borrows(reserve_key)?
-                    .0
-                    .liability_shares()?;
-
-                (&mut accounts.reserve.borrows_pool_reward_manager, share)
-            }
+        let migrated_share = match position_kind {
+            PositionKind::Borrow => accounts
+                .obligation
+                .find_liquidity_in_borrows(reserve_key)?
+                .0
+                .liability_shares()?,
             PositionKind::Deposit => {
-                let share = accounts
+                accounts
                     .obligation
                     .find_collateral_in_deposits(reserve_key)?
                     .0
-                    .deposited_amount;
-
-                (&mut accounts.reserve.deposits_pool_reward_manager, share)
+                    .deposited_amount
             }
         };
+
+        msg!(
+            "Migrating obligation to track pool reward manager with share of {}/{}",
+            migrated_share,
+            pool_reward_manager.total_shares
+        );
 
         accounts.obligation.user_reward_managers.set_share(
             reserve_key,
@@ -133,45 +176,7 @@ pub(crate) fn process(
             migrated_share,
             clock,
         )?;
-
-        realloc_obligation_if_necessary(&accounts.obligation, accounts.obligation_info)?;
-        Obligation::pack(
-            *accounts.obligation,
-            &mut accounts.obligation_info.data.borrow_mut(),
-        )?;
-
-        return Ok(());
     };
-
-    let pool_reward_manager = accounts.reserve.pool_reward_manager_mut(position_kind);
-
-    // 2.
-
-    let total_reward_amount = user_reward_manager.claim_rewards(
-        pool_reward_manager,
-        *accounts.reward_token_vault_info.key,
-        clock,
-    )?;
-
-    // 3.
-
-    spl_token_transfer(TokenTransferParams {
-        source: accounts.reward_token_vault_info.clone(),
-        destination: accounts.obligation_owner_token_account_info.clone(),
-        amount: total_reward_amount,
-        authority: accounts.reward_authority_info.clone(),
-        authority_signer_seeds: &[
-            reward_vault_authority_seeds(
-                accounts.lending_market_info.key,
-                &accounts.reserve.key(),
-                accounts.reward_mint_info.key,
-            )
-            .as_slice(),
-            &[&[reward_authority_bump]],
-        ]
-        .concat(),
-        token_program: accounts.token_program_info.clone(),
-    })?;
 
     // 4.
 

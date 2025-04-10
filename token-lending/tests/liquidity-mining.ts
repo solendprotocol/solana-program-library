@@ -1,4 +1,7 @@
 /**
+ * Temporary test to showcase that reserve upgrades work with CLI.
+ * We'll delete this once all reserves are upgraded.
+ *
  * $ anchor test --provider.cluster localnet --detach
  */
 
@@ -57,7 +60,7 @@ describe("liquidity mining", () => {
       .getProvider()
       .connection.getAccountInfo(new PublicKey(TEST_RESERVE_FOR_UPGRADE));
 
-    expect(reserveAfter.data.length).to.eq(8651); // new version data length
+    expect(reserveAfter.data.length).to.eq(5451); // new version data length
     const expectedRentAfter = await anchor
       .getProvider()
       .connection.getMinimumBalanceForRentExemption(reserveAfter.data.length);
