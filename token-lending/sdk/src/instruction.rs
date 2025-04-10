@@ -2263,6 +2263,7 @@ pub fn close_pool_reward(
 ///   `[writable]` Reward vault token account.
 ///   `[]` Lending market account.
 ///   `[]` Token program.
+#[allow(clippy::too_many_arguments)]
 pub fn claim_pool_reward(
     program_id: Pubkey,
     reward_authority_bump: u8,
