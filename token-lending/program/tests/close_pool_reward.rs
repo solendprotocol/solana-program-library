@@ -28,13 +28,12 @@ async fn test_close_pool_reward_for_borrow() {
 async fn test_(position_kind: PositionKind) {
     let (mut test, lending_market, usdc_reserve, _, mut lending_market_owner, _) =
         setup_world(&test_reserve_config(), &test_reserve_config()).await;
-    let mut clock = test.get_clock().await;
 
     let reward_mint = test.create_mint_as_test_authority().await;
     let reward_vault = Keypair::new();
     let duration_secs = 3_600;
     let total_rewards = 1_000_000;
-    let initial_time = clock.unix_timestamp as u64;
+    let initial_time = test.get_clock().await.unix_timestamp as u64;
     let reward = LiqMiningReward {
         mint: reward_mint,
         vault: reward_vault.insecure_clone(),
@@ -57,8 +56,7 @@ async fn test_(position_kind: PositionKind) {
     let balance_checker = BalanceChecker::start(&mut test, &[&lending_market_owner]).await;
 
     // doesn't matter when we close as long as there are no obligations
-    clock.unix_timestamp += 1;
-    test.context.set_sysvar(&clock);
+    test.advance_clock_by_slots_and_secs(1, 1).await;
 
     let pool_reward_index = 0;
     lending_market
@@ -88,11 +86,7 @@ async fn test_(position_kind: PositionKind) {
         total_shares: 0,
         last_update_time_secs: initial_time as _,
         pool_rewards: {
-            let mut og = usdc_reserve
-                .account
-                .deposits_pool_reward_manager
-                .pool_rewards
-                .clone();
+            let mut og = PoolRewardManager::default().pool_rewards;
 
             og[0] = PoolRewardSlot::Vacant {
                 last_pool_reward_id: PoolRewardId(1),

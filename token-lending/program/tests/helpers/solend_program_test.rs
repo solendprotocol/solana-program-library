@@ -77,6 +77,7 @@ mod cu_budgets {
     pub(super) const ADD_POOL_REWARD: u32 = 80_017;
     pub(super) const CANCEL_POOL_REWARD: u32 = 80_018;
     pub(super) const CLOSE_POOL_REWARD: u32 = 80_019;
+    pub(super) const CLAIM_POOL_REWARD: u32 = 80_020;
 }
 
 /// This is at most how many bytes can an obligation grow.
@@ -335,6 +336,16 @@ impl SolendProgramTest {
     pub async fn get_clock(&mut self) -> Clock {
         self.get_bincode_account::<Clock>(&sysvar::clock::id())
             .await
+    }
+
+    /// Returns the new clock unix timestamp
+    pub async fn advance_clock_by_slots_and_secs(&mut self, slots: u64, secs: u64) -> u64 {
+        self.advance_clock_by_slots(slots).await;
+        let mut clock = self.get_clock().await;
+        clock.unix_timestamp += secs as i64;
+        self.context.set_sysvar(&clock);
+
+        clock.unix_timestamp as u64
     }
 
     /// Advances clock by x slots. note that transactions don't automatically increment the slot
@@ -1046,6 +1057,41 @@ impl Info<LendingMarket> {
 
         test.process_transaction(&instructions, Some(&[&lending_market_owner.keypair]))
             .await
+    }
+
+    pub async fn claim_pool_reward(
+        &self,
+        test: &mut SolendProgramTest,
+        obligation: &Info<Obligation>,
+        reserve: &Info<Reserve>,
+        obligation_owner: &User,
+        reward: &LiqMiningReward,
+        position_kind: PositionKind,
+    ) -> Result<(), BanksClientError> {
+        let (reward_authority_pda, reward_authority_bump) = find_reward_vault_authority(
+            &solend_program::id(),
+            &self.pubkey,
+            &reserve.pubkey,
+            &reward.mint,
+        );
+
+        let instructions = [
+            ComputeBudgetInstruction::set_compute_unit_limit(cu_budgets::CLAIM_POOL_REWARD),
+            claim_pool_reward(
+                solend_program::id(),
+                reward_authority_bump,
+                position_kind,
+                obligation.pubkey,
+                obligation_owner.get_account(&reward.mint).unwrap(),
+                reserve.pubkey,
+                reward.mint,
+                reward_authority_pda,
+                reward.vault.pubkey(),
+                self.pubkey,
+            ),
+        ];
+
+        test.process_transaction(&instructions, None).await
     }
 
     pub async fn donate_to_reserve(

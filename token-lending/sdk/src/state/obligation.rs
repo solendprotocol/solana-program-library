@@ -485,11 +485,11 @@ impl ObligationLiquidity {
 const OBLIGATION_COLLATERAL_LEN: usize = 88; // 32 + 8 + 16 + 32
 const OBLIGATION_LIQUIDITY_LEN: usize = 112; // 32 + 16 + 16 + 16 + 32
 /// This is the size of the account _before_ LM feature was added.
-const OBLIGATION_LEN_V1: usize = 1300; // 1 + 8 + 1 + 32 + 32 + 16 + 16 + 16 + 16 + 64 + 1 + 1 + (88 * 1) + (112 * 9)
-                                       // @TODO: break this up by obligation / collateral / liquidity https://git.io/JOCca
+const OBLIGATION_LEN_V2_0_2: usize = 1300; // 1 + 8 + 1 + 32 + 32 + 16 + 16 + 16 + 16 + 64 + 1 + 1 + (88 * 1) + (112 * 9)
+                                           // @TODO: break this up by obligation / collateral / liquidity https://git.io/JOCca
 impl Obligation {
     /// Obligation with no Liquidity Mining Rewards
-    pub const MIN_LEN: usize = OBLIGATION_LEN_V1;
+    pub const MIN_LEN: usize = OBLIGATION_LEN_V2_0_2;
 
     /// Maximum account size for obligation.
     /// Scenario in which all reserves have all associated rewards filled.
@@ -502,10 +502,10 @@ impl Obligation {
     /// How many bytes are needed to pack this [UserRewardManager].
     pub fn size_in_bytes_when_packed(&self) -> usize {
         if self.user_reward_managers.is_empty() {
-            return OBLIGATION_LEN_V1;
+            return OBLIGATION_LEN_V2_0_2;
         }
 
-        let mut size = OBLIGATION_LEN_V1 + 1;
+        let mut size = OBLIGATION_LEN_V2_0_2 + 1;
 
         for reward_manager in self.user_reward_managers.iter() {
             size += reward_manager.size_in_bytes_when_packed();
@@ -554,7 +554,7 @@ impl Obligation {
 
     /// Since @v2.1.0 we pack vec of user reward managers
     pub fn pack_into_slice(&self, dst: &mut [u8]) {
-        let output = array_mut_ref![dst, 0, OBLIGATION_LEN_V1];
+        let output = array_mut_ref![dst, 0, OBLIGATION_LEN_V2_0_2];
         #[allow(clippy::ptr_offset_with_cast)]
         let (
             discriminator,
@@ -666,17 +666,17 @@ impl Obligation {
             debug_assert!(MAX_OBLIGATION_RESERVES >= self.user_reward_managers.len());
             debug_assert!(u8::MAX > MAX_OBLIGATION_RESERVES as _);
             let user_reward_managers_len = self.user_reward_managers.len() as u8;
-            dst[OBLIGATION_LEN_V1] = user_reward_managers_len;
+            dst[OBLIGATION_LEN_V2_0_2] = user_reward_managers_len;
 
-            let mut offset = OBLIGATION_LEN_V1 + 1;
+            let mut offset = OBLIGATION_LEN_V2_0_2 + 1;
             for user_reward_manager in self.user_reward_managers.iter() {
                 user_reward_manager.pack_into_slice(&mut dst[offset..]);
                 offset += user_reward_manager.size_in_bytes_when_packed();
             }
-        } else if dst.len() > OBLIGATION_LEN_V1 {
+        } else if dst.len() > OBLIGATION_LEN_V2_0_2 {
             // set the length to 0 if obligation was resized before
 
-            dst[OBLIGATION_LEN_V1] = 0;
+            dst[OBLIGATION_LEN_V2_0_2] = 0;
         };
 
         // Any data after offset is garbage, but we don't zero it out bcs
@@ -686,7 +686,7 @@ impl Obligation {
     /// Unpacks a byte buffer into an [Obligation].
     /// Since @v2.1.0 we unpack vector of user reward managers
     pub fn unpack_from_slice(src: &[u8]) -> Result<Self, ProgramError> {
-        let input = array_ref![src, 0, OBLIGATION_LEN_V1];
+        let input = array_ref![src, 0, OBLIGATION_LEN_V2_0_2];
         #[allow(clippy::ptr_offset_with_cast)]
         let (
             discriminator,
@@ -738,7 +738,7 @@ impl Obligation {
             }
             Err(LendingError::AccountNotMigrated) => {
                 // We're migrating the account from v2.0.2 to v2.1.0.
-                debug_assert_eq!(OBLIGATION_LEN_V1, input.len());
+                debug_assert_eq!(OBLIGATION_LEN_V2_0_2, input.len());
 
                 AccountDiscriminator::Obligation
             }
@@ -788,11 +788,11 @@ impl Obligation {
             offset += OBLIGATION_LIQUIDITY_LEN;
         }
 
-        let user_reward_managers = match src.get(OBLIGATION_LEN_V1) {
+        let user_reward_managers = match src.get(OBLIGATION_LEN_V2_0_2) {
             Some(len @ 1..) => {
                 let mut user_reward_managers = Vec::with_capacity(*len as _);
 
-                let mut offset = OBLIGATION_LEN_V1 + 1;
+                let mut offset = OBLIGATION_LEN_V2_0_2 + 1;
                 for _ in 0..*len {
                     let user_reward_manager = UserRewardManager::unpack_from_slice(&src[offset..])?;
                     offset += user_reward_manager.size_in_bytes_when_packed();

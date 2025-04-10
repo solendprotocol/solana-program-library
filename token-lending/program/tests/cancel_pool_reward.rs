@@ -31,13 +31,12 @@ async fn test_cancel_pool_reward_for_borrow() {
 async fn test_(position_kind: PositionKind) {
     let (mut test, lending_market, usdc_reserve, _, mut lending_market_owner, _) =
         setup_world(&test_reserve_config(), &test_reserve_config()).await;
-    let mut clock = test.get_clock().await;
 
     let reward_mint = test.create_mint_as_test_authority().await;
     let reward_vault = Keypair::new();
     let duration_secs = 3_600;
     let total_rewards = 1_000_000;
-    let initial_time = clock.unix_timestamp as u64;
+    let initial_time = test.get_clock().await.unix_timestamp as u64;
     let reward = LiqMiningReward {
         mint: reward_mint,
         vault: reward_vault.insecure_clone(),
@@ -63,9 +62,9 @@ async fn test_(position_kind: PositionKind) {
     )
     .await;
 
-    clock.unix_timestamp += duration_secs as i64 / 2;
-    test.context.set_sysvar(&clock);
-    let time_when_cancelling = clock.unix_timestamp as u64;
+    let current_time = test
+        .advance_clock_by_slots_and_secs(1, duration_secs as u64 / 2)
+        .await;
 
     let pool_reward_index = 0;
     lending_market
@@ -100,13 +99,9 @@ async fn test_(position_kind: PositionKind) {
 
     let expected_reward_manager = Box::new(PoolRewardManager {
         total_shares: 0,
-        last_update_time_secs: time_when_cancelling as _,
+        last_update_time_secs: current_time,
         pool_rewards: {
-            let mut og = usdc_reserve
-                .account
-                .deposits_pool_reward_manager
-                .pool_rewards
-                .clone();
+            let mut og = PoolRewardManager::default().pool_rewards;
 
             og[0] = PoolRewardSlot::Occupied(Box::new(PoolReward {
                 id: PoolRewardId(1),

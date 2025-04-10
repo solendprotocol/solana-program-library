@@ -24,8 +24,6 @@ pub const MIN_REWARD_PERIOD_SECS: u64 = 3_600;
 mod suilend_tests {
     //! These tests were taken from the Suilend's codebase and adapted to
     //! the new codebase.
-    //!
-    //! TODO: Calculate test coverage and add tests for missing branches.
 
     use crate::{
         math::Decimal,

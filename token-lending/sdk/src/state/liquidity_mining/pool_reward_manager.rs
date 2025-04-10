@@ -415,7 +415,6 @@ impl Pack for PoolRewardManager {
                     *dst_total_rewards = pool_reward.total_rewards.to_le_bytes();
                     *dst_num_user_reward_managers =
                         pool_reward.num_user_reward_managers.to_le_bytes();
-                    // TBD: do we want to ceil?
                     pack_decimal(
                         pool_reward.cumulative_rewards_per_share,
                         dst_cumulative_rewards_per_share_wads,

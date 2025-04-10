@@ -621,10 +621,10 @@ pub enum LendingInstruction {
     /// 28
     /// ClaimReward
     ///
-    /// * User can claim rewards from their obligation.
+    /// * Permissionless claim of rewards from an obligation.
     ///
     ///   `[writable]` Obligation account.
-    ///   `[writable]` Obligation owner reward receiving token account.
+    ///   `[writable]` Obligation owner's token account that receives reward.
     ///   `[writable]` Reserve account.
     ///   `[]` Reward mint.
     ///   `[]` Derived reserve pool reward authority. Seed:
@@ -638,6 +638,10 @@ pub enum LendingInstruction {
     ClaimReward {
         /// The bump seed of the reward authority.
         reward_authority_bump: u8,
+        /// Even though an obligation can either deposit or borrow the same
+        /// reserve, the obligation's rewards can hold rewards for both.
+        /// It's therefore necessary to specify which kind of reward to claim.
+        position_kind: PositionKind,
     },
 
     // 255
@@ -944,9 +948,11 @@ impl LendingInstruction {
                 }
             }
             28 => {
-                let (reward_authority_bump, _rest) = Self::unpack_u8(rest)?;
+                let (reward_authority_bump, rest) = Self::unpack_u8(rest)?;
+                let (position_kind, _rest) = Self::unpack_try_from_u8(rest)?;
                 Self::ClaimReward {
                     reward_authority_bump,
+                    position_kind,
                 }
             }
             255 => Self::UpgradeReserveToV2_1_0,
@@ -1294,9 +1300,11 @@ impl LendingInstruction {
             }
             Self::ClaimReward {
                 reward_authority_bump,
+                position_kind,
             } => {
                 buf.push(28);
                 buf.extend_from_slice(&reward_authority_bump.to_le_bytes());
+                buf.extend_from_slice(&(position_kind as u8).to_le_bytes());
             }
             Self::UpgradeReserveToV2_1_0 => {
                 buf.push(255);
@@ -2238,6 +2246,51 @@ pub fn close_pool_reward(
             reward_authority_bump,
             position_kind,
             pool_reward_index,
+        }
+        .pack(),
+    }
+}
+
+///   `[writable]` Obligation account.
+///   `[writable]` Obligation owner's token account that receives reward.
+///   `[writable]` Reserve account.
+///   `[]` Reward mint.
+///   `[]` Derived reserve pool reward authority. Seed:
+///        * b"RewardVaultAuthority"
+///        * Lending market account pubkey
+///        * Reserve account pubkey
+///        * Reward mint pubkey
+///   `[writable]` Reward vault token account.
+///   `[]` Lending market account.
+///   `[]` Token program.
+#[allow(clippy::too_many_arguments)]
+pub fn claim_pool_reward(
+    program_id: Pubkey,
+    reward_authority_bump: u8,
+    position_kind: PositionKind,
+    obligation: Pubkey,
+    obligation_owner_token_account_for_reward: Pubkey,
+    reserve: Pubkey,
+    reward_mint: Pubkey,
+    reward_vault_authority: Pubkey,
+    reward_vault: Pubkey,
+    lending_market: Pubkey,
+) -> Instruction {
+    Instruction {
+        program_id,
+        accounts: vec![
+            AccountMeta::new(obligation, false),
+            AccountMeta::new(obligation_owner_token_account_for_reward, false),
+            AccountMeta::new(reserve, false),
+            AccountMeta::new_readonly(reward_mint, false),
+            AccountMeta::new_readonly(reward_vault_authority, false),
+            AccountMeta::new(reward_vault, false),
+            AccountMeta::new_readonly(lending_market, false),
+            AccountMeta::new_readonly(spl_token::id(), false),
+        ],
+        data: LendingInstruction::ClaimReward {
+            reward_authority_bump,
+            position_kind,
         }
         .pack(),
     }
