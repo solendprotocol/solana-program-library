@@ -22,7 +22,10 @@ use solana_program::{
 use solend_sdk::state::{Obligation, PositionKind};
 use solend_sdk::{error::LendingError, instruction::reward_vault_authority_seeds};
 
-use super::{check_and_unpack_pool_reward_accounts, unpack_token_account, Bumps};
+use super::{
+    check_and_unpack_pool_reward_accounts, unpack_token_account, Bumps,
+    CheckAndUnpackPoolRewardAccounts,
+};
 
 /// Use [Self::from_unchecked_iter] to validate the accounts.
 struct ClaimUserReward<'a, 'info> {
@@ -201,11 +204,13 @@ impl<'a, 'info> ClaimUserReward<'a, 'info> {
         let (_, reserve) = check_and_unpack_pool_reward_accounts(
             program_id,
             bumps,
-            reserve_info,
-            reward_mint_info,
-            reward_authority_info,
-            lending_market_info,
-            token_program_info,
+            CheckAndUnpackPoolRewardAccounts {
+                reserve_info,
+                reward_mint_info,
+                reward_authority_info,
+                lending_market_info,
+                token_program_info,
+            },
         )?;
 
         if obligation_info.owner != program_id {

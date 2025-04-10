@@ -41,6 +41,15 @@ fn unpack_token_account(data: &[u8]) -> Result<TokenAccount, LendingError> {
     TokenAccount::unpack(data).map_err(|_| LendingError::InvalidTokenAccount)
 }
 
+/// Named args for [check_and_unpack_pool_reward_accounts]
+struct CheckAndUnpackPoolRewardAccounts<'a, 'info> {
+    reserve_info: &'a AccountInfo<'info>,
+    reward_mint_info: &'a AccountInfo<'info>,
+    reward_authority_info: &'a AccountInfo<'info>,
+    lending_market_info: &'a AccountInfo<'info>,
+    token_program_info: &'a AccountInfo<'info>,
+}
+
 /// Does all the checks of [check_and_unpack_pool_reward_accounts] and additionally:
 ///
 /// * ✅ `lending_market_owner_info` is a signer
@@ -48,22 +57,10 @@ fn unpack_token_account(data: &[u8]) -> Result<TokenAccount, LendingError> {
 fn check_and_unpack_pool_reward_accounts_for_admin_ixs<'a, 'info>(
     program_id: &Pubkey,
     bumps: Bumps,
-    reserve_info: &'a AccountInfo<'info>,
-    reward_mint_info: &AccountInfo<'info>,
-    reward_authority_info: &AccountInfo<'info>,
-    lending_market_info: &AccountInfo<'info>,
+    accs: CheckAndUnpackPoolRewardAccounts<'a, 'info>,
     lending_market_owner_info: &AccountInfo<'info>,
-    token_program_info: &AccountInfo<'info>,
 ) -> Result<(LendingMarket, ReserveBorrow<'a, 'info>), ProgramError> {
-    let (lending_market, reserve) = check_and_unpack_pool_reward_accounts(
-        program_id,
-        bumps,
-        reserve_info,
-        reward_mint_info,
-        reward_authority_info,
-        lending_market_info,
-        token_program_info,
-    )?;
+    let (lending_market, reserve) = check_and_unpack_pool_reward_accounts(program_id, bumps, accs)?;
 
     if lending_market.owner != *lending_market_owner_info.key {
         msg!("Lending market owner does not match the lending market owner provided");
@@ -90,11 +87,13 @@ fn check_and_unpack_pool_reward_accounts_for_admin_ixs<'a, 'info>(
 fn check_and_unpack_pool_reward_accounts<'a, 'info>(
     program_id: &Pubkey,
     bumps: Bumps,
-    reserve_info: &'a AccountInfo<'info>,
-    reward_mint_info: &AccountInfo<'info>,
-    reward_authority_info: &AccountInfo<'info>,
-    lending_market_info: &AccountInfo<'info>,
-    token_program_info: &AccountInfo<'info>,
+    CheckAndUnpackPoolRewardAccounts {
+        reserve_info,
+        reward_mint_info,
+        reward_authority_info,
+        lending_market_info,
+        token_program_info,
+    }: CheckAndUnpackPoolRewardAccounts<'a, 'info>,
 ) -> Result<(LendingMarket, ReserveBorrow<'a, 'info>), ProgramError> {
     let reserve = ReserveBorrow::new_mut(program_id, reserve_info)?;
 

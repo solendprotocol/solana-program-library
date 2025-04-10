@@ -20,7 +20,7 @@ use solana_program::{
 use solend_sdk::instruction::reward_vault_authority_seeds;
 use solend_sdk::{error::LendingError, state::PositionKind};
 
-use super::{Bumps, ReserveBorrow};
+use super::{Bumps, CheckAndUnpackPoolRewardAccounts, ReserveBorrow};
 
 /// Use [Self::from_unchecked_iter] to validate the accounts.
 struct CancelPoolRewardAccounts<'a, 'info> {
@@ -124,12 +124,14 @@ impl<'a, 'info> CancelPoolRewardAccounts<'a, 'info> {
         let (_, reserve) = check_and_unpack_pool_reward_accounts_for_admin_ixs(
             program_id,
             bump,
-            reserve_info,
-            reward_mint_info,
-            reward_authority_info,
-            lending_market_info,
+            CheckAndUnpackPoolRewardAccounts {
+                reserve_info,
+                reward_mint_info,
+                reward_authority_info,
+                lending_market_info,
+                token_program_info,
+            },
             lending_market_owner_info,
-            token_program_info,
         )?;
 
         if reward_token_destination_info.owner != token_program_info.key {

@@ -22,7 +22,8 @@ use crate::processor::{
 };
 
 use super::{
-    check_and_unpack_pool_reward_accounts_for_admin_ixs, unpack_token_account, Bumps, ReserveBorrow,
+    check_and_unpack_pool_reward_accounts_for_admin_ixs, unpack_token_account, Bumps,
+    CheckAndUnpackPoolRewardAccounts, ReserveBorrow,
 };
 
 /// Use [Self::from_unchecked_iter] to validate the accounts.
@@ -152,12 +153,14 @@ impl<'a, 'info> ClosePoolRewardAccounts<'a, 'info> {
         let (_, reserve) = check_and_unpack_pool_reward_accounts_for_admin_ixs(
             program_id,
             bumps,
-            reserve_info,
-            reward_mint_info,
-            reward_authority_info,
-            lending_market_info,
+            CheckAndUnpackPoolRewardAccounts {
+                reserve_info,
+                reward_mint_info,
+                reward_authority_info,
+                lending_market_info,
+                token_program_info,
+            },
             lending_market_owner_info,
-            token_program_info,
         )?;
 
         if reward_token_destination_info.owner != token_program_info.key {
