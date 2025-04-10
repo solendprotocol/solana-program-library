@@ -7,9 +7,9 @@
 //! implementation of the same feature.
 //!
 //! There are three admin-only ixs:
-//! - [add_pool_reward] (TODO: add bpf tests)
-//! - [cancel_pool_reward] (TODO: add bpf tests)
-//! - [close_pool_reward] (TODO: add bpf tests)
+//! - [add_pool_reward]
+//! - [cancel_pool_reward]
+//! - [close_pool_reward]
 //!
 //! There is an ix related to migration:
 //! - [upgrade_reserve] (TODO: add bpf tests)
@@ -27,42 +27,27 @@ pub(crate) mod upgrade_reserve;
 
 use solana_program::program_pack::Pack;
 use solana_program::{account_info::AccountInfo, msg, program_error::ProgramError, pubkey::Pubkey};
+use solend_sdk::instruction::create_reward_vault_authority;
 use solend_sdk::{error::LendingError, state::LendingMarket};
 use spl_token::state::Account as TokenAccount;
 
 use super::ReserveBorrow;
+struct Bumps {
+    reward_authority: u8,
+}
 
 /// Unpacks a spl_token [TokenAccount].
 fn unpack_token_account(data: &[u8]) -> Result<TokenAccount, LendingError> {
     TokenAccount::unpack(data).map_err(|_| LendingError::InvalidTokenAccount)
 }
 
-/// Derives the reward vault authority PDA address.
-///
-/// TODO: Accept a bump seed to avoid recalculating it.
-fn reward_vault_authority(
-    program_id: &Pubkey,
-    lending_market_key: &Pubkey,
-    reserve_key: &Pubkey,
-    reward_mint_key: &Pubkey,
-) -> (Pubkey, u8) {
-    Pubkey::find_program_address(
-        &reward_vault_authority_seeds(lending_market_key, reserve_key, reward_mint_key),
-        program_id,
-    )
-}
-
-fn reward_vault_authority_seeds<'keys>(
-    lending_market_key: &'keys Pubkey,
-    reserve_key: &'keys Pubkey,
-    reward_mint_key: &'keys Pubkey,
-) -> [&'keys [u8]; 4] {
-    [
-        b"RewardVaultAuthority",
-        lending_market_key.as_ref(),
-        reserve_key.as_ref(),
-        reward_mint_key.as_ref(),
-    ]
+/// Named args for [check_and_unpack_pool_reward_accounts]
+struct CheckAndUnpackPoolRewardAccounts<'a, 'info> {
+    reserve_info: &'a AccountInfo<'info>,
+    reward_mint_info: &'a AccountInfo<'info>,
+    reward_authority_info: &'a AccountInfo<'info>,
+    lending_market_info: &'a AccountInfo<'info>,
+    token_program_info: &'a AccountInfo<'info>,
 }
 
 /// Does all the checks of [check_and_unpack_pool_reward_accounts] and additionally:
@@ -71,21 +56,11 @@ fn reward_vault_authority_seeds<'keys>(
 /// * ✅ `lending_market_owner_info` matches `lending_market_info`
 fn check_and_unpack_pool_reward_accounts_for_admin_ixs<'a, 'info>(
     program_id: &Pubkey,
-    reserve_info: &'a AccountInfo<'info>,
-    reward_mint_info: &AccountInfo<'info>,
-    reward_authority_info: &AccountInfo<'info>,
-    lending_market_info: &AccountInfo<'info>,
+    bumps: Bumps,
+    accs: CheckAndUnpackPoolRewardAccounts<'a, 'info>,
     lending_market_owner_info: &AccountInfo<'info>,
-    token_program_info: &AccountInfo<'info>,
 ) -> Result<(LendingMarket, ReserveBorrow<'a, 'info>), ProgramError> {
-    let (lending_market, reserve) = check_and_unpack_pool_reward_accounts(
-        program_id,
-        reserve_info,
-        reward_mint_info,
-        reward_authority_info,
-        lending_market_info,
-        token_program_info,
-    )?;
+    let (lending_market, reserve) = check_and_unpack_pool_reward_accounts(program_id, bumps, accs)?;
 
     if lending_market.owner != *lending_market_owner_info.key {
         msg!("Lending market owner does not match the lending market owner provided");
@@ -111,11 +86,14 @@ fn check_and_unpack_pool_reward_accounts_for_admin_ixs<'a, 'info>(
 /// * ✅ `reward_mint_info` belongs to the token program
 fn check_and_unpack_pool_reward_accounts<'a, 'info>(
     program_id: &Pubkey,
-    reserve_info: &'a AccountInfo<'info>,
-    reward_mint_info: &AccountInfo<'info>,
-    reward_authority_info: &AccountInfo<'info>,
-    lending_market_info: &AccountInfo<'info>,
-    token_program_info: &AccountInfo<'info>,
+    bumps: Bumps,
+    CheckAndUnpackPoolRewardAccounts {
+        reserve_info,
+        reward_mint_info,
+        reward_authority_info,
+        lending_market_info,
+        token_program_info,
+    }: CheckAndUnpackPoolRewardAccounts<'a, 'info>,
 ) -> Result<(LendingMarket, ReserveBorrow<'a, 'info>), ProgramError> {
     let reserve = ReserveBorrow::new_mut(program_id, reserve_info)?;
 
@@ -140,12 +118,13 @@ fn check_and_unpack_pool_reward_accounts<'a, 'info>(
         return Err(LendingError::InvalidTokenOwner.into());
     }
 
-    let (expected_reward_vault_authority, _bump_seed) = reward_vault_authority(
+    let expected_reward_vault_authority = create_reward_vault_authority(
         program_id,
         lending_market_info.key,
         reserve_info.key,
         reward_mint_info.key,
-    );
+        bumps.reward_authority,
+    )?;
     if expected_reward_vault_authority != *reward_authority_info.key {
         msg!("Reward vault authority does not match the expected value");
         return Err(LendingError::InvalidAccountInput.into());

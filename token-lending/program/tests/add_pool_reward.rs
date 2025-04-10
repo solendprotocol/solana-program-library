@@ -15,16 +15,16 @@ use solend_program::{
 use solend_sdk::state::{PoolReward, PoolRewardSlot, UserReward};
 
 #[tokio::test]
-async fn test_success_for_deposit() {
-    test_success(PositionKind::Deposit).await;
+async fn test_add_pool_reward_for_deposit() {
+    test_(PositionKind::Deposit).await;
 }
 
 #[tokio::test]
-async fn test_success_for_borrow() {
-    test_success(PositionKind::Borrow).await;
+async fn test_add_pool_reward_for_borrow() {
+    test_(PositionKind::Borrow).await;
 }
 
-async fn test_success(position_kind: PositionKind) {
+async fn test_(position_kind: PositionKind) {
     let (mut test, lending_market, usdc_reserve, wsol_reserve, mut lending_market_owner, user) =
         setup_world(&test_reserve_config(), &test_reserve_config()).await;
 
@@ -62,7 +62,7 @@ async fn test_success(position_kind: PositionKind) {
         total_shares: 0,
         last_update_time_secs: current_time as _,
         pool_rewards: {
-            let mut og = usdc_reserve_post
+            let mut og = usdc_reserve
                 .account
                 .deposits_pool_reward_manager
                 .pool_rewards
