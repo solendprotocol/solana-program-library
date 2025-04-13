@@ -3601,7 +3601,7 @@ fn realloc_obligation_if_necessary(
     obligation: &Obligation,
     obligation_info: &AccountInfo<'_>,
 ) -> ProgramResult {
-    let expected_size = obligation.size_in_bytes_when_packed();
+    let expected_size = obligation.get_packed_len();
 
     if expected_size <= obligation_info.data_len() {
         return Ok(());

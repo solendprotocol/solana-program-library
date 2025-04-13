@@ -379,7 +379,7 @@ impl UserRewardManager {
     }
 
     /// How many bytes are needed to pack this [UserRewardManager].
-    pub(crate) fn size_in_bytes_when_packed(&self) -> usize {
+    pub(crate) fn get_packed_len(&self) -> usize {
         Self::HEAD_LEN + self.rewards.len() * UserReward::LEN
     }
 

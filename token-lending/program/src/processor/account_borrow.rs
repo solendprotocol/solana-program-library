@@ -18,6 +18,7 @@ use solana_program::{
     program_pack::Pack, pubkey::Pubkey,
 };
 
+use std::fmt::Debug;
 use std::ops::{Deref, DerefMut};
 use std::result::Result;
 
@@ -212,5 +213,21 @@ impl From<&'_ ReserveDataGuard<'_, '_>> for ReserveDataGuardKind {
             ReserveDataGuard::Ref(_, _) => ReserveDataGuardKind::Ref,
             ReserveDataGuard::RefMut(_, _) => ReserveDataGuardKind::RefMut,
         }
+    }
+}
+
+impl Debug for ReserveBorrow<'_, '_> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let mut dbg = f.debug_struct("ReserveBorrow");
+        match &self.guard {
+            ReserveDataGuard::Released => dbg.field("variant", &"Released"),
+            ReserveDataGuard::Ref(_, reserve) => {
+                dbg.field("variant", &"Ref").field("reserve", &reserve)
+            }
+            ReserveDataGuard::RefMut(_, reserve) => {
+                dbg.field("variant", &"RefMut").field("reserve", &reserve)
+            }
+        }
+        .finish()
     }
 }

@@ -223,12 +223,12 @@ impl Pack for LendingMarket {
 }
 
 #[cfg(test)]
-mod test {
+pub(crate) mod test {
     use super::*;
     use rand::Rng;
 
     impl LendingMarket {
-        fn new_rand(rng: &mut impl Rng) -> Self {
+        pub(crate) fn new_rand(rng: &mut impl Rng) -> Self {
             Self {
                 discriminator: AccountDiscriminator::LendingMarket,
                 bump_seed: rng.gen(),

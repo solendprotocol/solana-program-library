@@ -544,7 +544,7 @@ async fn test_normalize_obligation() {
         ..Obligation::default()
     };
 
-    let mut packed_obligation = vec![0; obligation.size_in_bytes_when_packed()];
+    let mut packed_obligation = vec![0; obligation.get_packed_len()];
     obligation.pack_into_slice(&mut packed_obligation);
     test.add_packed(
         obligation_pubkey,

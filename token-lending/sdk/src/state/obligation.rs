@@ -499,8 +499,8 @@ impl Obligation {
     pub const MAX_LEN: usize =
         Self::MIN_LEN + 1 + MAX_OBLIGATION_RESERVES * UserRewardManager::MAX_LEN;
 
-    /// How many bytes are needed to pack this [UserRewardManager].
-    pub fn size_in_bytes_when_packed(&self) -> usize {
+    /// How many bytes are needed to pack this [Obligation].
+    pub fn get_packed_len(&self) -> usize {
         if self.user_reward_managers.is_empty() {
             return OBLIGATION_LEN_V2_0_2;
         }
@@ -508,7 +508,7 @@ impl Obligation {
         let mut size = OBLIGATION_LEN_V2_0_2 + 1;
 
         for reward_manager in self.user_reward_managers.iter() {
-            size += reward_manager.size_in_bytes_when_packed();
+            size += reward_manager.get_packed_len();
         }
 
         size
@@ -671,7 +671,7 @@ impl Obligation {
             let mut offset = OBLIGATION_LEN_V2_0_2 + 1;
             for user_reward_manager in self.user_reward_managers.iter() {
                 user_reward_manager.pack_into_slice(&mut dst[offset..]);
-                offset += user_reward_manager.size_in_bytes_when_packed();
+                offset += user_reward_manager.get_packed_len();
             }
         } else if dst.len() > OBLIGATION_LEN_V2_0_2 {
             // set the length to 0 if obligation was resized before
@@ -795,7 +795,7 @@ impl Obligation {
                 let mut offset = OBLIGATION_LEN_V2_0_2 + 1;
                 for _ in 0..*len {
                     let user_reward_manager = UserRewardManager::unpack_from_slice(&src[offset..])?;
-                    offset += user_reward_manager.size_in_bytes_when_packed();
+                    offset += user_reward_manager.get_packed_len();
                     user_reward_managers.push(user_reward_manager);
                 }
 
