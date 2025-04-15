@@ -83,8 +83,8 @@ pub enum PoolRewardSlot {
 /// We keep adding `(total_rewards * time_passed) / (total_time)` every
 /// time someone interacts with the manager.
 /// This value is used to transfer the unallocated rewards to the admin.
-/// However, this can be calculated dynamically which avoids storing extra
-/// [Decimal] on each [PoolReward].
+/// However, this can be calculated dynamically which avoids storing an extra
+/// packed [Decimal] on each [PoolReward].
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct PoolReward {
     /// Unique ID for this slot that has never been used before, and will never

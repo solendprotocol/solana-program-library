@@ -1,6 +1,6 @@
 //! Cancel a pool reward.
 //!
-//! This ix sets the end time of the pool reward to now are returns any
+//! This ix sets the end time of the pool reward to now and returns any
 //! unallocated rewards to the admin.
 //! Users will still be able to claim rewards.
 
