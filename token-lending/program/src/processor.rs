@@ -785,6 +785,7 @@ fn process_redeem_reserve_collateral(
     let clock = &Clock::get()?;
     let token_program_id = next_account_info(account_info_iter)?;
 
+    _refresh_reserve_interest(program_id, reserve_info, clock)?;
     _redeem_reserve_collateral(
         program_id,
         collateral_amount,
@@ -1467,6 +1468,8 @@ fn _withdraw_obligation_collateral<'a>(
     }
 
     let withdraw_reserve = Box::new(Reserve::unpack(&withdraw_reserve_info.data.borrow())?);
+    let mut obligation = Obligation::unpack(&obligation_info.data.borrow())?;
+
     if withdraw_reserve_info.owner != program_id {
         msg!("Withdraw reserve provided is not owned by the lending program");
         return Err(LendingError::InvalidAccountOwner.into());
@@ -1483,12 +1486,11 @@ fn _withdraw_obligation_collateral<'a>(
         msg!("Withdraw reserve collateral supply cannot be used as the destination collateral provided");
         return Err(LendingError::InvalidAccountInput.into());
     }
-    if withdraw_reserve.last_update.is_stale(clock.slot)? {
+    if withdraw_reserve.last_update.is_stale(clock.slot)? && !obligation.borrows.is_empty() {
         msg!("Withdraw reserve is stale and must be refreshed in the current slot");
         return Err(LendingError::ReserveStale.into());
     }
 
-    let mut obligation = Obligation::unpack(&obligation_info.data.borrow())?;
     if obligation_info.owner != program_id {
         msg!("Obligation provided is not owned by the lending program");
         return Err(LendingError::InvalidAccountOwner.into());
@@ -1505,7 +1507,7 @@ fn _withdraw_obligation_collateral<'a>(
         msg!("Obligation owner provided must be a signer");
         return Err(LendingError::InvalidSigner.into());
     }
-    if obligation.last_update.is_stale(clock.slot)? {
+    if obligation.last_update.is_stale(clock.slot)? && !obligation.borrows.is_empty() {
         msg!("Obligation is stale and must be refreshed in the current slot");
         return Err(LendingError::ObligationStale.into());
     }
@@ -2348,6 +2350,10 @@ fn process_withdraw_obligation_collateral_and_redeem_reserve_liquidity(
         &accounts[12..],
     )?;
 
+    // Needed in the case where the obligation has no borrows => user doesn't refresh anything
+    // if the obligation has borrows, then withdraw_obligation_collateral ensures that the 
+    // obligation (and as a result, the reserves) were refreshed
+    _refresh_reserve_interest(program_id, reserve_info, clock)?;
     _redeem_reserve_collateral(
         program_id,
         liquidity_amount,
