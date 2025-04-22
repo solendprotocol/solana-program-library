@@ -191,6 +191,7 @@ async fn test_withdraw_max_rate_limiter() {
             &[ObligationArgs {
                 deposits: vec![(wsol_mint::id(), 50 * LAMPORTS_PER_SOL)],
                 borrows: vec![],
+                ..Default::default()
             }],
         )
         .await;
@@ -299,11 +300,50 @@ async fn test_withdraw_no_borrows() {
         &[ObligationArgs {
             deposits: vec![(usdc_mint::id(), 100_000 * FRACTIONAL_TO_USDC)],
             borrows: vec![],
+            ..Default::default()
         }],
     )
     .await;
 
     test.advance_clock_by_slots(1).await;
+    lending_market
+        .withdraw_obligation_collateral_and_redeem_reserve_collateral(
+            &mut test,
+            &reserves[0],
+            &obligations[0],
+            &users[0],
+            100_000 * FRACTIONAL_TO_USDC,
+        )
+        .await
+        .unwrap();
+}
+
+/// If someone creates an obligation, deposits collateral, then they should be
+/// able to withdraw that collateral without ever refreshing the obligation.
+#[tokio::test]
+async fn test_withdraw_no_borrows_no_refresh() {
+    let (mut test, lending_market, reserves, obligations, users, _) = custom_scenario(
+        &[ReserveArgs {
+            mint: usdc_mint::id(),
+            config: test_reserve_config(),
+            liquidity_amount: 100_000 * FRACTIONAL_TO_USDC,
+            price: PriceArgs {
+                price: 10,
+                conf: 0,
+                expo: -1,
+                ema_price: 10,
+                ema_conf: 1,
+            },
+        }],
+        &[ObligationArgs {
+            deposits: vec![(usdc_mint::id(), 100_000 * FRACTIONAL_TO_USDC)],
+            borrows: vec![],
+            should_refresh: false,
+        }],
+    )
+    .await;
+
+    test.advance_clock_by_slots(100).await;
 
     lending_market
         .withdraw_obligation_collateral_and_redeem_reserve_collateral(

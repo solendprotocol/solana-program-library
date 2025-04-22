@@ -397,6 +397,7 @@ async fn test_obligation_liquidity_ordering() {
                     (usdc_mint::id(), 1),
                     (bonk_mint::id(), 1),
                 ],
+                ..Default::default()
             }],
         )
         .await;

@@ -1534,37 +1534,38 @@ fn _withdraw_obligation_collateral<'a>(
 
     // account for lending market and reserve rate limiter when withdrawing. this is needed to
     // support max withdraws.
-    let max_outflow_collateral_amount = if account_for_rate_limiter {
-        let max_outflow_usd = lending_market
-            .rate_limiter
-            .clone() // remaining_outflow is a mutable call, but we don't have mutable access here
-            .remaining_outflow(clock.slot)?;
+    let max_outflow_collateral_amount =
+        if account_for_rate_limiter && !obligation.borrows.is_empty() {
+            let max_outflow_usd = lending_market
+                .rate_limiter
+                .clone() // remaining_outflow is a mutable call, but we don't have mutable access here
+                .remaining_outflow(clock.slot)?;
 
-        let max_lending_market_outflow_liquidity_amount = withdraw_reserve
-            .usd_to_liquidity_amount_lower_bound(min(
-                max_outflow_usd,
-                // min here bc this function can overflow if max_outflow_usd is u64::MAX
-                // the actual value doesn't matter too much as long as its sensible
-                obligation.deposited_value.try_mul(2)?,
-            ))?;
+            let max_lending_market_outflow_liquidity_amount = withdraw_reserve
+                .usd_to_liquidity_amount_lower_bound(min(
+                    max_outflow_usd,
+                    // min here bc this function can overflow if max_outflow_usd is u64::MAX
+                    // the actual value doesn't matter too much as long as its sensible
+                    obligation.deposited_value.try_mul(2)?,
+                ))?;
 
-        let max_reserve_outflow_liquidity_amount = withdraw_reserve
-            .rate_limiter
-            .clone()
-            .remaining_outflow(clock.slot)?;
+            let max_reserve_outflow_liquidity_amount = withdraw_reserve
+                .rate_limiter
+                .clone()
+                .remaining_outflow(clock.slot)?;
 
-        let max_outflow_liquidity_amount = min(
-            max_lending_market_outflow_liquidity_amount,
-            max_reserve_outflow_liquidity_amount,
-        );
+            let max_outflow_liquidity_amount = min(
+                max_lending_market_outflow_liquidity_amount,
+                max_reserve_outflow_liquidity_amount,
+            );
 
-        withdraw_reserve
-            .collateral_exchange_rate()?
-            .decimal_liquidity_to_collateral(max_outflow_liquidity_amount)?
-            .try_floor_u64()?
-    } else {
-        u64::MAX
-    };
+            withdraw_reserve
+                .collateral_exchange_rate()?
+                .decimal_liquidity_to_collateral(max_outflow_liquidity_amount)?
+                .try_floor_u64()?
+        } else {
+            u64::MAX
+        };
 
     let max_withdraw_amount = obligation.max_withdraw_amount(collateral, &withdraw_reserve)?;
     let withdraw_amount = min(
@@ -2351,7 +2352,7 @@ fn process_withdraw_obligation_collateral_and_redeem_reserve_liquidity(
     )?;
 
     // Needed in the case where the obligation has no borrows => user doesn't refresh anything
-    // if the obligation has borrows, then withdraw_obligation_collateral ensures that the 
+    // if the obligation has borrows, then withdraw_obligation_collateral ensures that the
     // obligation (and as a result, the reserves) were refreshed
     _refresh_reserve_interest(program_id, reserve_info, clock)?;
     _redeem_reserve_collateral(
