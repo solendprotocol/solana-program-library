@@ -5492,6 +5492,7 @@ dependencies = [
  "pretty_assertions",
  "proptest",
  "rand 0.8.5",
+ "rand_chacha 0.3.1",
  "serde",
  "serde_yaml 0.8.26",
  "solana-program",

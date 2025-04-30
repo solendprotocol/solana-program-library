@@ -13,7 +13,7 @@ use pretty_assertions::assert_eq;
 use solana_program_test::*;
 use solana_sdk::signature::Keypair;
 use solend_program::state::{PoolRewardId, PoolRewardManager, PositionKind, Reserve};
-use solend_sdk::state::PoolRewardSlot;
+use solend_sdk::state::PoolRewardEntry;
 
 #[tokio::test]
 async fn test_close_pool_reward_for_deposit() {
@@ -88,7 +88,7 @@ async fn test_(position_kind: PositionKind) {
         pool_rewards: {
             let mut og = PoolRewardManager::default().pool_rewards;
 
-            og[0] = PoolRewardSlot::Vacant {
+            og[0] = PoolRewardEntry::Vacant {
                 last_pool_reward_id: PoolRewardId(1),
                 has_been_just_vacated: false,
             };

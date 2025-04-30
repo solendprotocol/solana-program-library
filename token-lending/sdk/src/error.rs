@@ -228,7 +228,7 @@ pub enum LendingError {
     NoPoolRewardMatches,
     /// There's no vacant slot for a pool reward
     #[error("There's no vacant slot for a pool reward")]
-    NoVacantSlotForPoolReward,
+    NoVacantEntryForPoolReward,
 }
 
 impl From<LendingError> for ProgramError {
