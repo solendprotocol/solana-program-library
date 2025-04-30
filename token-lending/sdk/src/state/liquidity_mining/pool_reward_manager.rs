@@ -269,11 +269,6 @@ impl PoolRewardManager {
                     .try_mul(Decimal::from(shorten_by_secs as u64))?
                     .try_floor_u64()?;
 
-                msg!(
-                    "Pool reward total rewards changed from {} to {}",
-                    pool_reward.total_rewards,
-                    pool_reward.total_rewards - rewards_to_remove
-                );
                 pool_reward.total_rewards -= rewards_to_remove;
 
                 Ok((pool_reward.vault, -(rewards_to_remove as i64)))

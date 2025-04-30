@@ -139,6 +139,42 @@ mod tests {
         assert_eq!(edited_claimed_slnd, canceled_claimed_slnd);
     }
 
+    #[test]
+    fn it_extends_reward() {
+        let slnd_vault = Pubkey::new_unique(); // where rewards are stored
+        let reward_period = 10 * MIN_REWARD_PERIOD_SECS as u64;
+        let total_rewards = 100 * 1_000_000;
+
+        let clock = Clock {
+            unix_timestamp: 0,
+            ..Default::default()
+        };
+
+        let mut pool_reward_manager = PoolRewardManager::default();
+
+        pool_reward_manager
+            .add_pool_reward(slnd_vault, 0, reward_period, total_rewards, &clock)
+            .expect("It adds pool reward");
+
+        let pool_reward_index = 0;
+        let (vault, amount) = pool_reward_manager
+            .edit_pool_reward(pool_reward_index, reward_period * 2, &clock)
+            .expect("It edits pool reward");
+
+        assert!(amount.is_positive());
+        assert_eq!(amount as u64, total_rewards);
+        assert_eq!(vault, slnd_vault);
+
+        let PoolRewardEntry::Occupied(pool_reward) =
+            &pool_reward_manager.pool_rewards[pool_reward_index]
+        else {
+            panic!("Expected pool reward to be occupied");
+        };
+
+        assert_eq!(pool_reward.total_rewards, total_rewards * 2);
+        assert_eq!(pool_reward.duration_secs, reward_period as u32 * 2);
+    }
+
     proptest! {
         #[test]
         fn it_yields_expected_rewards_if_edited(

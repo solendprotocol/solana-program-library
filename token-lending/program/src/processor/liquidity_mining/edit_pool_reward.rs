@@ -90,7 +90,7 @@ pub(crate) fn process(
 
     // 1.
 
-    let (expected_vault, unallocated_rewards) = accounts
+    let (expected_vault, change_to_vault_amount) = accounts
         .reserve
         .pool_reward_manager_mut(position_kind)
         .edit_pool_reward(pool_reward_index, new_end_time_secs, &Clock::get()?)?;
@@ -102,30 +102,24 @@ pub(crate) fn process(
 
     // 2.
 
-    if unallocated_rewards == 0 {
-        msg!("No unallocated rewards to transfer");
-        return Ok(());
-    }
+    msg!("Change to vault amount: {}", change_to_vault_amount);
 
-    match unallocated_rewards {
-        0 => {
-            msg!("No unallocated rewards to transfer");
-            Ok(())
-        }
-        // refund to lending market reward token account
+    match change_to_vault_amount {
+        0 => Ok(()),
+        // transfer more tokens to the vault
         1.. => spl_token_transfer(TokenTransferParams {
             source: accounts.lending_market_reward_token_account_info.clone(),
             destination: accounts.reward_token_vault_info.clone(),
-            amount: unallocated_rewards.unsigned_abs(),
+            amount: change_to_vault_amount.unsigned_abs(),
             authority: accounts.lending_market_owner_info.clone(),
             authority_signer_seeds: &[],
             token_program: accounts.token_program_info.clone(),
         }),
-        // take from reward vault
+        // refund to lending market reward token account
         ..=-1 => spl_token_transfer(TokenTransferParams {
             source: accounts.reward_token_vault_info.clone(),
             destination: accounts.lending_market_reward_token_account_info.clone(),
-            amount: unallocated_rewards.unsigned_abs(),
+            amount: change_to_vault_amount.unsigned_abs(),
             authority: accounts.reward_authority_info.clone(),
             authority_signer_seeds: &[
                 reward_vault_authority_seeds(
