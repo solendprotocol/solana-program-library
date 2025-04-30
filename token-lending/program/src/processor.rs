@@ -2351,7 +2351,7 @@ fn process_withdraw_obligation_collateral_and_redeem_reserve_liquidity(
     )?;
 
     // Needed in the case where the obligation has no borrows => user doesn't refresh anything
-    // if the obligation has borrows, then withdraw_obligation_collateral ensures that the 
+    // if the obligation has borrows, then withdraw_obligation_collateral ensures that the
     // obligation (and as a result, the reserves) were refreshed
     _refresh_reserve_interest(program_id, reserve_info, clock)?;
     _redeem_reserve_collateral(
