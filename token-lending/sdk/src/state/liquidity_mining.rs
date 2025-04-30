@@ -291,8 +291,7 @@ mod tests {
                     if neither_has_ended && claimed_foo != claimed_bar {
                         // due to rounding errors we can be a little off
                         let allowed_diff = 1;
-                        let allowed_min =
-                            claimed_foo.checked_sub(allowed_diff).unwrap_or(0);
+                        let allowed_min = claimed_foo.saturating_sub(allowed_diff);
                         let allowed_range = allowed_min..=(claimed_foo + allowed_diff);
                         prop_assert!(
                             allowed_range.contains(&claimed_bar),
@@ -326,7 +325,7 @@ mod tests {
 
             // User's claimed no more than total_rewards and not much less either.
             // Due to rounding issues we're ok with distributing one less token per user.
-            let max_allowed_diff = 1 * user_count as u64;
+            let max_allowed_diff = user_count as u64;
 
             let foo_allowed_range = (total_rewards - max_allowed_diff)..=total_rewards;
             prop_assert!(
