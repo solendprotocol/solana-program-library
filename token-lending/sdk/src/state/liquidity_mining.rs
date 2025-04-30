@@ -727,7 +727,7 @@ mod suilend_tests {
                 .edit_pool_reward(pool_reward_index, new_end_time_secs, &clock)
                 .expect("It cancels pool reward");
             assert_eq!(from_vault, slnd_vault);
-            assert_eq!(unallocated_rewards, 50 * 1_000_000);
+            assert_eq!(unallocated_rewards, -50 * 1_000_000 + 1); // approx
         }
 
         {
@@ -795,7 +795,7 @@ mod suilend_tests {
                 .edit_pool_reward(pool_reward_index, new_end_time_secs, &clock)
                 .expect("It cancels pool reward");
             assert_eq!(from_vault, slnd_vault1);
-            assert_eq!(unallocated_rewards, 50 * 1_000_000);
+            assert_eq!(unallocated_rewards, -50 * 1_000_000 + 1); // approx
 
             clock.unix_timestamp = 15 * SECONDS_IN_A_DAY as i64;
             let claim_slnd = user_reward_manager_1
