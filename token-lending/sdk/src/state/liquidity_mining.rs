@@ -23,17 +23,59 @@ pub const MIN_REWARD_PERIOD_SECS: u32 = 3_600;
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::state::{PoolRewardManager, PositionKind, UserRewardManager};
+    use crate::math::{TryDiv, TryMul};
+    use crate::{
+        error::LendingError,
+        math::Decimal,
+        state::{PoolRewardManager, PositionKind, UserRewardManager},
+    };
     use pretty_assertions::assert_eq;
     use proptest::prelude::*;
     use rand::prelude::*;
     use rand_chacha::ChaCha8Rng;
-    use solana_program::{clock::Clock, pubkey::Pubkey};
+    use solana_program::{clock::Clock, msg, program_error::ProgramError, pubkey::Pubkey};
+    use std::convert::TryFrom;
 
     /// This test asserts that cancelling a reward does not change the amount of rewards that are
     /// emitted to a user.
     #[test]
     fn it_cancels_reward_without_changing_user_eligible_amount() {
+        // This is an implementation that was superseded by the edit function.
+        // We show that cancelling is a special case of editing.
+        impl PoolRewardManager {
+            fn cancel_pool_reward(
+                &mut self,
+                pool_reward_index: usize,
+                clock: &Clock,
+            ) -> Result<(Pubkey, u64), ProgramError> {
+                self.update(clock)?;
+
+                let Some(PoolRewardEntry::Occupied(pool_reward)) =
+                    self.pool_rewards.get_mut(pool_reward_index)
+                else {
+                    msg!("Cannot cancel a non-existent pool reward");
+                    return Err(ProgramError::InvalidArgument);
+                };
+
+                if pool_reward.has_ended(clock) {
+                    msg!("Cannot cancel a pool reward that has already ended");
+                    return Err(LendingError::InvalidAccountInput.into());
+                }
+
+                let since_start_secs = clock.unix_timestamp as u64 - pool_reward.start_time_secs;
+                let unlocked_rewards = Decimal::from(pool_reward.total_rewards)
+                    .try_mul(Decimal::from(since_start_secs))?
+                    .try_div(Decimal::from(pool_reward.duration_secs as u64))?
+                    .try_floor_u64()?;
+                let remaining_rewards = pool_reward.total_rewards - unlocked_rewards;
+
+                pool_reward.duration_secs =
+                    u32::try_from(since_start_secs).expect("New duration to be strictly shorter");
+
+                Ok((pool_reward.vault, remaining_rewards))
+            }
+        }
+
         let usdc = Pubkey::new_unique(); // reserve pubkey
         let slnd_vault = Pubkey::new_unique(); // where rewards are stored
         let reward_period = 10 * MIN_REWARD_PERIOD_SECS as u64;
@@ -643,8 +685,10 @@ mod suilend_tests {
         {
             clock.unix_timestamp = 10 * SECONDS_IN_A_DAY as i64;
 
+            let pool_reward_index = 0;
+            let new_end_time_secs = 0; // now
             let (from_vault, unallocated_rewards) = pool_reward_manager
-                .cancel_pool_reward(0, &clock)
+                .edit_pool_reward(pool_reward_index, new_end_time_secs, &clock)
                 .expect("It cancels pool reward");
             assert_eq!(from_vault, slnd_vault);
             assert_eq!(unallocated_rewards, 50 * 1_000_000);
@@ -709,8 +753,10 @@ mod suilend_tests {
         {
             clock.unix_timestamp = 10 * SECONDS_IN_A_DAY as i64;
 
+            let pool_reward_index = 0;
+            let new_end_time_secs = 0; // now
             let (from_vault, unallocated_rewards) = pool_reward_manager
-                .cancel_pool_reward(0, &clock)
+                .edit_pool_reward(pool_reward_index, new_end_time_secs, &clock)
                 .expect("It cancels pool reward");
             assert_eq!(from_vault, slnd_vault1);
             assert_eq!(unallocated_rewards, 50 * 1_000_000);

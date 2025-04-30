@@ -11,7 +11,7 @@ use crate::{
     state::{pack_decimal, unpack_decimal, MAX_REWARDS, MIN_REWARD_PERIOD_SECS},
 };
 use arrayref::{array_mut_ref, array_ref, array_refs, mut_array_refs};
-use core::convert::{TryFrom, TryInto};
+use core::convert::TryInto;
 use solana_program::{
     clock::Clock,
     msg,
@@ -96,12 +96,16 @@ pub struct PoolReward {
     pub start_time_secs: u64,
     /// For how long (since start time) will this reward be releasing tokens.
     ///
-    /// # Reward cancellation
+    /// # Reward Editing
     ///
-    /// Is cut short if the reward is cancelled.
+    /// Is cut short or extended.
     pub duration_secs: u32,
     /// Total token amount to distribute.
     /// The token account that holds the rewards holds at least this much in the beginning.
+    ///
+    /// # Reward Editing
+    ///
+    /// Is deducted or increased linearly to the duration.
     pub total_rewards: u64,
     /// How many users are still tracking this reward.
     /// Once this reaches zero we can close this reward.
@@ -213,12 +217,12 @@ impl PoolRewardManager {
         let Some(PoolRewardEntry::Occupied(pool_reward)) =
             self.pool_rewards.get_mut(pool_reward_index)
         else {
-            msg!("Cannot cancel a non-existent pool reward");
+            msg!("Cannot edit a non-existent pool reward");
             return Err(ProgramError::InvalidArgument);
         };
 
         if pool_reward.has_ended(clock) {
-            msg!("Cannot cancel a pool reward that has already ended");
+            msg!("Cannot edit a pool reward that has already ended");
             return Err(LendingError::InvalidAccountInput.into());
         }
 
@@ -275,40 +279,6 @@ impl PoolRewardManager {
                 Ok((pool_reward.vault, -(rewards_to_remove as i64)))
             }
         }
-    }
-
-    /// Sets the duration of the pool reward to now.
-    /// Returns the amount of unallocated rewards and the vault they are in.
-    pub fn cancel_pool_reward(
-        &mut self,
-        pool_reward_index: usize,
-        clock: &Clock,
-    ) -> Result<(Pubkey, u64), ProgramError> {
-        self.update(clock)?;
-
-        let Some(PoolRewardEntry::Occupied(pool_reward)) =
-            self.pool_rewards.get_mut(pool_reward_index)
-        else {
-            msg!("Cannot cancel a non-existent pool reward");
-            return Err(ProgramError::InvalidArgument);
-        };
-
-        if pool_reward.has_ended(clock) {
-            msg!("Cannot cancel a pool reward that has already ended");
-            return Err(LendingError::InvalidAccountInput.into());
-        }
-
-        let since_start_secs = clock.unix_timestamp as u64 - pool_reward.start_time_secs;
-        let unlocked_rewards = Decimal::from(pool_reward.total_rewards)
-            .try_mul(Decimal::from(since_start_secs))?
-            .try_div(Decimal::from(pool_reward.duration_secs as u64))?
-            .try_floor_u64()?;
-        let remaining_rewards = pool_reward.total_rewards - unlocked_rewards;
-
-        pool_reward.duration_secs =
-            u32::try_from(since_start_secs).expect("New duration to be strictly shorter");
-
-        Ok((pool_reward.vault, remaining_rewards))
     }
 
     /// Closes a pool reward if it has been cancelled before.

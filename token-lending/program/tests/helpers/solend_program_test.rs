@@ -75,7 +75,7 @@ mod cu_budgets {
     pub(super) const DEPOSIT_RESERVE_LIQUIDITY_AND_OBLIGATION_COLLATERAL: u32 = 130_015;
     pub(super) const REDEEM: u32 = 90_016;
     pub(super) const ADD_POOL_REWARD: u32 = 80_017;
-    pub(super) const CANCEL_POOL_REWARD: u32 = 80_018;
+    pub(super) const EDIT_POOL_REWARD: u32 = 80_018;
     pub(super) const CLOSE_POOL_REWARD: u32 = 80_019;
     pub(super) const CLAIM_POOL_REWARD: u32 = 80_020;
 }
@@ -985,7 +985,7 @@ impl Info<LendingMarket> {
         .await
     }
 
-    pub async fn cancel_pool_reward(
+    pub async fn edit_pool_reward(
         &self,
         test: &mut SolendProgramTest,
         reserve: &Info<Reserve>,
@@ -993,6 +993,7 @@ impl Info<LendingMarket> {
         reward: &LiqMiningReward,
         position_kind: PositionKind,
         pool_reward_index: u64,
+        new_end_time_secs: u64,
     ) -> Result<(), BanksClientError> {
         let (reward_authority_pda, reward_authority_bump) = find_reward_vault_authority(
             &solend_program::id(),
@@ -1002,12 +1003,13 @@ impl Info<LendingMarket> {
         );
 
         let instructions = [
-            ComputeBudgetInstruction::set_compute_unit_limit(cu_budgets::CANCEL_POOL_REWARD),
-            cancel_pool_reward(
+            ComputeBudgetInstruction::set_compute_unit_limit(cu_budgets::EDIT_POOL_REWARD),
+            edit_pool_reward(
                 solend_program::id(),
                 reward_authority_bump,
                 position_kind,
                 pool_reward_index,
+                new_end_time_secs,
                 reserve.pubkey,
                 reward.mint,
                 lending_market_owner.get_account(&reward.mint).unwrap(),

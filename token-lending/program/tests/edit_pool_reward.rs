@@ -19,22 +19,32 @@ use solend_program::{
 use solend_sdk::state::{PoolReward, PoolRewardEntry};
 
 #[tokio::test]
+async fn test_extend_pool_reward_for_deposit() {
+    // TODO
+}
+
+#[tokio::test]
+async fn test_extend_pool_reward_for_borrow() {
+    // TODO
+}
+
+#[tokio::test]
 async fn test_cancel_pool_reward_for_deposit() {
-    test_(PositionKind::Deposit).await;
+    test_cancel_(PositionKind::Deposit).await;
 }
 
 #[tokio::test]
 async fn test_cancel_pool_reward_for_borrow() {
-    test_(PositionKind::Borrow).await;
+    test_cancel_(PositionKind::Borrow).await;
 }
 
-async fn test_(position_kind: PositionKind) {
+async fn test_cancel_(position_kind: PositionKind) {
     let (mut test, lending_market, usdc_reserve, _, mut lending_market_owner, _) =
         setup_world(&test_reserve_config(), &test_reserve_config()).await;
 
     let reward_mint = test.create_mint_as_test_authority().await;
     let reward_vault = Keypair::new();
-    let duration_secs = 3_600;
+    let duration_secs = 10 * 3_600;
     let total_rewards = 1_000_000;
     let initial_time = test.get_clock().await.unix_timestamp as u64;
     let reward = LiqMiningReward {
@@ -68,13 +78,14 @@ async fn test_(position_kind: PositionKind) {
 
     let pool_reward_index = 0;
     lending_market
-        .cancel_pool_reward(
+        .edit_pool_reward(
             &mut test,
             &usdc_reserve,
             &mut lending_market_owner,
             &reward,
             position_kind,
             pool_reward_index,
+            0, // cancel
         )
         .await
         .expect("Should cancel pool reward");
