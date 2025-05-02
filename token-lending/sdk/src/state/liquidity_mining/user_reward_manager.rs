@@ -6,7 +6,7 @@ use crate::{
     error::LendingError,
     math::{Decimal, TryAdd, TryMul, TrySub},
     state::{
-        pack_decimal, unpack_decimal, PoolRewardId, PoolRewardManager, PoolRewardSlot,
+        pack_decimal, unpack_decimal, PoolRewardEntry, PoolRewardId, PoolRewardManager,
         PositionKind, MAX_REWARDS,
     },
 };
@@ -166,7 +166,7 @@ impl UserRewardManager {
             .iter_mut()
             .enumerate()
             .find_map(move |(index, slot)| match slot {
-                PoolRewardSlot::Occupied(pool_reward) if pool_reward.vault == vault => {
+                PoolRewardEntry::Occupied(pool_reward) if pool_reward.vault == vault => {
                     Some((index, pool_reward))
                 }
                 _ => None,
@@ -301,7 +301,7 @@ impl UserRewardManager {
         for (pool_reward_index, pool_reward) in
             pool_reward_manager.pool_rewards.iter_mut().enumerate()
         {
-            let PoolRewardSlot::Occupied(pool_reward) = pool_reward else {
+            let PoolRewardEntry::Occupied(pool_reward) = pool_reward else {
                 // no reward to track
                 continue;
             };

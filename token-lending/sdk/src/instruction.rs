@@ -591,11 +591,14 @@ pub enum LendingInstruction {
     },
 
     // 27
-    /// CancelPoolReward
+    /// EditPoolReward
     ///
     /// * Admin only instruction.
-    /// * Changed the endtime of the reward to the current time.
-    /// * Claims unallocated rewards to the admin signer.
+    /// * Either extends or shortens the reward time.
+    /// * Provide `now` or less to changed the endtime of the reward to the current time,
+    ///   effectively cancelling the reward.
+    /// * Claims unallocated rewards to the admin signer if shortening the time, takes extra rewards
+    ///   from the admin signer if extending the time.
     ///
     ///    `[writable]` Reserve account.
     ///    `[]` Reward mint.
@@ -609,13 +612,17 @@ pub enum LendingInstruction {
     ///    `[]` Lending market account.
     ///    `[signer]` Lending market owner.
     ///    `[]` Token program.
-    CancelPoolReward {
+    EditPoolReward {
         /// The bump seed of the reward authority.
         reward_authority_bump: u8,
         /// Whether this reward applies to deposits or borrows
         position_kind: PositionKind,
         /// Identifies a reward within a reserve's deposits/borrows rewards.
         pool_reward_index: u64,
+        /// Will be truncated such that the duration in secs is not longer than [u32::MAX] and not
+        /// shorter than [crate::MIN_REWARD_PERIOD_SECS].
+        /// Also, it must be at least current time and the reward start time.
+        new_end_time_secs: u64,
     },
 
     /// 28
@@ -940,11 +947,14 @@ impl LendingInstruction {
             27 => {
                 let (reward_authority_bump, rest) = Self::unpack_u8(rest)?;
                 let (position_kind, rest) = Self::unpack_try_from_u8(rest)?;
-                let (pool_reward_index, _rest) = Self::unpack_u64(rest)?;
-                Self::CancelPoolReward {
+                let (pool_reward_index, rest) = Self::unpack_u64(rest)?;
+                let (new_end_time_secs, _rest) = Self::unpack_u64(rest)?;
+
+                Self::EditPoolReward {
                     reward_authority_bump,
                     position_kind,
                     pool_reward_index: pool_reward_index as _,
+                    new_end_time_secs,
                 }
             }
             28 => {
@@ -1288,15 +1298,17 @@ impl LendingInstruction {
                 buf.extend_from_slice(&(position_kind as u8).to_le_bytes());
                 buf.extend_from_slice(&pool_reward_index.to_le_bytes());
             }
-            Self::CancelPoolReward {
+            Self::EditPoolReward {
                 reward_authority_bump,
                 position_kind,
                 pool_reward_index,
+                new_end_time_secs,
             } => {
                 buf.push(27);
                 buf.extend_from_slice(&reward_authority_bump.to_le_bytes());
                 buf.extend_from_slice(&(position_kind as u8).to_le_bytes());
                 buf.extend_from_slice(&pool_reward_index.to_le_bytes());
+                buf.extend_from_slice(&new_end_time_secs.to_le_bytes());
             }
             Self::ClaimReward {
                 reward_authority_bump,
@@ -2179,16 +2191,17 @@ pub fn add_pool_reward(
     }
 }
 
-/// Creates a `CancelPoolReward` instruction
+/// Creates an `EditPoolReward` instruction
 #[allow(clippy::too_many_arguments)]
-pub fn cancel_pool_reward(
+pub fn edit_pool_reward(
     program_id: Pubkey,
     reward_authority_bump: u8,
     position_kind: PositionKind,
     pool_reward_index: u64,
+    new_end_time_secs: u64,
     reserve: Pubkey,
     reward_mint: Pubkey,
-    destination_reward_token_account: Pubkey,
+    lending_market_owner_reward_token_account: Pubkey,
     reward_vault_authority: Pubkey,
     reward_vault: Pubkey,
     lending_market: Pubkey,
@@ -2199,17 +2212,18 @@ pub fn cancel_pool_reward(
         accounts: vec![
             AccountMeta::new(reserve, false),
             AccountMeta::new_readonly(reward_mint, false),
-            AccountMeta::new(destination_reward_token_account, false),
+            AccountMeta::new(lending_market_owner_reward_token_account, false),
             AccountMeta::new_readonly(reward_vault_authority, false),
             AccountMeta::new(reward_vault, false),
             AccountMeta::new_readonly(lending_market, false),
             AccountMeta::new_readonly(lending_market_owner, true),
             AccountMeta::new_readonly(spl_token::id(), false),
         ],
-        data: LendingInstruction::CancelPoolReward {
+        data: LendingInstruction::EditPoolReward {
             reward_authority_bump,
             position_kind,
             pool_reward_index,
+            new_end_time_secs,
         }
         .pack(),
     }

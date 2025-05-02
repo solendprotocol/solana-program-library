@@ -1,9 +1,9 @@
 //! [PoolRewardManager]s are stored in [crate::state::Reserve]s.
-//! They can be either borrow or deposit but the logic is the same, the only
-//! difference is how shares are calculated.
+//! They can be either borrow or deposit but the logic is almost the same.
 //!
-//! For borrow managers the shares are "liability" and for deposit
-//! managers the shares are "deposited collateral".
+//! The only difference is how shares are calculated:
+//! For borrow managers the shares are "liability" and for deposit managers the shares are
+//! "deposited collateral".
 
 use crate::{
     error::LendingError,
@@ -11,7 +11,7 @@ use crate::{
     state::{pack_decimal, unpack_decimal, MAX_REWARDS, MIN_REWARD_PERIOD_SECS},
 };
 use arrayref::{array_mut_ref, array_ref, array_refs, mut_array_refs};
-use core::convert::{TryFrom, TryInto};
+use core::convert::TryInto;
 use solana_program::{
     clock::Clock,
     msg,
@@ -19,6 +19,7 @@ use solana_program::{
     program_pack::{Pack, Sealed},
     pubkey::{Pubkey, PUBKEY_BYTES},
 };
+use std::cmp::Ordering;
 
 /// Each reserve has two managers:
 /// - one for deposits
@@ -29,43 +30,43 @@ pub struct PoolRewardManager {
     pub total_shares: u64,
     /// Monotonically increasing time taken from clock sysvar.
     pub last_update_time_secs: u64,
-    /// New [PoolReward] are added to the first vacant slot.
-    pub pool_rewards: [PoolRewardSlot; MAX_REWARDS],
+    /// New [PoolReward] are added to the first vacant entry.
+    pub pool_rewards: [PoolRewardEntry; MAX_REWARDS],
 }
 
-/// Each pool reward gets an ID which is monotonically increasing with each
-/// new reward added to the pool at the particular slot.
+/// Each pool reward gets an ID which is monotonically increasing with each new reward added to the
+/// pool at the particular entry.
 ///
-/// This helps us distinguish between two distinct rewards in the same array
-/// index across time.
+/// This helps us distinguish between two distinct rewards in the same array index across time.
 ///
 /// # Wrapping
 /// There are two strategies to handle wrapping:
-/// 1. Consider the associated slot locked forever
+/// 1. Consider the associated entry locked forever
 /// 2. Go back to 0.
 ///
-/// Given that one reward lasts at [MIN_REWARD_PERIOD_SECS] we've got at least
-/// half a million years before we need to worry about wrapping in a single slot.
+/// Given that one reward lasts at least [MIN_REWARD_PERIOD_SECS] we've got at least half a million
+/// years before we need to worry about wrapping in a single entry.
 /// I'd call that someone else's problem.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub struct PoolRewardId(pub u32);
 
 /// # (Un)Packing
-/// This is unpacked representation.
-/// When packing we use the [PoolReward] `reward_mint` to determine whether the
-/// reward is vacant or not to save space.
+/// This is the unpacked representation.
+/// When packing we use the [PoolReward] `reward_mint` to determine whether the reward is vacant or
+/// not to save space.
 ///
-/// If the pubkey is eq to default pubkey then slot is vacant.
+/// If the pubkey is eq to default pubkey then entry is vacant.
+/// We always pack the ID of the reward because it's monotonically increasing.
+/// See [PoolRewardId] for more details.
 #[derive(Clone, Debug, PartialEq)]
-pub enum PoolRewardSlot {
-    /// New reward can be added to this slot.
+pub enum PoolRewardEntry {
+    /// New reward can be added to this entry.
     Vacant {
         /// Increment this ID when adding new [PoolReward].
         last_pool_reward_id: PoolRewardId,
         /// An optimization to avoid writing data that has not changed.
-        /// When vacating a slot we set this to true.
-        /// That way the packing logic knows whether it's fine to skip the
-        /// packing or not.
+        /// When vacating a entry we set this to true.
+        /// That way the packing logic knows whether it's fine to skip the packing or not.
         has_been_just_vacated: bool,
     },
     /// Reward has not been closed yet.
@@ -78,32 +79,33 @@ pub enum PoolRewardSlot {
 ///
 /// # Reward cancellation
 ///
-/// In Suilend we also store the amount of rewards that have been made available
-/// to users already.
-/// We keep adding `(total_rewards * time_passed) / (total_time)` every
-/// time someone interacts with the manager.
+/// In Suilend we also store the amount of rewards that have been made available to users already.
+/// We keep adding `(total_rewards * time_passed) / (total_time)` every time someone interacts with
+/// the manager.
 /// This value is used to transfer the unallocated rewards to the admin.
-/// However, this can be calculated dynamically which avoids storing an extra
-/// packed [Decimal] on each [PoolReward].
+/// However, this can be calculated dynamically which avoids storing an extra packed [Decimal] on
+/// each [PoolReward].
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct PoolReward {
-    /// Unique ID for this slot that has never been used before, and will never
-    /// be used again.
+    /// Unique ID for this entry that has never been used before, and will never be used again.
     pub id: PoolRewardId,
     /// # (Un)Packing
-    /// When we pack the reward we set this to default pubkey for vacant slots.
+    /// When we pack the reward we set this to default pubkey for vacant entries.
     pub vault: Pubkey,
     /// Monotonically increasing time taken from clock sysvar.
     pub start_time_secs: u64,
     /// For how long (since start time) will this reward be releasing tokens.
     ///
-    /// # Reward cancellation
+    /// # Reward Editing
     ///
-    /// Is cut short if the reward is cancelled.
+    /// Is cut short or extended.
     pub duration_secs: u32,
     /// Total token amount to distribute.
-    /// The token account that holds the rewards holds at least this much in
-    /// the beginning.
+    /// The token account that holds the rewards holds at least this much in the beginning.
+    ///
+    /// # Reward Editing
+    ///
+    /// Is deducted or increased linearly to the duration.
     pub total_rewards: u64,
     /// How many users are still tracking this reward.
     /// Once this reaches zero we can close this reward.
@@ -129,7 +131,7 @@ impl PoolRewardManager {
     /// Must last at least [MIN_REWARD_PERIOD_SECS].
     /// The amount of tokens to distribute must be greater than zero.
     ///
-    /// Will return an error if no slot can be found for the new reward.
+    /// Will return an error if no entry can be found for the new reward.
     pub fn add_pool_reward(
         &mut self,
         vault: Pubkey,
@@ -155,7 +157,7 @@ impl PoolRewardManager {
                 LendingError::MathOverflow
             })?
         };
-        if MIN_REWARD_PERIOD_SECS > duration_secs as u64 {
+        if MIN_REWARD_PERIOD_SECS > duration_secs {
             msg!("Pool reward duration must be at least {MIN_REWARD_PERIOD_SECS} secs");
             return Err(LendingError::PoolRewardPeriodTooShort.into());
         }
@@ -165,24 +167,24 @@ impl PoolRewardManager {
             return Err(LendingError::InvalidAmount.into());
         }
 
-        let eligible_slot =
+        let eligible_entry =
             self.pool_rewards
                 .iter_mut()
                 .enumerate()
-                .find_map(|(slot_index, slot)| match slot {
-                    PoolRewardSlot::Vacant {
+                .find_map(|(entry_index, entry)| match entry {
+                    PoolRewardEntry::Vacant {
                         last_pool_reward_id: PoolRewardId(id),
                         ..
-                    } if *id < u32::MAX => Some((slot_index, PoolRewardId(*id + 1))),
+                    } if *id < u32::MAX => Some((entry_index, PoolRewardId(*id + 1))),
                     _ => None,
                 });
 
-        let Some((slot_index, next_id)) = eligible_slot else {
-            msg!("No vacant slot found for the new pool reward");
-            return Err(LendingError::NoVacantSlotForPoolReward.into());
+        let Some((entry_index, next_id)) = eligible_entry else {
+            msg!("No vacant entry found for the new pool reward");
+            return Err(LendingError::NoVacantEntryForPoolReward.into());
         };
 
-        self.pool_rewards[slot_index] = PoolRewardSlot::Occupied(Box::new(PoolReward {
+        self.pool_rewards[entry_index] = PoolRewardEntry::Occupied(Box::new(PoolReward {
             id: next_id,
             vault,
             start_time_secs,
@@ -195,44 +197,89 @@ impl PoolRewardManager {
         Ok(())
     }
 
-    /// Sets the duration of the pool reward to now.
-    /// Returns the amount of unallocated rewards and the vault they are in.
-    pub fn cancel_pool_reward(
+    /// Change the pool reward end time to `new_end_time_secs`.
+    /// This way the reward can be extended or shortened.
+    ///
+    /// The relative change in the total amount must remain the same, ie. a user wouldn't be able to
+    /// tell a difference between how much rewards they received over the same period of time.
+    /// That change in the token amount is what we return along with the vault the rewards are in.
+    ///
+    /// Positive change means the admin should add more tokens to the vault, negative means they
+    /// should transfer tokens out of the vault.
+    pub fn edit_pool_reward(
         &mut self,
         pool_reward_index: usize,
+        new_end_time_secs: u64,
         clock: &Clock,
-    ) -> Result<(Pubkey, u64), ProgramError> {
+    ) -> Result<(Pubkey, i64), ProgramError> {
         self.update(clock)?;
 
-        let Some(PoolRewardSlot::Occupied(pool_reward)) =
+        let Some(PoolRewardEntry::Occupied(pool_reward)) =
             self.pool_rewards.get_mut(pool_reward_index)
         else {
-            msg!("Cannot cancel a non-existent pool reward");
+            msg!("Cannot edit a non-existent pool reward");
             return Err(ProgramError::InvalidArgument);
         };
 
         if pool_reward.has_ended(clock) {
-            msg!("Cannot cancel a pool reward that has already ended");
+            msg!("Cannot edit a pool reward that has already ended");
             return Err(LendingError::InvalidAccountInput.into());
         }
 
-        let since_start_secs = clock.unix_timestamp as u64 - pool_reward.start_time_secs;
-        let unlocked_rewards = Decimal::from(pool_reward.total_rewards)
-            .try_mul(Decimal::from(since_start_secs))?
-            .try_div(Decimal::from(pool_reward.duration_secs as u64))?
-            .try_floor_u64()?;
-        let remaining_rewards = pool_reward.total_rewards - unlocked_rewards;
+        let new_end_time_secs = new_end_time_secs
+            .max(clock.unix_timestamp as u64)
+            .max(pool_reward.start_time_secs);
 
-        pool_reward.duration_secs =
-            u32::try_from(since_start_secs).expect("New duration to be strictly shorter");
+        let new_duration_secs: u32 = (new_end_time_secs - pool_reward.start_time_secs)
+            .try_into()
+            .unwrap_or(u32::MAX)
+            .max(MIN_REWARD_PERIOD_SECS);
 
-        Ok((pool_reward.vault, remaining_rewards))
+        // we'll use this to calculate how should the total reward change
+        let rewards_per_seconds = Decimal::from(pool_reward.total_rewards)
+            .try_div(Decimal::from(pool_reward.duration_secs as u64))?;
+
+        let old_duration_secs = pool_reward.duration_secs;
+
+        pool_reward.duration_secs = new_duration_secs;
+        match new_duration_secs.cmp(&old_duration_secs) {
+            Ordering::Equal => {
+                msg!("Pool reward duration is the same, nothing to do");
+                Ok((pool_reward.vault, 0))
+            }
+            Ordering::Greater => {
+                let extend_by_secs = new_duration_secs - old_duration_secs;
+                msg!("Extending pool reward duration by {}s", extend_by_secs);
+
+                // ceil up so that we cannot extend a reward without adding more tokens
+                let rewards_to_add = rewards_per_seconds
+                    .try_mul(Decimal::from(extend_by_secs as u64))?
+                    .try_ceil_u64()?;
+
+                pool_reward.total_rewards += rewards_to_add;
+
+                Ok((pool_reward.vault, rewards_to_add as i64))
+            }
+            Ordering::Less => {
+                let shorten_by_secs = old_duration_secs - new_duration_secs;
+                msg!("Shortening pool reward duration by {}s", shorten_by_secs);
+
+                // floor down so that the vault is never short by a token
+                let rewards_to_remove = rewards_per_seconds
+                    .try_mul(Decimal::from(shorten_by_secs as u64))?
+                    .try_floor_u64()?;
+
+                pool_reward.total_rewards -= rewards_to_remove;
+
+                Ok((pool_reward.vault, -(rewards_to_remove as i64)))
+            }
+        }
     }
 
     /// Closes a pool reward if it has been cancelled before.
     /// Returns the vault the rewards are in.
     pub fn close_pool_reward(&mut self, pool_reward_index: usize) -> Result<Pubkey, ProgramError> {
-        let Some(PoolRewardSlot::Occupied(pool_reward)) =
+        let Some(PoolRewardEntry::Occupied(pool_reward)) =
             self.pool_rewards.get_mut(pool_reward_index)
         else {
             msg!("Cannot close a non-existent pool reward");
@@ -246,7 +293,7 @@ impl PoolRewardManager {
 
         let vault = pool_reward.vault;
 
-        self.pool_rewards[pool_reward_index] = PoolRewardSlot::Vacant {
+        self.pool_rewards[pool_reward_index] = PoolRewardEntry::Vacant {
             last_pool_reward_id: pool_reward.id,
             has_been_just_vacated: true,
         };
@@ -276,7 +323,7 @@ impl PoolRewardManager {
             .pool_rewards
             .iter_mut()
             .filter_map(|r| match r {
-                PoolRewardSlot::Occupied(reward) => Some(reward),
+                PoolRewardEntry::Occupied(reward) => Some(reward),
                 _ => None,
             })
             .filter(|r| curr_unix_timestamp_secs > r.start_time_secs)
@@ -334,12 +381,12 @@ impl Default for PoolRewardManager {
         Self {
             total_shares: 0,
             last_update_time_secs: 0,
-            pool_rewards: std::array::from_fn(|_| PoolRewardSlot::default()),
+            pool_rewards: std::array::from_fn(|_| PoolRewardEntry::default()),
         }
     }
 }
 
-impl Default for PoolRewardSlot {
+impl Default for PoolRewardEntry {
     fn default() -> Self {
         Self::Vacant {
             last_pool_reward_id: PoolRewardId(0),
@@ -373,22 +420,22 @@ impl Pack for PoolRewardManager {
             .enumerate()
             .filter(|(_, s)| s.should_be_packed());
 
-        for (index, pool_reward_slot) in rewards_to_pack {
+        for (index, pool_reward_entry) in rewards_to_pack {
             let offset = 16 + index * PoolReward::LEN;
 
             let raw_pool_reward_head = array_mut_ref![output, offset, PoolReward::HEAD_LEN];
             let (dst_id, dst_vault) =
                 mut_array_refs![raw_pool_reward_head, PoolRewardId::LEN, PUBKEY_BYTES];
 
-            match pool_reward_slot {
-                PoolRewardSlot::Vacant {
+            match pool_reward_entry {
+                PoolRewardEntry::Vacant {
                     last_pool_reward_id: PoolRewardId(id),
                     ..
                 } => {
                     dst_id.copy_from_slice(&id.to_le_bytes());
                     dst_vault.copy_from_slice(Pubkey::default().as_ref());
                 }
-                PoolRewardSlot::Occupied(pool_reward) => {
+                PoolRewardEntry::Occupied(pool_reward) => {
                     dst_id.copy_from_slice(&pool_reward.id.0.to_le_bytes());
                     dst_vault.copy_from_slice(pool_reward.vault.as_ref());
 
@@ -445,7 +492,7 @@ impl Pack for PoolRewardManager {
 
             // SAFETY: ok to assign because we know the index is less than length
             pool_reward_manager.pool_rewards[index] = if vault == Pubkey::default() {
-                PoolRewardSlot::Vacant {
+                PoolRewardEntry::Vacant {
                     last_pool_reward_id: pool_reward_id,
                     // nope, has been vacant since unpack
                     has_been_just_vacated: false,
@@ -469,7 +516,7 @@ impl Pack for PoolRewardManager {
                     16  // cumulative_rewards_per_share
                 ];
 
-                PoolRewardSlot::Occupied(Box::new(PoolReward {
+                PoolRewardEntry::Occupied(Box::new(PoolReward {
                     id: pool_reward_id,
                     vault,
                     start_time_secs: u64::from_le_bytes(*src_start_time_secs),
@@ -487,7 +534,7 @@ impl Pack for PoolRewardManager {
     }
 }
 
-impl PoolRewardSlot {
+impl PoolRewardEntry {
     /// If we know for sure that data hasn't changed then we can just skip packing.
     fn should_be_packed(&self) -> bool {
         let for_sure_has_not_changed = matches!(
@@ -516,12 +563,12 @@ mod tests {
                     let is_vacant = rng.gen_bool(0.5);
 
                     if is_vacant {
-                        PoolRewardSlot::Vacant {
+                        PoolRewardEntry::Vacant {
                             last_pool_reward_id: Default::default(),
                             has_been_just_vacated: false,
                         }
                     } else {
-                        PoolRewardSlot::Occupied(Box::new(PoolReward {
+                        PoolRewardEntry::Occupied(Box::new(PoolReward {
                             id: PoolRewardId(rng.gen()),
                             vault: Pubkey::new_unique(),
                             start_time_secs: rng.gen(),
@@ -539,7 +586,7 @@ mod tests {
     #[test]
     fn it_packs_id_if_vacated_in_this_tx() {
         let mut m = PoolRewardManager::default();
-        m.pool_rewards[0] = PoolRewardSlot::Vacant {
+        m.pool_rewards[0] = PoolRewardEntry::Vacant {
             last_pool_reward_id: PoolRewardId(69),
             has_been_just_vacated: true,
         };
@@ -550,7 +597,7 @@ mod tests {
 
         assert_eq!(
             unpacked.pool_rewards[0],
-            PoolRewardSlot::Vacant {
+            PoolRewardEntry::Vacant {
                 last_pool_reward_id: PoolRewardId(69),
                 has_been_just_vacated: false,
             }
@@ -567,7 +614,7 @@ mod tests {
         let all_rewards_are_empty = unpacked.pool_rewards.iter().all(|pool_reward| {
             matches!(
                 pool_reward,
-                PoolRewardSlot::Vacant {
+                PoolRewardEntry::Vacant {
                     last_pool_reward_id: PoolRewardId(0),
                     has_been_just_vacated: false,
                 }

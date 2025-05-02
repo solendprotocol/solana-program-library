@@ -225,17 +225,19 @@ pub fn process_instruction(
                 accounts,
             )
         }
-        LendingInstruction::CancelPoolReward {
+        LendingInstruction::EditPoolReward {
             reward_authority_bump,
             position_kind,
             pool_reward_index,
+            new_end_time_secs,
         } => {
-            msg!("Instruction: Cancel Pool Reward");
-            liquidity_mining::cancel_pool_reward::process(
+            msg!("Instruction: Edit Pool Reward");
+            liquidity_mining::edit_pool_reward::process(
                 program_id,
                 reward_authority_bump,
                 position_kind,
                 pool_reward_index as _,
+                new_end_time_secs,
                 accounts,
             )
         }

@@ -12,7 +12,7 @@ use solend_program::{
     math::Decimal,
     state::{PoolRewardId, PoolRewardManager, PositionKind, Reserve, UserRewardManager},
 };
-use solend_sdk::state::{PoolReward, PoolRewardSlot, UserReward};
+use solend_sdk::state::{PoolReward, PoolRewardEntry, UserReward};
 
 #[tokio::test]
 async fn test_add_pool_reward_for_deposit() {
@@ -64,7 +64,7 @@ async fn test_(position_kind: PositionKind) {
         pool_rewards: {
             let mut og = PoolRewardManager::default().pool_rewards;
 
-            og[0] = PoolRewardSlot::Occupied(Box::new(PoolReward {
+            og[0] = PoolRewardEntry::Occupied(Box::new(PoolReward {
                 id: PoolRewardId(1),
                 vault: reward_vault.pubkey(),
                 start_time_secs: current_time,

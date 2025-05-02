@@ -69,10 +69,28 @@ Each pool reward has a unique vault that holds the reward tokens.
 This vault account must be created for the token program before calling this ix.
 In this ix we initialize the account as token account and transfer the reward tokens to it from the admin's token account.
 
-### `cancel_pool_reward`
+### `edit_pool_reward`
 
-This ix sets the end time of the pool reward to "now" and returns any unallocated rewards to the admin.
+Both extending and shortening calculate the difference between total rewards linearly.
 Users will still be able to claim rewards they accrued until this point.
+
+#### Cancel
+
+Cancelling a pool reward can be done by setting the end time to 0.
+Note that only rewards longer than [solend_sdk::MIN_REWARD_PERIOD_SECS] can be cancelled.
+In this case we transfer tokens from the reward vault to the lending market reward token account.
+
+#### Shorten
+
+If the new endtime is in the future, larger than start time and smaller than previous end time
+then we shorten the reward period, refunding the unallocated rewards to the lending market
+reward token account.
+
+#### Extend
+
+If the new endtime is in the future, larger than start time and larger than previous end time
+then we extend the reward period, taking more tokens from the lending market reward token
+account.
 
 ### `claim_pool_reward`
 

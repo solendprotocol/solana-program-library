@@ -1,8 +1,23 @@
-//! Cancel a pool reward.
+//! Edits a pool reward.
 //!
-//! This ix sets the end time of the pool reward to now and returns any
-//! unallocated rewards to the admin.
-//! Users will still be able to claim rewards.
+//! # Cancel
+//! Cancelling a pool reward can be done by setting the end time to 0.
+//! Note that only rewards longer than [solend_sdk::MIN_REWARD_PERIOD_SECS] can be cancelled.
+//! In this case we transfer tokens from the reward vault to the lending market reward token account.
+//!
+//! # Shorten
+//! If the new endtime is in the future, larger than start time and smaller than previous end time
+//! then we shorten the reward period, refunding the unallocated rewards to the lending market
+//! reward token account.
+//!
+//! # Extend
+//! If the new endtime is in the future, larger than start time and larger than previous end time
+//! then we extend the reward period, taking more tokens from the lending market reward token
+//! account.
+//!
+//! ---
+//!
+//! Both extending and shortening calculate the difference between total rewards linearly.
 
 use crate::processor::liquidity_mining::{
     check_and_unpack_pool_reward_accounts_for_admin_ixs, unpack_token_account,
@@ -23,7 +38,7 @@ use solend_sdk::{error::LendingError, state::PositionKind};
 use super::{Bumps, CheckAndUnpackPoolRewardAccounts, ReserveBorrow};
 
 /// Use [Self::from_unchecked_iter] to validate the accounts.
-struct CancelPoolRewardAccounts<'a, 'info> {
+struct EditPoolRewardAccounts<'a, 'info> {
     /// ✅ belongs to this program
     /// ✅ unpacks
     /// ✅ belongs to `lending_market_info`
@@ -34,7 +49,7 @@ struct CancelPoolRewardAccounts<'a, 'info> {
     /// ✅ belongs to the token program
     /// ✅ matches `reward_mint_info`
     /// ✅ is writable
-    reward_token_destination_info: &'a AccountInfo<'info>,
+    lending_market_reward_token_account_info: &'a AccountInfo<'info>,
     /// ✅ seed of `lending_market_info`, `reserve_info`, `reward_mint_info`
     reward_authority_info: &'a AccountInfo<'info>,
     /// ❓ we don't know whether it matches the reward vault pubkey stored in [Reserve]
@@ -45,7 +60,7 @@ struct CancelPoolRewardAccounts<'a, 'info> {
     lending_market_info: &'a AccountInfo<'info>,
     /// ✅ is a signer
     /// ✅ matches `lending_market_info`
-    _lending_market_owner_info: &'a AccountInfo<'info>,
+    lending_market_owner_info: &'a AccountInfo<'info>,
     /// ✅ matches `lending_market_info`
     token_program_info: &'a AccountInfo<'info>,
 
@@ -54,16 +69,18 @@ struct CancelPoolRewardAccounts<'a, 'info> {
 
 /// # Effects
 ///
-/// 1. Cancels any further reward emission, effectively setting end time to now.
-/// 2. Transfers any unallocated rewards to the `reward_token_destination` account.
+/// 1. Sets the new time
+/// 2. Either refunds the admin or takes more tokens from the admin, based on the new end time
+///    relation to the old end time
 pub(crate) fn process(
     program_id: &Pubkey,
     reward_authority_bump: u8,
     position_kind: PositionKind,
     pool_reward_index: usize,
+    new_end_time_secs: u64,
     accounts: &[AccountInfo],
 ) -> ProgramResult {
-    let mut accounts = CancelPoolRewardAccounts::from_unchecked_iter(
+    let mut accounts = EditPoolRewardAccounts::from_unchecked_iter(
         program_id,
         Bumps {
             reward_authority: reward_authority_bump,
@@ -73,10 +90,10 @@ pub(crate) fn process(
 
     // 1.
 
-    let (expected_vault, unallocated_rewards) = accounts
+    let (expected_vault, change_to_vault_amount) = accounts
         .reserve
         .pool_reward_manager_mut(position_kind)
-        .cancel_pool_reward(pool_reward_index, &Clock::get()?)?;
+        .edit_pool_reward(pool_reward_index, new_end_time_secs, &Clock::get()?)?;
 
     if expected_vault != *accounts.reward_token_vault_info.key {
         msg!("Reward vault provided does not match the reward vault pubkey stored in [Reserve]");
@@ -85,33 +102,46 @@ pub(crate) fn process(
 
     // 2.
 
-    spl_token_transfer(TokenTransferParams {
-        source: accounts.reward_token_vault_info.clone(),
-        destination: accounts.reward_token_destination_info.clone(),
-        amount: unallocated_rewards,
-        authority: accounts.reward_authority_info.clone(),
-        authority_signer_seeds: &[
-            reward_vault_authority_seeds(
-                accounts.lending_market_info.key,
-                &accounts.reserve.key(),
-                accounts.reward_mint_info.key,
-            )
-            .as_slice(),
-            &[&[reward_authority_bump]],
-        ]
-        .concat(),
-        token_program: accounts.token_program_info.clone(),
-    })?;
+    msg!("Change to vault amount: {}", change_to_vault_amount);
 
-    Ok(())
+    match change_to_vault_amount {
+        0 => Ok(()),
+        // transfer more tokens to the vault
+        1.. => spl_token_transfer(TokenTransferParams {
+            source: accounts.lending_market_reward_token_account_info.clone(),
+            destination: accounts.reward_token_vault_info.clone(),
+            amount: change_to_vault_amount.unsigned_abs(),
+            authority: accounts.lending_market_owner_info.clone(),
+            authority_signer_seeds: &[],
+            token_program: accounts.token_program_info.clone(),
+        }),
+        // refund to lending market reward token account
+        ..=-1 => spl_token_transfer(TokenTransferParams {
+            source: accounts.reward_token_vault_info.clone(),
+            destination: accounts.lending_market_reward_token_account_info.clone(),
+            amount: change_to_vault_amount.unsigned_abs(),
+            authority: accounts.reward_authority_info.clone(),
+            authority_signer_seeds: &[
+                reward_vault_authority_seeds(
+                    accounts.lending_market_info.key,
+                    &accounts.reserve.key(),
+                    accounts.reward_mint_info.key,
+                )
+                .as_slice(),
+                &[&[reward_authority_bump]],
+            ]
+            .concat(),
+            token_program: accounts.token_program_info.clone(),
+        }),
+    }
 }
 
-impl<'a, 'info> CancelPoolRewardAccounts<'a, 'info> {
+impl<'a, 'info> EditPoolRewardAccounts<'a, 'info> {
     fn from_unchecked_iter(
         program_id: &Pubkey,
         bump: Bumps,
         iter: &mut impl Iterator<Item = &'a AccountInfo<'info>>,
-    ) -> Result<CancelPoolRewardAccounts<'a, 'info>, ProgramError> {
+    ) -> Result<EditPoolRewardAccounts<'a, 'info>, ProgramError> {
         let reserve_info = next_account_info(iter)?;
         let reward_mint_info = next_account_info(iter)?;
         let reward_token_destination_info = next_account_info(iter)?;
@@ -163,11 +193,11 @@ impl<'a, 'info> CancelPoolRewardAccounts<'a, 'info> {
         Ok(Self {
             _reserve_info: reserve_info,
             reward_mint_info,
-            reward_token_destination_info,
+            lending_market_reward_token_account_info: reward_token_destination_info,
             reward_authority_info,
             reward_token_vault_info,
             lending_market_info,
-            _lending_market_owner_info: lending_market_owner_info,
+            lending_market_owner_info,
             token_program_info,
 
             reserve,

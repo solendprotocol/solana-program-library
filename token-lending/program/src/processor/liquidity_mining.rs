@@ -8,7 +8,7 @@
 //!
 //! There are three admin-only ixs:
 //! - [add_pool_reward]
-//! - [cancel_pool_reward]
+//! - [edit_pool_reward]
 //! - [close_pool_reward]
 //!
 //! There is an ix related to migration:
@@ -20,9 +20,9 @@
 //! [suilend-lm]: https://github.com/solendprotocol/suilend/blob/dc53150416f352053ac3acbb320ee143409c4a5d/contracts/suilend/sources/liquidity_mining.move#L2
 
 pub(crate) mod add_pool_reward;
-pub(crate) mod cancel_pool_reward;
 pub(crate) mod claim_user_reward;
 pub(crate) mod close_pool_reward;
+pub(crate) mod edit_pool_reward;
 pub(crate) mod upgrade_reserve;
 
 use solana_program::program_pack::Pack;

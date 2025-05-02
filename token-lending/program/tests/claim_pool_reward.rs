@@ -21,7 +21,7 @@ use solend_program::{
 };
 use solend_sdk::error::LendingError;
 use solend_sdk::math::TryMul;
-use solend_sdk::state::{Obligation, PoolReward, PoolRewardSlot, UserReward};
+use solend_sdk::state::{Obligation, PoolReward, PoolRewardEntry, UserReward};
 
 #[tokio::test]
 async fn test_claim_pool_reward_for_deposit() {
@@ -167,7 +167,7 @@ async fn test_(position_kind: PositionKind) {
         pool_rewards: {
             let mut og = PoolRewardManager::default().pool_rewards;
 
-            og[0] = PoolRewardSlot::Occupied(Box::new(PoolReward {
+            og[0] = PoolRewardEntry::Occupied(Box::new(PoolReward {
                 id: PoolRewardId(1),
                 vault: reward_vault.pubkey(),
                 start_time_secs: initial_time,
@@ -248,7 +248,7 @@ async fn test_(position_kind: PositionKind) {
 
     assert_eq!(
         pool_reward_manager.pool_rewards[0],
-        PoolRewardSlot::Occupied(Box::new(PoolReward {
+        PoolRewardEntry::Occupied(Box::new(PoolReward {
             id: PoolRewardId(1),
             vault: reward_vault.pubkey(),
             start_time_secs: initial_time,

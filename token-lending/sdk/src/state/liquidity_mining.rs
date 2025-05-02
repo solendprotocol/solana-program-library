@@ -18,7 +18,337 @@ pub use user_reward_manager::*;
 pub const MAX_REWARDS: usize = 30;
 
 /// Cannot create a reward shorter than this.
-pub const MIN_REWARD_PERIOD_SECS: u64 = 3_600;
+pub const MIN_REWARD_PERIOD_SECS: u32 = 3_600;
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::math::{TryDiv, TryMul};
+    use crate::{
+        error::LendingError,
+        math::Decimal,
+        state::{PoolRewardManager, PositionKind, UserRewardManager},
+    };
+    use pretty_assertions::assert_eq;
+    use proptest::prelude::*;
+    use rand::prelude::*;
+    use rand_chacha::ChaCha8Rng;
+    use solana_program::{clock::Clock, msg, program_error::ProgramError, pubkey::Pubkey};
+    use std::convert::TryFrom;
+
+    /// This test asserts that cancelling a reward does not change the amount of rewards that are
+    /// emitted to a user.
+    #[test]
+    fn it_cancels_reward_without_changing_user_eligible_amount() {
+        // This is an implementation that was superseded by the edit function.
+        // We show that cancelling is a special case of editing.
+        impl PoolRewardManager {
+            fn cancel_pool_reward(
+                &mut self,
+                pool_reward_index: usize,
+                clock: &Clock,
+            ) -> Result<(Pubkey, u64), ProgramError> {
+                self.update(clock)?;
+
+                let Some(PoolRewardEntry::Occupied(pool_reward)) =
+                    self.pool_rewards.get_mut(pool_reward_index)
+                else {
+                    msg!("Cannot cancel a non-existent pool reward");
+                    return Err(ProgramError::InvalidArgument);
+                };
+
+                if pool_reward.has_ended(clock) {
+                    msg!("Cannot cancel a pool reward that has already ended");
+                    return Err(LendingError::InvalidAccountInput.into());
+                }
+
+                let since_start_secs = clock.unix_timestamp as u64 - pool_reward.start_time_secs;
+                let unlocked_rewards = Decimal::from(pool_reward.total_rewards)
+                    .try_mul(Decimal::from(since_start_secs))?
+                    .try_div(Decimal::from(pool_reward.duration_secs as u64))?
+                    .try_floor_u64()?;
+                let remaining_rewards = pool_reward.total_rewards - unlocked_rewards;
+
+                pool_reward.duration_secs =
+                    u32::try_from(since_start_secs).expect("New duration to be strictly shorter");
+
+                Ok((pool_reward.vault, remaining_rewards))
+            }
+        }
+
+        let usdc = Pubkey::new_unique(); // reserve pubkey
+        let slnd_vault = Pubkey::new_unique(); // where rewards are stored
+        let reward_period = 10 * MIN_REWARD_PERIOD_SECS as u64;
+        let total_rewards = 100 * 1_000_000;
+
+        let mut clock = Clock {
+            unix_timestamp: 0,
+            ..Default::default()
+        };
+
+        let mut pool_reward_manager = PoolRewardManager::default();
+
+        let mut user_reward_manager = UserRewardManager::new(usdc, PositionKind::Deposit, &clock);
+        user_reward_manager
+            .populate(&mut pool_reward_manager, &clock)
+            .expect("It populates user reward manager");
+        user_reward_manager.set_share(&mut pool_reward_manager, 1);
+
+        pool_reward_manager
+            .add_pool_reward(slnd_vault, 0, reward_period, total_rewards, &clock)
+            .expect("It adds pool reward");
+
+        clock.unix_timestamp = reward_period as i64 / 2;
+
+        let not_cancelled_claimed_slnd = {
+            let mut pool_reward_manager = pool_reward_manager.clone();
+            let mut user_reward_manager = user_reward_manager.clone();
+
+            user_reward_manager
+                .claim_rewards(&mut pool_reward_manager, slnd_vault, &clock)
+                .expect("It claims rewards")
+        };
+
+        let edited_claimed_slnd = {
+            let mut pool_reward_manager = pool_reward_manager.clone();
+            let mut user_reward_manager = user_reward_manager.clone();
+
+            let pool_reward_index = 0;
+            let end_now = 0; // should be same as cancel really
+            pool_reward_manager
+                .edit_pool_reward(pool_reward_index, end_now, &clock)
+                .expect("It edits pool reward");
+
+            user_reward_manager
+                .claim_rewards(&mut pool_reward_manager, slnd_vault, &clock)
+                .expect("It claims rewards")
+        };
+
+        let canceled_claimed_slnd = {
+            let pool_reward_index = 0;
+            pool_reward_manager
+                .cancel_pool_reward(pool_reward_index, &clock)
+                .expect("It cancels pool reward");
+
+            user_reward_manager
+                .claim_rewards(&mut pool_reward_manager, slnd_vault, &clock)
+                .expect("It claims rewards")
+        };
+
+        assert_eq!(not_cancelled_claimed_slnd, canceled_claimed_slnd);
+        assert_eq!(edited_claimed_slnd, canceled_claimed_slnd);
+    }
+
+    #[test]
+    fn it_extends_reward() {
+        let slnd_vault = Pubkey::new_unique(); // where rewards are stored
+        let reward_period = 10 * MIN_REWARD_PERIOD_SECS as u64;
+        let total_rewards = 100 * 1_000_000;
+
+        let clock = Clock {
+            unix_timestamp: 0,
+            ..Default::default()
+        };
+
+        let mut pool_reward_manager = PoolRewardManager::default();
+
+        pool_reward_manager
+            .add_pool_reward(slnd_vault, 0, reward_period, total_rewards, &clock)
+            .expect("It adds pool reward");
+
+        let pool_reward_index = 0;
+        let (vault, amount) = pool_reward_manager
+            .edit_pool_reward(pool_reward_index, reward_period * 2, &clock)
+            .expect("It edits pool reward");
+
+        assert!(amount.is_positive());
+        assert_eq!(amount as u64, total_rewards);
+        assert_eq!(vault, slnd_vault);
+
+        let PoolRewardEntry::Occupied(pool_reward) =
+            &pool_reward_manager.pool_rewards[pool_reward_index]
+        else {
+            panic!("Expected pool reward to be occupied");
+        };
+
+        assert_eq!(pool_reward.total_rewards, total_rewards * 2);
+        assert_eq!(pool_reward.duration_secs, reward_period as u32 * 2);
+    }
+
+    proptest! {
+        #[test]
+        fn it_yields_expected_rewards_if_edited(
+            rng_seed in 0..u64::MAX,
+            user_count in 1..10usize,
+            reward_period in MIN_REWARD_PERIOD_SECS..1000*MIN_REWARD_PERIOD_SECS,
+            total_rewards in 1_000_000..10_000_000_000_000u64,
+        ) {
+            let mut rng = ChaCha8Rng::seed_from_u64(rng_seed);
+
+            let usdc = Pubkey::new_unique();
+            let position_kind = PositionKind::Deposit;
+            let foo_vault = Pubkey::new_unique(); // this one is not edited
+            let bar_vault = Pubkey::new_unique(); // we'll edit this one
+
+            let edit_reward_after_timestamp = rng.gen_range(
+                0..reward_period as i64 / 2,
+            );
+            let edit_bar_to_end_at_timestamp = rng.gen_range(
+                0..(reward_period * 2) as i64,
+            );
+
+            let mut clock = Clock {
+                unix_timestamp: 0,
+                ..Default::default()
+            };
+
+            let mut total_claimed_foo = 0;
+            let mut total_claimed_bar = 0;
+
+            let mut pool_reward_manager = PoolRewardManager::default();
+
+            // both rewards start identically
+
+            pool_reward_manager
+                .add_pool_reward(foo_vault, 0, reward_period as _, total_rewards, &clock)
+                .expect("It adds pool reward");
+
+            pool_reward_manager
+                .add_pool_reward(bar_vault, 0, reward_period as _, total_rewards, &clock)
+                .expect("It adds pool reward");
+
+            // all users start tracking the rewards with their respective shares
+
+            let mut user_reward_managers: Vec<_> = (0..user_count)
+                .map(|_| {
+                    let mut user_reward_manager = UserRewardManager::new(usdc, position_kind, &clock);
+
+                    user_reward_manager
+                        .populate(&mut pool_reward_manager, &clock)
+                        .expect("It populates user reward manager");
+
+                    let user_share = rng.gen_range(0..1_000);
+                    user_reward_manager.set_share(&mut pool_reward_manager, user_share);
+                    user_reward_manager
+                })
+                .collect();
+
+            while clock.unix_timestamp < edit_reward_after_timestamp {
+                clock.unix_timestamp += rng.gen_range(0..MIN_REWARD_PERIOD_SECS) as i64;
+
+                for user_reward_manager in &mut user_reward_managers {
+                    let claimed_foo = user_reward_manager
+                        .claim_rewards(&mut pool_reward_manager, foo_vault, &clock)
+                        .expect("It claims foo rewards");
+
+                    let claimed_bar = user_reward_manager
+                        .claim_rewards(&mut pool_reward_manager, bar_vault, &clock)
+                        .expect("It claims bar rewards");
+
+                    prop_assert_eq!(claimed_foo, claimed_bar);
+
+                    total_claimed_foo += claimed_foo;
+                    total_claimed_bar += claimed_bar;
+                }
+            }
+
+            // edit the second reward
+
+            let bar_reward_index = 1;
+            let (_, change_in_bar_reward) = pool_reward_manager
+                .edit_pool_reward(bar_reward_index, edit_bar_to_end_at_timestamp as _, &clock)
+                .expect("It edits bar pool reward");
+
+            // now keep claiming until both rewards end
+
+            loop {
+                clock.unix_timestamp += rng.gen_range(0..MIN_REWARD_PERIOD_SECS) as i64;
+
+                let has_foo_ended = match &pool_reward_manager.pool_rewards[0] {
+                    PoolRewardEntry::Occupied(pool_reward) => pool_reward.has_ended(&clock),
+                    _ => unreachable!(),
+                };
+
+                let has_bar_ended = match &pool_reward_manager.pool_rewards[1] {
+                    PoolRewardEntry::Occupied(pool_reward) => pool_reward.has_ended(&clock),
+                    _ => unreachable!(),
+                };
+
+                let neither_has_ended = !has_foo_ended && !has_bar_ended;
+
+                for user_reward_manager in &mut user_reward_managers {
+                    let claimed_foo = user_reward_manager
+                        .claim_rewards(&mut pool_reward_manager, foo_vault, &clock)
+                        .expect("It claims foo rewards");
+
+                    let claimed_bar = user_reward_manager
+                        .claim_rewards(&mut pool_reward_manager, bar_vault, &clock)
+                        .expect("It claims bar rewards");
+
+                    total_claimed_foo += claimed_foo;
+                    total_claimed_bar += claimed_bar;
+
+                    if neither_has_ended && claimed_foo != claimed_bar {
+                        // due to rounding errors we can be a little off
+                        let allowed_diff = 1;
+                        let allowed_min = claimed_foo.saturating_sub(allowed_diff);
+                        let allowed_range = allowed_min..=(claimed_foo + allowed_diff);
+                        prop_assert!(
+                            allowed_range.contains(&claimed_bar),
+                            "Expected foo and bar rewards to equal, but got {} and {}",
+                            claimed_foo,
+                            claimed_bar
+                        );
+                    }
+                }
+
+                if has_foo_ended && has_bar_ended {
+                    break;
+                }
+            }
+
+            // check that no more rewards can be claimed
+
+            for user_reward_manager in &mut user_reward_managers {
+                let claimed_foo = user_reward_manager
+                    .claim_rewards(&mut pool_reward_manager, foo_vault, &clock)
+                    .expect("It claims foo rewards");
+                prop_assert_eq!(claimed_foo, 0);
+
+                let claimed_bar = user_reward_manager
+                    .claim_rewards(&mut pool_reward_manager, bar_vault, &clock)
+                    .expect("It claims bar rewards");
+                prop_assert_eq!(claimed_bar, 0);
+            }
+
+            // check that the end state is what we'd expect
+
+            // User's claimed no more than total_rewards and not much less either.
+            // Due to rounding issues we're ok with distributing one less token per user.
+            let max_allowed_diff = user_count as u64;
+
+            let foo_allowed_range = (total_rewards - max_allowed_diff)..=total_rewards;
+            prop_assert!(
+                foo_allowed_range.contains(&total_claimed_foo),
+                "Foo claimed rewards {} not close to total rewards of {}..={}",
+                total_claimed_foo,
+                total_rewards - max_allowed_diff,
+                total_rewards
+            );
+
+            let expected_bar_total_rewards = (total_rewards as i64 + change_in_bar_reward) as u64;
+            let bar_allowed_range =
+                (expected_bar_total_rewards - max_allowed_diff)..=expected_bar_total_rewards;
+            prop_assert!(
+                bar_allowed_range.contains(&total_claimed_bar),
+                "Bar claimed rewards {} not close to total rewards of {}..={}",
+                total_claimed_bar,
+                expected_bar_total_rewards - max_allowed_diff,
+                expected_bar_total_rewards
+            );
+        }
+    }
+}
 
 #[cfg(test)]
 mod suilend_tests {
@@ -28,7 +358,7 @@ mod suilend_tests {
     use crate::{
         math::Decimal,
         state::{
-            PoolReward, PoolRewardId, PoolRewardManager, PoolRewardSlot, PositionKind,
+            PoolReward, PoolRewardEntry, PoolRewardId, PoolRewardManager, PositionKind,
             UserRewardManager, MAX_REWARDS,
         },
     };
@@ -64,7 +394,7 @@ mod suilend_tests {
                 .expect("It adds pool reward");
             assert_eq!(
                 pool_reward_manager.pool_rewards[0],
-                PoolRewardSlot::Occupied(Box::new(PoolReward {
+                PoolRewardEntry::Occupied(Box::new(PoolReward {
                     id: PoolRewardId(1),
                     vault: slnd_vault,
                     start_time_secs: 0,
@@ -390,11 +720,13 @@ mod suilend_tests {
         {
             clock.unix_timestamp = 10 * SECONDS_IN_A_DAY as i64;
 
+            let pool_reward_index = 0;
+            let new_end_time_secs = 0; // now
             let (from_vault, unallocated_rewards) = pool_reward_manager
-                .cancel_pool_reward(0, &clock)
+                .edit_pool_reward(pool_reward_index, new_end_time_secs, &clock)
                 .expect("It cancels pool reward");
             assert_eq!(from_vault, slnd_vault);
-            assert_eq!(unallocated_rewards, 50 * 1_000_000);
+            assert_eq!(unallocated_rewards, -50 * 1_000_000 + 1); // approx
         }
 
         {
@@ -456,11 +788,13 @@ mod suilend_tests {
         {
             clock.unix_timestamp = 10 * SECONDS_IN_A_DAY as i64;
 
+            let pool_reward_index = 0;
+            let new_end_time_secs = 0; // now
             let (from_vault, unallocated_rewards) = pool_reward_manager
-                .cancel_pool_reward(0, &clock)
+                .edit_pool_reward(pool_reward_index, new_end_time_secs, &clock)
                 .expect("It cancels pool reward");
             assert_eq!(from_vault, slnd_vault1);
-            assert_eq!(unallocated_rewards, 50 * 1_000_000);
+            assert_eq!(unallocated_rewards, -50 * 1_000_000 + 1); // approx
 
             clock.unix_timestamp = 15 * SECONDS_IN_A_DAY as i64;
             let claim_slnd = user_reward_manager_1
