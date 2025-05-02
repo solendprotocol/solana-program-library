@@ -1622,10 +1622,12 @@ impl Info<LendingMarket> {
     ) -> Result<(), BanksClientError> {
         let obligation = test.load_obligation(obligation.pubkey).await;
 
-        let refresh_ixs = self
-            .build_refresh_instructions(test, &obligation, None)
-            .await;
-        test.process_transaction(&refresh_ixs, None).await.unwrap();
+        if !obligation.account.borrows.is_empty() {
+            let refresh_ixs = self
+                .build_refresh_instructions(test, &obligation, None)
+                .await;
+            test.process_transaction(&refresh_ixs, None).await.unwrap();
+        }
 
         test.process_transaction(
             &[
