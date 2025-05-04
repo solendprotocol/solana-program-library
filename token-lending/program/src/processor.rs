@@ -1566,7 +1566,6 @@ fn _withdraw_obligation_collateral<'a>(
         u64::MAX
     };
 
-    msg!("G");
     let max_withdraw_amount = obligation.max_withdraw_amount(collateral, &withdraw_reserve)?;
     let withdraw_amount = min(
         collateral_amount,
