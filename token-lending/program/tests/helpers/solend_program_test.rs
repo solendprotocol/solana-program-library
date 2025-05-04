@@ -948,8 +948,7 @@ impl Info<LendingMarket> {
         let (reward_authority_pda, reward_authority_bump) = find_reward_vault_authority(
             &solend_program::id(),
             &self.pubkey,
-            &reserve.pubkey,
-            &reward.mint,
+            &reward.vault.pubkey(),
         );
 
         let instructions = [
@@ -998,8 +997,7 @@ impl Info<LendingMarket> {
         let (reward_authority_pda, reward_authority_bump) = find_reward_vault_authority(
             &solend_program::id(),
             &self.pubkey,
-            &reserve.pubkey,
-            &reward.mint,
+            &reward.vault.pubkey(),
         );
 
         let instructions = [
@@ -1036,8 +1034,7 @@ impl Info<LendingMarket> {
         let (reward_authority_pda, reward_authority_bump) = find_reward_vault_authority(
             &solend_program::id(),
             &self.pubkey,
-            &reserve.pubkey,
-            &reward.mint,
+            &reward.vault.pubkey(),
         );
 
         let instructions = [
@@ -1073,8 +1070,7 @@ impl Info<LendingMarket> {
         let (reward_authority_pda, reward_authority_bump) = find_reward_vault_authority(
             &solend_program::id(),
             &self.pubkey,
-            &reserve.pubkey,
-            &reward.mint,
+            &reward.vault.pubkey(),
         );
 
         let instructions = [

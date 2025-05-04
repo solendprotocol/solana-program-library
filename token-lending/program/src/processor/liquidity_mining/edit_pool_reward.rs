@@ -45,12 +45,12 @@ struct EditPoolRewardAccounts<'a, 'info> {
     /// ✅ is writable
     _reserve_info: &'a AccountInfo<'info>,
     /// ✅ belongs to the token program
-    reward_mint_info: &'a AccountInfo<'info>,
+    _reward_mint_info: &'a AccountInfo<'info>,
     /// ✅ belongs to the token program
     /// ✅ matches `reward_mint_info`
     /// ✅ is writable
     lending_market_reward_token_account_info: &'a AccountInfo<'info>,
-    /// ✅ seed of `lending_market_info`, `reserve_info`, `reward_mint_info`
+    /// ✅ seed of `lending_market_info`, `reward_token_vault_info`
     reward_authority_info: &'a AccountInfo<'info>,
     /// ❓ we don't know whether it matches the reward vault pubkey stored in [Reserve]
     /// ✅ is writable
@@ -124,8 +124,7 @@ pub(crate) fn process(
             authority_signer_seeds: &[
                 reward_vault_authority_seeds(
                     accounts.lending_market_info.key,
-                    &accounts.reserve.key(),
-                    accounts.reward_mint_info.key,
+                    accounts.reward_token_vault_info.key,
                 )
                 .as_slice(),
                 &[&[reward_authority_bump]],
@@ -160,6 +159,7 @@ impl<'a, 'info> EditPoolRewardAccounts<'a, 'info> {
                 reward_authority_info,
                 lending_market_info,
                 token_program_info,
+                reward_token_vault_info,
             },
             lending_market_owner_info,
         )?;
@@ -192,7 +192,7 @@ impl<'a, 'info> EditPoolRewardAccounts<'a, 'info> {
 
         Ok(Self {
             _reserve_info: reserve_info,
-            reward_mint_info,
+            _reward_mint_info: reward_mint_info,
             lending_market_reward_token_account_info: reward_token_destination_info,
             reward_authority_info,
             reward_token_vault_info,

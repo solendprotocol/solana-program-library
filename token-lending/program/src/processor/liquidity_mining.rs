@@ -48,6 +48,7 @@ struct CheckAndUnpackPoolRewardAccounts<'a, 'info> {
     reward_authority_info: &'a AccountInfo<'info>,
     lending_market_info: &'a AccountInfo<'info>,
     token_program_info: &'a AccountInfo<'info>,
+    reward_token_vault_info: &'a AccountInfo<'info>,
 }
 
 /// Does all the checks of [check_and_unpack_pool_reward_accounts] and additionally:
@@ -83,7 +84,7 @@ fn check_and_unpack_pool_reward_accounts_for_admin_ixs<'a, 'info>(
 /// * ✅ `lending_market_info` unpacks
 /// * ✅ `token_program_info` matches `lending_market_info`
 /// * ✅ `reward_mint_info` belongs to the token program
-/// * ✅ `reward_authority_info` is seed of `lending_market_info`, `reserve_info`, `reward_mint_info`
+/// * ✅ `reward_authority_info` is seed of `lending_market_info`, `reward_token_vault_info`
 fn check_and_unpack_pool_reward_accounts<'a, 'info>(
     program_id: &Pubkey,
     bumps: Bumps,
@@ -93,6 +94,7 @@ fn check_and_unpack_pool_reward_accounts<'a, 'info>(
         reward_authority_info,
         lending_market_info,
         token_program_info,
+        reward_token_vault_info,
     }: CheckAndUnpackPoolRewardAccounts<'a, 'info>,
 ) -> Result<(LendingMarket, ReserveBorrow<'a, 'info>), ProgramError> {
     let reserve = ReserveBorrow::new_mut(program_id, reserve_info)?;
@@ -121,8 +123,7 @@ fn check_and_unpack_pool_reward_accounts<'a, 'info>(
     let expected_reward_vault_authority = create_reward_vault_authority(
         program_id,
         lending_market_info.key,
-        reserve_info.key,
-        reward_mint_info.key,
+        reward_token_vault_info.key,
         bumps.reward_authority,
     )?;
     if expected_reward_vault_authority != *reward_authority_info.key {
@@ -244,7 +245,7 @@ mod tests {
             .expect_err("Should fail");
     }
 
-    /// ❌ `reward_authority_info` is seed of `lending_market_info`, `reserve_info`, `reward_mint_info`
+    /// ❌ `reward_authority_info` is seed of `lending_market_info`, `reward_token_vault_info`
     #[test]
     fn test_fails_if_reward_authority_info_is_not_seed() {
         let (mut account_info_builders, og_bumps) =
@@ -256,8 +257,7 @@ mod tests {
         let (new_reward_authority, new_reward_authority_bump) = find_reward_vault_authority(
             &crate::id(),
             &Pubkey::new_unique(),
-            &account_info_builders.reserve.key,
-            &account_info_builders.mint.key,
+            &account_info_builders.reward_token_vault.key,
         );
         account_info_builders.reward_authority.key = new_reward_authority;
         account_info_builders
@@ -270,31 +270,11 @@ mod tests {
             )
             .expect_err("Should fail");
 
-        // wrong reserve
+        // wrong vault
 
         let (new_reward_authority, new_reward_authority_bump) = find_reward_vault_authority(
             &crate::id(),
             &account_info_builders.lending_market.key,
-            &Pubkey::new_unique(),
-            &account_info_builders.mint.key,
-        );
-        account_info_builders.reward_authority.key = new_reward_authority;
-        account_info_builders
-            .clone()
-            .check_and_unpack_pool_reward_accounts(
-                crate::id(),
-                Bumps {
-                    reward_authority: new_reward_authority_bump,
-                },
-            )
-            .expect_err("Should fail");
-
-        // wrong mint
-
-        let (new_reward_authority, new_reward_authority_bump) = find_reward_vault_authority(
-            &crate::id(),
-            &account_info_builders.lending_market.key,
-            &account_info_builders.reserve.key,
             &Pubkey::new_unique(),
         );
         account_info_builders.reward_authority.key = new_reward_authority;
@@ -361,6 +341,7 @@ mod tests {
         reserve: AccountInfoBuilder,
         reward_authority: AccountInfoBuilder,
         token_program: AccountInfoBuilder,
+        reward_token_vault: AccountInfoBuilder,
     }
 
     #[derive(Clone)]
@@ -394,10 +375,10 @@ mod tests {
                 lending_market: lending_market.key,
                 ..Default::default()
             });
+            let reward_token_vault = AccountInfoBuilder::new_reward_token_vault();
             let (reward_authority, bumps) = AccountInfoBuilder::new_reward_authority(
                 &lending_market.key,
-                &reserve.key,
-                &mint.key,
+                &reward_token_vault.key,
             );
 
             (
@@ -408,6 +389,7 @@ mod tests {
                     reserve,
                     reward_authority,
                     token_program,
+                    reward_token_vault,
                 },
                 bumps,
             )
@@ -423,6 +405,7 @@ mod tests {
             let reserve_info = self.reserve.as_account_info();
             let reward_authority_info = self.reward_authority.as_account_info();
             let token_program_info = self.token_program.as_account_info();
+            let reward_token_vault_info = self.reward_token_vault.as_account_info();
 
             check_and_unpack_pool_reward_accounts(
                 &program_id,
@@ -433,6 +416,7 @@ mod tests {
                     reward_authority_info: &reward_authority_info,
                     reward_mint_info: &mint_info,
                     token_program_info: &token_program_info,
+                    reward_token_vault_info: &reward_token_vault_info,
                 },
             )
             .map(drop)
@@ -449,6 +433,7 @@ mod tests {
             let reward_authority_info = self.reward_authority.as_account_info();
             let token_program_info = self.token_program.as_account_info();
             let lending_market_owner_info = self.lending_market_owner.as_account_info();
+            let reward_token_vault_info = self.reward_token_vault.as_account_info();
 
             check_and_unpack_pool_reward_accounts_for_admin_ixs(
                 &program_id,
@@ -459,6 +444,7 @@ mod tests {
                     reward_authority_info: &reward_authority_info,
                     reward_mint_info: &mint_info,
                     token_program_info: &token_program_info,
+                    reward_token_vault_info: &reward_token_vault_info,
                 },
                 &lending_market_owner_info,
             )
@@ -549,14 +535,12 @@ mod tests {
 
         fn new_reward_authority(
             lending_market_key: &Pubkey,
-            reserve_key: &Pubkey,
-            reward_mint_key: &Pubkey,
+            reward_token_vault_key: &Pubkey,
         ) -> (Self, Bumps) {
             let (key, bump) = find_reward_vault_authority(
                 &crate::id(),
                 lending_market_key,
-                reserve_key,
-                reward_mint_key,
+                reward_token_vault_key,
             );
 
             let s = Self {
@@ -587,6 +571,19 @@ mod tests {
                 rent_epoch: 0,
                 is_signer: true,
                 is_writable: false,
+                is_executable: false,
+            }
+        }
+
+        fn new_reward_token_vault() -> Self {
+            Self {
+                key: Pubkey::new_unique(),
+                lamports: 0,
+                data: vec![],
+                owner: spl_token::id(),
+                rent_epoch: 0,
+                is_signer: false,
+                is_writable: true,
                 is_executable: false,
             }
         }
