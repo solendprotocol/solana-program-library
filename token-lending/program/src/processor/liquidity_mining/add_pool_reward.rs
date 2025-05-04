@@ -157,6 +157,7 @@ impl<'a, 'info> AddPoolRewardAccounts<'a, 'info> {
                 reward_authority_info,
                 lending_market_info,
                 token_program_info,
+                reward_token_vault_info,
             },
             lending_market_owner_info,
         )?;

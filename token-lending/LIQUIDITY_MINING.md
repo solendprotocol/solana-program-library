@@ -50,13 +50,9 @@ A reward vault authority is a PDA that is used to sign CPIs into the token progr
 [
     b"RewardVaultAuthority",
     lending_market_key,
-    reserve_key,
-    reward_mint_key,
+    vault_token_account_key,
 ]
 ```
-
-> TBD: Should we use the reward vault token account pubkey instead to create a 1-1 relationship between the authority and the vault?
-> What will be easier for the clients to use?
 
 ### `add_pool_reward`
 
@@ -224,11 +220,13 @@ A lending market will be automatically upgraded on the first mutable ix.
 
 ## Outstanding work
 
-- [ ] Review feature parity with Suilend
+- [x] Review feature parity with Suilend
+  - Looped rewards are not implemented but that's ok
 - [ ] Consider changing the reward vault authority seed
 - [ ] Consider having another admin account to manage the rewards
-- [ ] Consider spending some rent to the obligations from the reclaimed merkle-tree reward distributor
-- [ ] Discuss CU limits with the Save client team
+- [x] Consider spending some rent to the obligations from the reclaimed merkle-tree reward distributor
+  - We will fund the obligations to support some of the extra rent
+- [x] Discuss CU limits with the Save client team
 
 <!-- List of References -->
 

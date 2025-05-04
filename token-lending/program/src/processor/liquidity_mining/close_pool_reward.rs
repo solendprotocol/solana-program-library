@@ -32,9 +32,9 @@ struct ClosePoolRewardAccounts<'a, 'info> {
     /// ✅ unpacks
     /// ✅ belongs to `lending_market_info`
     /// ✅ is writable
-    reserve_info: &'a AccountInfo<'info>,
+    _reserve_info: &'a AccountInfo<'info>,
     /// ✅ belongs to the token program
-    reward_mint_info: &'a AccountInfo<'info>,
+    _reward_mint_info: &'a AccountInfo<'info>,
     /// ✅ belongs to the token program
     /// ✅ owned by `lending_market_owner_info`
     /// ✅ matches `reward_mint_info`
@@ -96,8 +96,7 @@ pub(crate) fn process(
     let signer_seeds = [
         reward_vault_authority_seeds(
             accounts.lending_market_info.key,
-            accounts.reserve_info.key,
-            accounts.reward_mint_info.key,
+            accounts.reward_token_vault_info.key,
         )
         .as_slice(),
         &[&bump_seed],
@@ -159,6 +158,7 @@ impl<'a, 'info> ClosePoolRewardAccounts<'a, 'info> {
                 reward_authority_info,
                 lending_market_info,
                 token_program_info,
+                reward_token_vault_info,
             },
             lending_market_owner_info,
         )?;
@@ -196,8 +196,8 @@ impl<'a, 'info> ClosePoolRewardAccounts<'a, 'info> {
         }
 
         Ok(Self {
-            reserve_info,
-            reward_mint_info,
+            _reserve_info: reserve_info,
+            _reward_mint_info: reward_mint_info,
             reward_token_destination_info,
             reward_authority_info,
             reward_token_vault_info,

@@ -542,8 +542,7 @@ pub enum LendingInstruction {
     ///    `[]` Derived reserve pool reward authority. Seed:
     ///         * b"RewardVaultAuthority"
     ///         * Lending market account pubkey
-    ///         * Reserve account pubkey
-    ///         * Reward mint pubkey
+    ///         * Vault token account pubkey
     ///    `[writable]` Uninitialized rent-exempt account that will hold reward tokens.
     ///    `[]` Lending market account.
     ///    `[signer]` Lending market owner.
@@ -575,8 +574,7 @@ pub enum LendingInstruction {
     ///    `[]` Derived reserve pool reward authority. Seed:
     ///         * b"RewardVaultAuthority"
     ///         * Lending market account pubkey
-    ///         * Reserve account pubkey
-    ///         * Reward mint pubkey
+    ///         * Vault token account pubkey
     ///    `[writable]` Reward vault token account.
     ///    `[]` Lending market account.
     ///    `[signer]` Lending market owner.
@@ -606,8 +604,7 @@ pub enum LendingInstruction {
     ///    `[]` Derived reserve pool reward authority. Seed:
     ///         * b"RewardVaultAuthority"
     ///         * Lending market account pubkey
-    ///         * Reserve account pubkey
-    ///         * Reward mint pubkey
+    ///         * Vault token account pubkey
     ///    `[writable]` Reward vault token account.
     ///    `[]` Lending market account.
     ///    `[signer]` Lending market owner.
@@ -637,8 +634,7 @@ pub enum LendingInstruction {
     ///   `[]` Derived reserve pool reward authority. Seed:
     ///        * b"RewardVaultAuthority"
     ///        * Lending market account pubkey
-    ///        * Reserve account pubkey
-    ///        * Reward mint pubkey
+    ///        * Vault token account pubkey
     ///   `[writable]` Reward vault token account.
     ///   `[]` Lending market account.
     ///   `[]` Token program.
@@ -2272,8 +2268,7 @@ pub fn close_pool_reward(
 ///   `[]` Derived reserve pool reward authority. Seed:
 ///        * b"RewardVaultAuthority"
 ///        * Lending market account pubkey
-///        * Reserve account pubkey
-///        * Reward mint pubkey
+///        * Vault token account pubkey
 ///   `[writable]` Reward vault token account.
 ///   `[]` Lending market account.
 ///   `[]` Token program.
@@ -2314,11 +2309,10 @@ pub fn claim_pool_reward(
 pub fn find_reward_vault_authority(
     program_id: &Pubkey,
     lending_market_key: &Pubkey,
-    reserve_key: &Pubkey,
-    reward_mint_key: &Pubkey,
+    reward_token_vault_key: &Pubkey,
 ) -> (Pubkey, u8) {
     Pubkey::find_program_address(
-        &reward_vault_authority_seeds(lending_market_key, reserve_key, reward_mint_key),
+        &reward_vault_authority_seeds(lending_market_key, reward_token_vault_key),
         program_id,
     )
 }
@@ -2327,14 +2321,12 @@ pub fn find_reward_vault_authority(
 pub fn create_reward_vault_authority(
     program_id: &Pubkey,
     lending_market_key: &Pubkey,
-    reserve_key: &Pubkey,
-    reward_mint_key: &Pubkey,
+    reward_token_vault_key: &Pubkey,
     bump: u8,
 ) -> Result<Pubkey, solana_program::pubkey::PubkeyError> {
     Pubkey::create_program_address(
         &[
-            reward_vault_authority_seeds(lending_market_key, reserve_key, reward_mint_key)
-                .as_slice(),
+            reward_vault_authority_seeds(lending_market_key, reward_token_vault_key).as_slice(),
             &[&[bump]],
         ]
         .concat(),
@@ -2345,14 +2337,12 @@ pub fn create_reward_vault_authority(
 /// Returns seeds to derive the reward vault authority PDA address.
 pub fn reward_vault_authority_seeds<'keys>(
     lending_market_key: &'keys Pubkey,
-    reserve_key: &'keys Pubkey,
-    reward_mint_key: &'keys Pubkey,
-) -> [&'keys [u8]; 4] {
+    reward_token_vault_key: &'keys Pubkey,
+) -> [&'keys [u8]; 3] {
     [
         b"RewardVaultAuthority",
         lending_market_key.as_ref(),
-        reserve_key.as_ref(),
-        reward_mint_key.as_ref(),
+        reward_token_vault_key.as_ref(),
     ]
 }
 
