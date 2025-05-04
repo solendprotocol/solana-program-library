@@ -44,7 +44,7 @@ struct AddPoolRewardAccounts<'a, 'info> {
     /// ✅ matches `reward_mint_info`
     /// ✅ is writable
     reward_token_source_info: &'a AccountInfo<'info>,
-    /// ✅ seed of `lending_market_info`, `reserve_info`, `reward_mint_info`
+    /// ✅ seed of `lending_market_info`, `reward_token_vault_info`
     reward_authority_info: &'a AccountInfo<'info>,
     /// ✅ belongs to the token program
     /// ✅ has no data

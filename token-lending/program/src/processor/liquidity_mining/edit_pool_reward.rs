@@ -50,7 +50,7 @@ struct EditPoolRewardAccounts<'a, 'info> {
     /// ✅ matches `reward_mint_info`
     /// ✅ is writable
     lending_market_reward_token_account_info: &'a AccountInfo<'info>,
-    /// ✅ seed of `lending_market_info`, `reserve_info`, `reward_mint_info`
+    /// ✅ seed of `lending_market_info`, `reward_token_vault_info`
     reward_authority_info: &'a AccountInfo<'info>,
     /// ❓ we don't know whether it matches the reward vault pubkey stored in [Reserve]
     /// ✅ is writable

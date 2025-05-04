@@ -84,7 +84,7 @@ fn check_and_unpack_pool_reward_accounts_for_admin_ixs<'a, 'info>(
 /// * ✅ `lending_market_info` unpacks
 /// * ✅ `token_program_info` matches `lending_market_info`
 /// * ✅ `reward_mint_info` belongs to the token program
-/// * ✅ `reward_authority_info` is seed of `lending_market_info`, `vault_info`
+/// * ✅ `reward_authority_info` is seed of `lending_market_info`, `reward_token_vault_info`
 fn check_and_unpack_pool_reward_accounts<'a, 'info>(
     program_id: &Pubkey,
     bumps: Bumps,
@@ -245,7 +245,7 @@ mod tests {
             .expect_err("Should fail");
     }
 
-    /// ❌ `reward_authority_info` is seed of `lending_market_info`, `reserve_info`, `reward_mint_info`
+    /// ❌ `reward_authority_info` is seed of `lending_market_info`, `reward_token_vault_info`
     #[test]
     fn test_fails_if_reward_authority_info_is_not_seed() {
         let (mut account_info_builders, og_bumps) =
