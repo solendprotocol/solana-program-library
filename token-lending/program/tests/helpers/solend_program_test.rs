@@ -2028,15 +2028,19 @@ pub async fn custom_scenario(
                 .await
                 .unwrap();
         }
+    }
 
-        if obligation_arg.should_refresh {
-            lending_market
-                .refresh_obligation(&mut test, obligation)
-                .await
-                .unwrap();
+    for obligation in obligations
+        .iter_mut()
+        .zip(obligation_args.iter())
+        .filter_map(|(obligation, arg)| arg.should_refresh.then_some(obligation))
+    {
+        lending_market
+            .refresh_obligation(&mut test, obligation)
+            .await
+            .unwrap();
 
-            *obligation = test.load_account::<Obligation>(obligation.pubkey).await;
-        }
+        *obligation = test.load_account::<Obligation>(obligation.pubkey).await;
     }
 
     // load accounts into reserve
