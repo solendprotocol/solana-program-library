@@ -222,7 +222,7 @@ A lending market will be automatically upgraded on the first mutable ix.
 
 - [x] Review feature parity with Suilend
   - Looped rewards are not implemented but that's ok
-- [ ] Consider changing the reward vault authority seed
+- [x] Consider changing the reward vault authority seed
 - [ ] Consider having another admin account to manage the rewards
 - [x] Consider spending some rent to the obligations from the reclaimed merkle-tree reward distributor
   - We will fund the obligations to support some of the extra rent
