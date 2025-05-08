@@ -1,6 +1,6 @@
 [package]
 name = "solend-program-cli"
-version.workspace = true
+version = "2.1.0"
 authors = ["Solend Maintainers <maintainers@solend.fi>"]
 description = "Solend Program CLI"
 edition = "2018"

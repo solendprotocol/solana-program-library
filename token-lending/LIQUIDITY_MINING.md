@@ -73,7 +73,7 @@ Users will still be able to claim rewards they accrued until this point.
 #### Cancel
 
 Cancelling a pool reward can be done by setting the end time to 0.
-Note that only rewards longer than [solend_sdk::MIN_REWARD_PERIOD_SECS] can be cancelled.
+Note that only rewards longer than `solend_sdk::MIN_REWARD_PERIOD_SECS` can be cancelled.
 In this case we transfer tokens from the reward vault to the lending market reward token account.
 
 #### Shorten
