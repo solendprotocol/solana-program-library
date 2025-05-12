@@ -14,7 +14,9 @@
 if [[ -n $SOLANA_VERSION ]]; then
   solana_version="$SOLANA_VERSION"
 else
-  solana_version=v1.16.20
+  # we use 1.16.20 for sdk but this version has been deleted from the solana servers so we use
+  # this version's CLI instead
+  solana_version=v1.17.34
 fi
 
 export solana_version="$solana_version"
@@ -23,7 +25,7 @@ export PATH="$HOME"/.local/share/solana/install/active_release/bin:"$PATH"
 if [[ -n $1 ]]; then
   case $1 in
   install)
-    sh -c "$(curl -sSfL https://release.solana.com/$solana_version/install)"
+    sh -c "$(curl -sSfL https://release.anza.xyz/$solana_version/install)"
     solana --version
     ;;
   *)
