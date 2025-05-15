@@ -1544,7 +1544,7 @@ fn _withdraw_obligation_collateral<'a>(
         // the actual value doesn't matter too much as long as its sensible
         let max_outflow_usd_capped = min(
             max_outflow_usd,
-            Decimal::from(10_000_000_000_000u64), // enough USD to cover all requests
+            Decimal::from(100_000_000_000u64), // enough USD to cover all requests
         );
 
         let max_lending_market_outflow_liquidity_amount =
