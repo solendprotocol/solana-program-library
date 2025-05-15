@@ -1535,22 +1535,25 @@ fn _withdraw_obligation_collateral<'a>(
     // account for lending market and reserve rate limiter when withdrawing. this is needed to
     // support max withdraws.
     let max_outflow_collateral_amount = if account_for_rate_limiter {
-        let max_reserve_outflow_liquidity_amount = withdraw_reserve
-            .rate_limiter
-            .clone()
-            .remaining_outflow(clock.slot)?;
-
         let max_outflow_usd = lending_market
             .rate_limiter
             .clone() // remaining_outflow is a mutable call, but we don't have mutable access here
             .remaining_outflow(clock.slot)?;
 
-        // Because the max_outflow_usd can be an large number we can get an overflow error.
-        // However, we don't actually care about large values because we're taking `min`.
-        // So just default to `max_reserve_outflow_liquidity_amount` if we overflow.
-        let max_lending_market_outflow_liquidity_amount = withdraw_reserve
-            .usd_to_liquidity_amount_lower_bound(max_outflow_usd)
-            .unwrap_or(max_reserve_outflow_liquidity_amount);
+        // min here bc this function can overflow if max_outflow_usd is u64::MAX
+        // the actual value doesn't matter too much as long as its sensible
+        let max_outflow_usd_capped = min(
+            max_outflow_usd,
+            Decimal::from(10_000_000_000_000u64), // enough USD to cover all requests
+        );
+
+        let max_lending_market_outflow_liquidity_amount =
+            withdraw_reserve.usd_to_liquidity_amount_lower_bound(max_outflow_usd_capped)?;
+
+        let max_reserve_outflow_liquidity_amount = withdraw_reserve
+            .rate_limiter
+            .clone()
+            .remaining_outflow(clock.slot)?;
 
         let max_outflow_liquidity_amount = min(
             max_lending_market_outflow_liquidity_amount,
@@ -1560,8 +1563,7 @@ fn _withdraw_obligation_collateral<'a>(
         withdraw_reserve
             .collateral_exchange_rate()?
             .decimal_liquidity_to_collateral(max_outflow_liquidity_amount)?
-            .try_floor_u64()
-            .unwrap_or(u64::MAX)
+            .try_floor_u64()?
     } else {
         u64::MAX
     };
