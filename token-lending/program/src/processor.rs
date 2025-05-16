@@ -1540,13 +1540,15 @@ fn _withdraw_obligation_collateral<'a>(
             .clone() // remaining_outflow is a mutable call, but we don't have mutable access here
             .remaining_outflow(clock.slot)?;
 
-        let max_lending_market_outflow_liquidity_amount = withdraw_reserve
-            .usd_to_liquidity_amount_lower_bound(min(
-                max_outflow_usd,
-                // min here bc this function can overflow if max_outflow_usd is u64::MAX
-                // the actual value doesn't matter too much as long as its sensible
-                obligation.deposited_value.try_mul(2)?,
-            ))?;
+        // min here bc this function can overflow if max_outflow_usd is u64::MAX
+        // the actual value doesn't matter too much as long as its sensible
+        let max_outflow_usd_capped = min(
+            max_outflow_usd,
+            Decimal::from(100_000_000_000u64), // enough USD to cover all requests
+        );
+
+        let max_lending_market_outflow_liquidity_amount =
+            withdraw_reserve.usd_to_liquidity_amount_lower_bound(max_outflow_usd_capped)?;
 
         let max_reserve_outflow_liquidity_amount = withdraw_reserve
             .rate_limiter

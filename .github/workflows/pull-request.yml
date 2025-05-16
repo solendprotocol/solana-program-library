@@ -3,11 +3,11 @@ name: Pull Request
 on:
   pull_request:
     paths-ignore:
-    - 'docs/**'
+      - "docs/**"
   push:
     branches: [master, upcoming]
     paths-ignore:
-    - 'docs/**'
+      - "docs/**"
 
 jobs:
   all_github_action_checks:

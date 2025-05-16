@@ -66,6 +66,7 @@ async fn test_borrow() {
         &[ObligationArgs {
             deposits: vec![(usdc_mint::id(), 100 * FRACTIONAL_TO_USDC)],
             borrows: vec![(wsol_mint::id(), LAMPORTS_PER_SOL)],
+            ..Default::default()
         }],
     )
     .await;
@@ -204,6 +205,7 @@ async fn test_withdraw() {
                 (usdt_mint::id(), 20 * FRACTIONAL_TO_USDC),
             ],
             borrows: vec![(wsol_mint::id(), LAMPORTS_PER_SOL)],
+            ..Default::default()
         }],
     )
     .await;
@@ -340,6 +342,7 @@ async fn test_liquidation_doesnt_use_smoothed_price() {
         &[ObligationArgs {
             deposits: vec![(usdc_mint::id(), 100 * FRACTIONAL_TO_USDC)],
             borrows: vec![(wsol_mint::id(), LAMPORTS_PER_SOL)],
+            ..Default::default()
         }],
     )
     .await;
