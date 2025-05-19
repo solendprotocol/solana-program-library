@@ -94,6 +94,7 @@ async fn test_refresh_obligation() {
                         (usdc_mint::id(), 10 * FRACTIONAL_TO_USDC),
                         (wsol_mint::id(), LAMPORTS_PER_SOL),
                     ],
+                    ..Default::default()
                 },
                 ObligationArgs {
                     deposits: vec![
@@ -104,6 +105,7 @@ async fn test_refresh_obligation() {
                         (usdc_mint::id(), 100 * FRACTIONAL_TO_USDC),
                         (wsol_mint::id(), 2 * LAMPORTS_PER_SOL),
                     ],
+                    ..Default::default()
                 },
             ],
         )
@@ -232,6 +234,7 @@ async fn test_calculations() {
                         (usdc_mint::id(), 10 * FRACTIONAL_TO_USDC),
                         (wsol_mint::id(), LAMPORTS_PER_SOL),
                     ],
+                    ..Default::default()
                 },
                 ObligationArgs {
                     deposits: vec![
@@ -242,6 +245,7 @@ async fn test_calculations() {
                         (usdc_mint::id(), 100 * FRACTIONAL_TO_USDC),
                         (wsol_mint::id(), 2 * LAMPORTS_PER_SOL),
                     ],
+                    ..Default::default()
                 },
             ],
         )
@@ -616,6 +620,7 @@ async fn test_withdraw() {
                     (wsol_mint::id(), 2 * LAMPORTS_PER_SOL),
                 ],
                 borrows: vec![(usdc_mint::id(), 10 * FRACTIONAL_TO_USDC)],
+                ..Default::default()
             }],
         )
         .await;
@@ -813,6 +818,7 @@ async fn test_liquidate() {
             &[ObligationArgs {
                 deposits: vec![(usdc_mint::id(), FRACTIONAL_TO_USDC / 2)],
                 borrows: vec![(wsol_mint::id(), LAMPORTS_PER_SOL / 40)],
+                ..Default::default()
             }],
         )
         .await;

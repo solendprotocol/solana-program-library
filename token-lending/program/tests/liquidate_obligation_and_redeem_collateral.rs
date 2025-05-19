@@ -627,6 +627,7 @@ async fn test_liquidity_ordering() {
                     (wsol_mint::id(), LAMPORTS_PER_SOL),
                     (usdc_mint::id(), FRACTIONAL_TO_USDC),
                 ],
+                ..Default::default()
             }],
         )
         .await;
@@ -756,6 +757,7 @@ async fn test_liquidate_closeable_obligation() {
             &[ObligationArgs {
                 deposits: vec![(usdc_mint::id(), 20 * FRACTIONAL_TO_USDC)],
                 borrows: vec![(wsol_mint::id(), LAMPORTS_PER_SOL)],
+                ..Default::default()
             }],
         )
         .await;
