@@ -71,6 +71,7 @@ async fn test_refresh_obligation() {
         &[ObligationArgs {
             deposits: vec![(usdc_mint::id(), 100 * FRACTIONAL_TO_USDC)],
             borrows: vec![],
+            ..Default::default()
         }],
     )
     .await;
@@ -202,6 +203,7 @@ async fn borrow_isolated_asset() {
         &[ObligationArgs {
             deposits: vec![(usdc_mint::id(), 100 * FRACTIONAL_TO_USDC)],
             borrows: vec![],
+            ..Default::default()
         }],
     )
     .await;
@@ -298,6 +300,7 @@ async fn borrow_isolated_asset_invalid() {
         &[ObligationArgs {
             deposits: vec![(usdc_mint::id(), 100 * FRACTIONAL_TO_USDC)],
             borrows: vec![(wsol_mint::id(), 1)],
+            ..Default::default()
         }],
     )
     .await;
@@ -383,6 +386,7 @@ async fn borrow_regular_asset_invalid() {
         &[ObligationArgs {
             deposits: vec![(usdc_mint::id(), 100 * FRACTIONAL_TO_USDC)],
             borrows: vec![(bonk_mint::id(), 1)],
+            ..Default::default()
         }],
     )
     .await;
@@ -478,6 +482,7 @@ async fn invalid_borrow_due_to_reserve_config_change() {
             &[ObligationArgs {
                 deposits: vec![(usdc_mint::id(), 100 * FRACTIONAL_TO_USDC)],
                 borrows: vec![(bonk_mint::id(), 1), (wsol_mint::id(), LAMPORTS_PER_SOL)],
+                ..Default::default()
             }],
         )
         .await;

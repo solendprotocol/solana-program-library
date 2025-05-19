@@ -565,6 +565,7 @@ async fn test_borrow_max_rate_limiter() {
             &[ObligationArgs {
                 deposits: vec![(usdc_mint::id(), 100 * FRACTIONAL_TO_USDC)],
                 borrows: vec![],
+                ..Default::default()
             }],
         )
         .await;

@@ -79,10 +79,12 @@ async fn test_forgive_debt_success_easy() {
                 ObligationArgs {
                     deposits: vec![(usdc_mint::id(), 20 * FRACTIONAL_TO_USDC)],
                     borrows: vec![(wsol_mint::id(), LAMPORTS_PER_SOL)],
+                    ..Default::default()
                 },
                 ObligationArgs {
                     deposits: vec![(wsol_mint::id(), LAMPORTS_PER_SOL)],
                     borrows: vec![],
+                    ..Default::default()
                 },
             ],
         )
@@ -278,6 +280,7 @@ async fn test_forgive_debt_fail_invalid_signer() {
             &[ObligationArgs {
                 deposits: vec![(usdc_mint::id(), 200 * FRACTIONAL_TO_USDC)],
                 borrows: vec![(wsol_mint::id(), 10 * LAMPORTS_PER_SOL)],
+                ..Default::default()
             }],
         )
         .await;
@@ -379,6 +382,7 @@ async fn test_forgive_debt_fail_no_signer() {
             &[ObligationArgs {
                 deposits: vec![(usdc_mint::id(), 200 * FRACTIONAL_TO_USDC)],
                 borrows: vec![(wsol_mint::id(), 10 * LAMPORTS_PER_SOL)],
+                ..Default::default()
             }],
         )
         .await;

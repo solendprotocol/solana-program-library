@@ -2152,6 +2152,17 @@ pub struct ReserveArgs {
 pub struct ObligationArgs {
     pub deposits: Vec<(Pubkey, u64)>,
     pub borrows: Vec<(Pubkey, u64)>,
+    pub should_refresh: bool,
+}
+
+impl Default for ObligationArgs {
+    fn default() -> Self {
+        ObligationArgs {
+            deposits: vec![],
+            borrows: vec![],
+            should_refresh: true,
+        }
+    }
 }
 
 pub async fn custom_scenario(
@@ -2264,17 +2275,19 @@ pub async fn custom_scenario(
         }
     }
 
-    for (i, obligation_arg) in obligation_args.iter().enumerate() {
+    for ((obligation, obligation_owner), obligation_arg) in obligations
+        .iter_mut()
+        .zip(obligation_owners.iter_mut())
+        .zip(obligation_args.iter())
+    {
         for (mint, amount) in obligation_arg.borrows.iter() {
             let reserve = reserves
                 .iter()
                 .find(|reserve| reserve.account.liquidity.mint_pubkey == *mint)
                 .unwrap();
 
-            obligation_owners[i]
-                .create_token_account(mint, &mut test)
-                .await;
-            obligation_owners[i]
+            obligation_owner.create_token_account(mint, &mut test).await;
+            obligation_owner
                 .create_token_account(&reserve.account.collateral.mint_pubkey, &mut test)
                 .await;
 
@@ -2284,8 +2297,8 @@ pub async fn custom_scenario(
                 .borrow_obligation_liquidity(
                     &mut test,
                     reserve,
-                    &obligations[i],
-                    &obligation_owners[i],
+                    obligation,
+                    obligation_owner,
                     fee_receiver.get_account(mint),
                     *amount,
                 )
@@ -2294,7 +2307,11 @@ pub async fn custom_scenario(
         }
     }
 
-    for obligation in obligations.iter_mut() {
+    for obligation in obligations
+        .iter_mut()
+        .zip(obligation_args.iter())
+        .filter_map(|(obligation, arg)| arg.should_refresh.then_some(obligation))
+    {
         lending_market
             .refresh_obligation(&mut test, obligation)
             .await

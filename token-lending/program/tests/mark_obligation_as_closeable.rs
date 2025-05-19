@@ -61,6 +61,7 @@ async fn test_mark_obligation_as_closeable_success() {
             &[ObligationArgs {
                 deposits: vec![(usdc_mint::id(), 20 * FRACTIONAL_TO_USDC)],
                 borrows: vec![(wsol_mint::id(), LAMPORTS_PER_SOL)],
+                ..Default::default()
             }],
         )
         .await;
@@ -176,6 +177,7 @@ async fn invalid_signer() {
             &[ObligationArgs {
                 deposits: vec![(usdc_mint::id(), 20 * FRACTIONAL_TO_USDC)],
                 borrows: vec![(wsol_mint::id(), LAMPORTS_PER_SOL)],
+                ..Default::default()
             }],
         )
         .await;
