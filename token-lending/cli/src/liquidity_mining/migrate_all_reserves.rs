@@ -34,7 +34,7 @@ const BATCH_SIZE: usize = 25;
 const CU_PRICE: u64 = 3000;
 
 /// Upgrades all reserves to the new version.
-pub(crate) fn command_upgrade_reserves_to_v2_1_0(config: &mut Config) -> CommandResult {
+pub(crate) fn command(config: &mut Config) -> CommandResult {
     let reserve_new_rent = config
         .rpc_client
         .get_minimum_balance_for_rent_exemption(Reserve::LEN)?;

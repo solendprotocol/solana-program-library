@@ -9,21 +9,22 @@ license = "Apache-2.0"
 repository = "https://github.com/solendprotocol/solana-program-library"
 
 [dependencies]
+bincode = "1.3.3"
 clap = "=2.34.0"
+indicatif = "0.17.11"
+reqwest = { version = "0.12.2", features = ["blocking", "json"] }
+serde_json = "1.0.120"
+solana-account-decoder = "1.14.10"
 solana-clap-utils = "1.14.10"
 solana-cli-config = "1.14.10"
 solana-client = "1.14.10"
 solana-logger = "1.14.10"
-solana-sdk = "1.14.10"
 solana-program = "1.14.10"
-solend-sdk = { path = "../sdk" }
+solana-sdk = "1.14.10"
 solend-program = { path = "../program", features = ["no-entrypoint"] }
-spl-token = { version = "3.3.0", features = ["no-entrypoint"] }
+solend-sdk = { path = "../sdk" }
 spl-associated-token-account = "1.0"
-solana-account-decoder = "1.14.10"
-reqwest = { version = "0.12.2", features = ["blocking", "json"] }
-bincode = "1.3.3"
-serde_json = "1.0.120"
+spl-token = { version = "3.3.0", features = ["no-entrypoint"] }
 
 [[bin]]
 name = "solend-cli"

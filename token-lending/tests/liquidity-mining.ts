@@ -37,7 +37,7 @@ describe("liquidity mining", () => {
     // some reserves have more rent
     expect(reserveBefore.lamports).to.be.greaterThanOrEqual(expectedRentBefore);
 
-    const command = `cargo run --quiet --bin solend-cli -- --url ${rpcUrl} upgrade-all-reserves`;
+    const command = `cargo run --quiet --bin solend-cli -- --url ${rpcUrl} migrate-all-reserves-for-liquidity-mining`;
     console.log(`\$ ${command}`);
     const cliProcess = exec(command);
 
