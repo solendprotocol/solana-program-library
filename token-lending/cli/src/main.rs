@@ -812,7 +812,7 @@ fn main() {
         )
         .subcommand(
             SubCommand::with_name("add-pool-reward")
-                .about("Adds a new liquidity mining reward to a reserve"))
+                .about("Adds a new liquidity mining reward to a reserve")
                 .arg(
                     Arg::with_name("reserve")
                         .long("reserve")
@@ -864,6 +864,122 @@ fn main() {
                         .required(true)
                         .help("Duration in seconds"),
                 )
+        )
+        .subcommand(
+            SubCommand::with_name("close-pool-reward")
+                .about("Closes a liquidity mining reward for a reserve")
+                .arg(
+                    Arg::with_name("reserve")
+                        .long("reserve")
+                        .validator(is_pubkey)
+                        .value_name("PUBKEY")
+                        .takes_value(true)
+                        .required(true)
+                        .help("Reserve address"),
+                )
+                .arg(
+                    Arg::with_name("position_kind")
+                    .long("position-kind")
+                    .validator(is_parsable::<PositionKind>)
+                    .value_name("POSITION_KIND")
+                    .takes_value(true)
+                    .required(true)
+                    .help("Either 'deposit' or 'borrow'")
+                )
+                .arg(
+                    Arg::with_name("pool_reward_index")
+                        .long("pool-reward-index")
+                        .validator(is_parsable::<u8>)
+                        .value_name("INTEGER")
+                        .takes_value(true)
+                        .required(true)
+                        .help("Index of the pool reward to close"),
+                )
+                .arg(
+                    Arg::with_name("destination")
+                        .long("destination")
+                        .validator(is_pubkey)
+                        .value_name("PUBKEY")
+                        .takes_value(true)
+                        .required(true)
+                        .help("SPL Token account to withdraw rewards to"),
+                )
+        )
+        .subcommand(
+            SubCommand::with_name("edit-pool-reward")
+                .about("Changes a liquidity mining reward for a reserve")
+                .arg(
+                    Arg::with_name("reserve")
+                        .long("reserve")
+                        .validator(is_pubkey)
+                        .value_name("PUBKEY")
+                        .takes_value(true)
+                        .required(true)
+                        .help("Reserve address"),
+                )
+                .arg(
+                    Arg::with_name("position_kind")
+                    .long("position-kind")
+                    .validator(is_parsable::<PositionKind>)
+                    .value_name("POSITION_KIND")
+                    .takes_value(true)
+                    .required(true)
+                    .help("Either 'deposit' or 'borrow'")
+                )
+                .arg(
+                    Arg::with_name("pool_reward_index")
+                        .long("pool-reward-index")
+                        .validator(is_parsable::<u8>)
+                        .value_name("INTEGER")
+                        .takes_value(true)
+                        .required(true)
+                        .help("Index of the pool reward to close"),
+                )
+                .arg(
+                    Arg::with_name("new_end_time_secs")
+                        .long("new-end-time-secs")
+                        .validator(is_parsable::<u64>)
+                        .value_name("INTEGER")
+                        .takes_value(true)
+                        .required(true)
+                        .help("New end time in seconds since epoch"),
+                )
+                .arg(
+                    Arg::with_name("token_account")
+                        .long("token-account")
+                        .validator(is_pubkey)
+                        .value_name("PUBKEY")
+                        .takes_value(true)
+                        .required(true)
+                        .help("SPL Token account to either credit or debit rewards from"),
+                )
+        )
+        .subcommand(
+            SubCommand::with_name("view-reserve-rewards")
+                .about("View liquidity mining rewards for a reserve")
+                .arg(
+                    Arg::with_name("reserve")
+                        .long("reserve")
+                        .validator(is_pubkey)
+                        .value_name("PUBKEY")
+                        .takes_value(true)
+                        .required(true)
+                        .help("Reserve address"),
+                )
+        )
+        .subcommand(
+            SubCommand::with_name("view-obligation-rewards")
+                .about("View liquidity mining rewards for an obligation")
+                .arg(
+                    Arg::with_name("obligation")
+                        .long("obligation")
+                        .validator(is_pubkey)
+                        .value_name("PUBKEY")
+                        .takes_value(true)
+                        .required(true)
+                        .help("Obligation address"),
+                )
+        )
         .subcommand(
             SubCommand::with_name("update-reserve")
                 .about("Update a reserve config")
@@ -1461,6 +1577,55 @@ fn main() {
                 duration_secs,
                 token_amount,
             )
+        }
+        ("close-pool-reward", Some(arg_matches)) => {
+            let reserve_pubkey =
+                pubkey_of(arg_matches, "reserve").expect("Should include --reserve");
+            let position_kind = value_of::<PositionKind>(arg_matches, "position_kind")
+                .expect("Should include --position-kind");
+            let pool_reward_index = value_of::<u8>(arg_matches, "pool_reward_index")
+                .expect("Should include --pool-reward-index");
+            let destination_reward_token_account_pubkey =
+                pubkey_of(arg_matches, "destination").expect("Should include --destination");
+
+            command_close_pool_reward(
+                &mut config,
+                reserve_pubkey,
+                position_kind,
+                pool_reward_index as _,
+                destination_reward_token_account_pubkey,
+            )
+        }
+        ("edit-pool-reward", Some(arg_matches)) => {
+            let reserve_pubkey =
+                pubkey_of(arg_matches, "reserve").expect("Should include --reserve");
+            let position_kind = value_of::<PositionKind>(arg_matches, "position_kind")
+                .expect("Should include --position-kind");
+            let pool_reward_index = value_of::<u8>(arg_matches, "pool_reward_index")
+                .expect("Should include --pool-reward-index");
+            let new_end_time_secs = value_of(arg_matches, "new_end_time_secs")
+                .expect("Should include --new-end-time-secs");
+            let reward_token_account_pubkey =
+                pubkey_of(arg_matches, "token_account").expect("Should include --token-account");
+
+            command_edit_pool_reward(
+                &mut config,
+                reserve_pubkey,
+                position_kind,
+                pool_reward_index as _,
+                new_end_time_secs,
+                reward_token_account_pubkey,
+            )
+        }
+        ("view-obligation-rewards", Some(arg_matches)) => {
+            let obligation_pubkey =
+                pubkey_of(arg_matches, "obligation").expect("Should include --obligation");
+            command_view_obligation_rewards(&mut config, obligation_pubkey)
+        }
+        ("view-reserve-rewards", Some(arg_matches)) => {
+            let reserve_pubkey =
+                pubkey_of(arg_matches, "reserve").expect("Should include --reserve");
+            command_view_reserve_rewards(&mut config, reserve_pubkey)
         }
         ("update-reserve", Some(arg_matches)) => {
             let reserve_pubkey = pubkey_of(arg_matches, "reserve").unwrap();

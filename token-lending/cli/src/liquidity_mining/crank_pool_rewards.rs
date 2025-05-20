@@ -1,5 +1,5 @@
-//! Each reserve has a limited number of slots that are used to declare pool rewards.
-//! When all slots are occupied, the admin can no longer start new pool rewards.
+//! Each reserve has a limited number of entries that are used to declare pool rewards.
+//! When all entries are occupied, the admin can no longer start new pool rewards.
 //!
 //! This is where cranking comes in.
 //! Given a reserve, this command estimates the cheapest pool reward to crank out.
@@ -130,7 +130,7 @@ pub(crate) fn command(
                 })
         })
         .map(|(obligation_pubkey, obligation)| (obligation_pubkey, obligation.owner))
-        .map(|(obligation_pubkey, obligation_owner)| {
+        .flat_map(|(obligation_pubkey, obligation_owner)| {
             let ata = get_associated_token_address(&obligation_owner, &reward_mint);
 
             let create_ata_ix = create_associated_token_account_idempotent(
@@ -155,7 +155,6 @@ pub(crate) fn command(
 
             std::iter::once(create_ata_ix).chain(std::iter::once(claim_ix))
         })
-        .flatten()
         .collect();
 
     for ixs in ixs.chunks(CLAIM_IXS_BATCH_SIZE).progress() {

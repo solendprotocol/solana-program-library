@@ -37,7 +37,6 @@ pub(crate) fn command(config: &mut Config, output_csv: impl AsRef<Path>) -> Comm
             encoding: Some(UiAccountEncoding::Base64),
             ..Default::default()
         },
-        ..Default::default()
     };
     let all_obligations = config
         .rpc_client

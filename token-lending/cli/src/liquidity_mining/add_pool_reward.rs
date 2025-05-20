@@ -42,10 +42,9 @@ pub(crate) fn command(
         .any(|pr| matches!(pr, PoolRewardEntry::Vacant { .. }));
 
     if !has_free_slot {
-        return Err(format!(
-            "There are no vacant slots to add the pool reward. Please crank it first"
-        )
-        .into());
+        return Err(
+            "There are no vacant slots to add the pool reward. Please crank it first".into(),
+        );
     }
 
     let Some(source_reward_token_account) = config
@@ -55,7 +54,8 @@ pub(crate) fn command(
         return Err(format!(
             "Failed to fetch source token account '{}'",
             source_reward_token_account_pubkey
-        ))?;
+        )
+        .into());
     };
 
     let reward_mint = Pubkey::from_str(&source_reward_token_account.mint)?;
