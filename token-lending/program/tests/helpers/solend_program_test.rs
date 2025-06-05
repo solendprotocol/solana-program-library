@@ -1066,6 +1066,7 @@ impl Info<LendingMarket> {
         obligation_owner: &User,
         reward: &LiqMiningReward,
         position_kind: PositionKind,
+        signer: Option<&User>,
     ) -> Result<(), BanksClientError> {
         let (reward_authority_pda, reward_authority_bump) = find_reward_vault_authority(
             &solend_program::id(),
@@ -1073,7 +1074,14 @@ impl Info<LendingMarket> {
             &reward.vault.pubkey(),
         );
 
-        let instructions = [
+        let mut instructions = if matches!(position_kind, PositionKind::Borrow) {
+            self.build_refresh_instructions(test, obligation, None)
+                .await
+        } else {
+            vec![]
+        };
+
+        instructions.extend_from_slice(&[
             ComputeBudgetInstruction::set_compute_unit_limit(cu_budgets::CLAIM_POOL_REWARD),
             claim_pool_reward(
                 solend_program::id(),
@@ -1086,10 +1094,16 @@ impl Info<LendingMarket> {
                 reward_authority_pda,
                 reward.vault.pubkey(),
                 self.pubkey,
+                signer.map(|s| s.keypair.pubkey()),
             ),
-        ];
+        ]);
 
-        test.process_transaction(&instructions, None).await
+        if let Some(signer) = signer {
+            test.process_transaction(&instructions, Some(&[&signer.keypair]))
+                .await
+        } else {
+            test.process_transaction(&instructions, None).await
+        }
     }
 
     pub async fn donate_to_reserve(

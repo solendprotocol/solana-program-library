@@ -19,7 +19,7 @@ use solana_program::{
     pubkey::Pubkey,
     sysvar::Sysvar,
 };
-use solend_sdk::state::{Obligation, PositionKind};
+use solend_sdk::state::{HasRewardEnded, Obligation, PositionKind};
 use solend_sdk::{error::LendingError, instruction::reward_vault_authority_seeds};
 
 use super::{
@@ -29,6 +29,8 @@ use super::{
 
 /// Use [Self::from_unchecked_iter] to validate the accounts.
 struct ClaimUserReward<'a, 'info> {
+    /// ✅ is_signer
+    perhaps_payer_info: Option<&'a AccountInfo<'info>>,
     /// ✅ belongs to this program
     /// ✅ unpacks
     /// ✅ matches `lending_market_info`
@@ -88,11 +90,22 @@ pub(crate) fn process(
     )?;
     let reserve_key = accounts.reserve.key();
 
+    // AUDIT:
+    // > ClaimUserReward doesn’t check if the Obligation is stale.
+    // > This can cause problems for borrow rewards, because the obligation's liability_shares will
+    // > be stale.
+    if matches!(position_kind, PositionKind::Borrow)
+        && accounts.obligation.last_update.is_stale(clock.slot)?
+    {
+        msg!("obligation is stale and must be refreshed in the current slot");
+        return Err(LendingError::ObligationStale.into());
+    }
+
     // 1.
 
     let pool_reward_manager = accounts.reserve.pool_reward_manager_mut(position_kind);
 
-    if let Some(user_reward_manager) = accounts
+    if let Some((_, user_reward_manager)) = accounts
         .obligation
         .user_reward_managers
         .find_mut(reserve_key, position_kind)
@@ -106,11 +119,22 @@ pub(crate) fn process(
 
         // 2.
 
-        let total_reward_amount = user_reward_manager.claim_rewards(
+        let (has_ended, total_reward_amount) = user_reward_manager.claim_rewards(
             pool_reward_manager,
             *accounts.reward_token_vault_info.key,
             clock,
         )?;
+
+        // AUDIT:
+        // > ClaimUserReward on Suilend can only be called permissionlessly if the reward period is
+        // > fully elapsed.
+        let payer_matches_obligation_owner = accounts
+            .perhaps_payer_info
+            .map_or(false, |payer| payer.key == &accounts.obligation.owner);
+        if !matches!(has_ended, HasRewardEnded::Yes) && !payer_matches_obligation_owner {
+            msg!("User reward manager has not ended, but payer does not match obligation owner");
+            return Err(LendingError::InvalidSigner.into());
+        }
 
         // 3.
 
@@ -204,6 +228,7 @@ impl<'a, 'info> ClaimUserReward<'a, 'info> {
         let reward_token_vault_info = next_account_info(iter)?;
         let lending_market_info = next_account_info(iter)?;
         let token_program_info = next_account_info(iter)?;
+        let perhaps_payer_info = next_account_info(iter).ok();
 
         let (_, reserve) = check_and_unpack_pool_reward_accounts(
             program_id,
@@ -217,6 +242,11 @@ impl<'a, 'info> ClaimUserReward<'a, 'info> {
                 reward_token_vault_info,
             },
         )?;
+
+        if perhaps_payer_info.map(|a| !a.is_signer).unwrap_or(false) {
+            msg!("Payer account must be a signer");
+            return Err(LendingError::InvalidSigner.into());
+        }
 
         if obligation_info.owner != program_id {
             msg!("Obligation provided is not owned by the lending program");
@@ -283,6 +313,7 @@ impl<'a, 'info> ClaimUserReward<'a, 'info> {
         }
 
         Ok(Self {
+            perhaps_payer_info,
             obligation_info,
             obligation_owner_token_account_info,
             _reserve_info: reserve_info,

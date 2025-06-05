@@ -121,6 +121,26 @@ async fn test_(position_kind: PositionKind) {
     let balance_checker =
         BalanceChecker::start(&mut test, &[&TokenAccount(reward.vault.pubkey()), &user]).await;
 
+    let err = lending_market
+        .claim_pool_reward(
+            &mut test,
+            &obligation,
+            &usdc_reserve,
+            &user,
+            &reward,
+            position_kind,
+            None,
+        )
+        .await
+        .expect_err("Cannot claim reward before it ends unless owner");
+
+    match err.unwrap() {
+        TransactionError::InstructionError(_, InstructionError::Custom(err_code)) => {
+            assert_eq!(err_code, LendingError::InvalidSigner as u32);
+        }
+        _ => panic!("Unexpected error: {:?}", err),
+    };
+
     lending_market
         .claim_pool_reward(
             &mut test,
@@ -129,6 +149,7 @@ async fn test_(position_kind: PositionKind) {
             &user,
             &reward,
             position_kind,
+            Some(&user),
         )
         .await
         .expect("Should claim reward");
@@ -233,6 +254,7 @@ async fn test_(position_kind: PositionKind) {
             &user,
             &reward,
             position_kind,
+            None,
         )
         .await
         .expect("Should claim reward");
@@ -334,6 +356,7 @@ async fn test_cannot_claim_into_wrong_destination() {
             &lending_market_owner, // ! wrong
             &reward,
             PositionKind::Deposit,
+            None,
         )
         .await
         .expect_err("Cannot steal user reward");
@@ -447,6 +470,7 @@ async fn test_migrate_obligation() {
             &user,
             &reward,
             PositionKind::Deposit,
+            None,
         )
         .await
         .expect("Should claim reward");
@@ -494,6 +518,7 @@ async fn test_migrate_obligation() {
             &user,
             &reward,
             PositionKind::Deposit,
+            None,
         )
         .await
         .expect("Should claim reward");

@@ -100,7 +100,7 @@ mod tests {
 
         clock.unix_timestamp = reward_period as i64 / 2;
 
-        let not_cancelled_claimed_slnd = {
+        let (_, not_cancelled_claimed_slnd) = {
             let mut pool_reward_manager = pool_reward_manager.clone();
             let mut user_reward_manager = user_reward_manager.clone();
 
@@ -109,7 +109,7 @@ mod tests {
                 .expect("It claims rewards")
         };
 
-        let edited_claimed_slnd = {
+        let (_, edited_claimed_slnd) = {
             let mut pool_reward_manager = pool_reward_manager.clone();
             let mut user_reward_manager = user_reward_manager.clone();
 
@@ -124,7 +124,7 @@ mod tests {
                 .expect("It claims rewards")
         };
 
-        let canceled_claimed_slnd = {
+        let (_, canceled_claimed_slnd) = {
             let pool_reward_index = 0;
             pool_reward_manager
                 .cancel_pool_reward(pool_reward_index, &clock)
@@ -237,11 +237,11 @@ mod tests {
                 clock.unix_timestamp += rng.gen_range(0..MIN_REWARD_PERIOD_SECS) as i64;
 
                 for user_reward_manager in &mut user_reward_managers {
-                    let claimed_foo = user_reward_manager
+                    let (_, claimed_foo) = user_reward_manager
                         .claim_rewards(&mut pool_reward_manager, foo_vault, &clock)
                         .expect("It claims foo rewards");
 
-                    let claimed_bar = user_reward_manager
+                    let (_, claimed_bar) = user_reward_manager
                         .claim_rewards(&mut pool_reward_manager, bar_vault, &clock)
                         .expect("It claims bar rewards");
 
@@ -277,11 +277,11 @@ mod tests {
                 let neither_has_ended = !has_foo_ended && !has_bar_ended;
 
                 for user_reward_manager in &mut user_reward_managers {
-                    let claimed_foo = user_reward_manager
+                    let (_, claimed_foo) = user_reward_manager
                         .claim_rewards(&mut pool_reward_manager, foo_vault, &clock)
                         .expect("It claims foo rewards");
 
-                    let claimed_bar = user_reward_manager
+                    let (_, claimed_bar) = user_reward_manager
                         .claim_rewards(&mut pool_reward_manager, bar_vault, &clock)
                         .expect("It claims bar rewards");
 
@@ -310,12 +310,12 @@ mod tests {
             // check that no more rewards can be claimed
 
             for user_reward_manager in &mut user_reward_managers {
-                let claimed_foo = user_reward_manager
+                let (_, claimed_foo) = user_reward_manager
                     .claim_rewards(&mut pool_reward_manager, foo_vault, &clock)
                     .expect("It claims foo rewards");
                 prop_assert_eq!(claimed_foo, 0);
 
-                let claimed_bar = user_reward_manager
+                let (_, claimed_bar) = user_reward_manager
                     .claim_rewards(&mut pool_reward_manager, bar_vault, &clock)
                     .expect("It claims bar rewards");
                 prop_assert_eq!(claimed_bar, 0);
@@ -420,7 +420,7 @@ mod suilend_tests {
             // 1/4 of the reward time passes
             clock.unix_timestamp = 5 * SECONDS_IN_A_DAY as i64;
 
-            let claimed_slnd = user_reward_manager_1
+            let (_, claimed_slnd) = user_reward_manager_1
                 .claim_rewards(&mut pool_reward_manager, slnd_vault, &clock)
                 .expect("It claims rewards");
             assert_eq!(claimed_slnd, 25 * 1_000_000);
@@ -440,12 +440,12 @@ mod suilend_tests {
             // 1/2 of the reward time passes
             clock.unix_timestamp = 10 * SECONDS_IN_A_DAY as i64;
 
-            let claimed_slnd = user_reward_manager_1
+            let (_, claimed_slnd) = user_reward_manager_1
                 .claim_rewards(&mut pool_reward_manager, slnd_vault, &clock)
                 .expect("It claims rewards");
             assert_eq!(claimed_slnd, 5 * 1_000_000);
 
-            let claimed_slnd = user_reward_manager_2
+            let (_, claimed_slnd) = user_reward_manager_2
                 .claim_rewards(&mut pool_reward_manager, slnd_vault, &clock)
                 .expect("It claims rewards");
             assert_eq!(claimed_slnd, 20 * 1_000_000);
@@ -461,12 +461,12 @@ mod suilend_tests {
             // the reward is finished
             clock.unix_timestamp = 20 * SECONDS_IN_A_DAY as i64;
 
-            let claimed_slnd = user_reward_manager_1
+            let (_, claimed_slnd) = user_reward_manager_1
                 .claim_rewards(&mut pool_reward_manager, slnd_vault, &clock)
                 .expect("It claims rewards");
             assert_eq!(claimed_slnd, 25 * 1_000_000);
 
-            let claimed_slnd = user_reward_manager_2
+            let (_, claimed_slnd) = user_reward_manager_2
                 .claim_rewards(&mut pool_reward_manager, slnd_vault, &clock)
                 .expect("It claims rewards");
             assert_eq!(claimed_slnd, 25 * 1_000_000);
@@ -538,22 +538,22 @@ mod suilend_tests {
         {
             clock.unix_timestamp = 30 * SECONDS_IN_A_DAY as i64;
 
-            let claimed_slnd = user_reward_manager_1
+            let (_, claimed_slnd) = user_reward_manager_1
                 .claim_rewards(&mut pool_reward_manager, slnd_vault1, &clock)
                 .expect("It claims rewards");
             assert_eq!(claimed_slnd, 87_500_000);
 
-            let claimed_slnd = user_reward_manager_1
+            let (_, claimed_slnd) = user_reward_manager_1
                 .claim_rewards(&mut pool_reward_manager, slnd_vault2, &clock)
                 .expect("It claims rewards");
             assert_eq!(claimed_slnd, 75 * 1_000_000);
 
-            let claimed_slnd = user_reward_manager_2
+            let (_, claimed_slnd) = user_reward_manager_2
                 .claim_rewards(&mut pool_reward_manager, slnd_vault1, &clock)
                 .expect("It claims rewards");
             assert_eq!(claimed_slnd, 12_500_000);
 
-            let claimed_slnd = user_reward_manager_2
+            let (_, claimed_slnd) = user_reward_manager_2
                 .claim_rewards(&mut pool_reward_manager, slnd_vault2, &clock)
                 .expect("It claims rewards");
             assert_eq!(claimed_slnd, 25 * 1_000_000);
@@ -595,7 +595,7 @@ mod suilend_tests {
         user_reward_manager_1.set_share(&mut pool_reward_manager, 1);
 
         clock.unix_timestamp = 20 * SECONDS_IN_A_DAY as i64;
-        let claimed_slnd = user_reward_manager_1
+        let (_, claimed_slnd) = user_reward_manager_1
             .claim_rewards(&mut pool_reward_manager, slnd_vault, &clock)
             .expect("It claims rewards");
         // 50 usdc is unallocated since there was zero share from 0-10 seconds
@@ -643,13 +643,13 @@ mod suilend_tests {
         {
             clock.unix_timestamp = 20 * SECONDS_IN_A_DAY as i64;
 
-            let claimed_slnd = user_reward_manager_1
+            let (_, claimed_slnd) = user_reward_manager_1
                 .claim_rewards(&mut pool_reward_manager, slnd_vault, &clock)
                 .expect("It claims rewards");
             assert_eq!(claimed_slnd, 75 * 1_000_000);
 
             user_reward_manager_2.set_share(&mut pool_reward_manager, 1);
-            let claimed_slnd = user_reward_manager_2
+            let (_, claimed_slnd) = user_reward_manager_2
                 .claim_rewards(&mut pool_reward_manager, slnd_vault, &clock)
                 .expect("It claims rewards");
             assert_eq!(claimed_slnd, 25 * 1_000_000);
@@ -732,7 +732,7 @@ mod suilend_tests {
         {
             clock.unix_timestamp = 15 * SECONDS_IN_A_DAY as i64;
 
-            let claimed_slnd = user_reward_manager_1
+            let (_, claimed_slnd) = user_reward_manager_1
                 .claim_rewards(&mut pool_reward_manager, slnd_vault, &clock)
                 .expect("It claims rewards");
             assert_eq!(claimed_slnd, 50 * 1_000_000);
@@ -797,7 +797,7 @@ mod suilend_tests {
             assert_eq!(unallocated_rewards, -50 * 1_000_000 + 1); // approx
 
             clock.unix_timestamp = 15 * SECONDS_IN_A_DAY as i64;
-            let claim_slnd = user_reward_manager_1
+            let (_, claim_slnd) = user_reward_manager_1
                 .claim_rewards(&mut pool_reward_manager, slnd_vault1, &clock)
                 .expect("It claims rewards");
             assert_eq!(claim_slnd, 50 * 1_000_000);
@@ -819,7 +819,7 @@ mod suilend_tests {
         {
             clock.unix_timestamp = 30 * SECONDS_IN_A_DAY as i64;
 
-            let claimed_slnd = user_reward_manager_2
+            let (_, claimed_slnd) = user_reward_manager_2
                 .claim_rewards(&mut pool_reward_manager, slnd_vault2, &clock)
                 .expect("It claims rewards");
             assert_eq!(claimed_slnd, 50 * 1_000_000);
