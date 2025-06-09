@@ -77,7 +77,7 @@ mod cu_budgets {
     pub(super) const ADD_POOL_REWARD: u32 = 80_017;
     pub(super) const EDIT_POOL_REWARD: u32 = 80_018;
     pub(super) const CLOSE_POOL_REWARD: u32 = 80_019;
-    pub(super) const CLAIM_POOL_REWARD: u32 = 80_020;
+    pub(super) const CLAIM_POOL_REWARD: u32 = 100_020;
 }
 
 /// This is at most how many bytes can an obligation grow.
