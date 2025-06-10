@@ -269,8 +269,8 @@ impl<'a, 'info> ClaimUserReward<'a, 'info> {
         // > complexity and risk.
         let expected_ata = get_associated_token_address_with_program_id(
             &obligation.owner,
-            &reward_mint_info.key,
-            &token_program_info.key,
+            reward_mint_info.key,
+            token_program_info.key,
         );
         if expected_ata != *obligation_owner_token_account_info.key {
             msg!("Token account for collecting rewards must be ATA");

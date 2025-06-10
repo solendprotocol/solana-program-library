@@ -139,7 +139,7 @@ async fn test_(position_kind: PositionKind) {
         TransactionError::InstructionError(_, InstructionError::Custom(err_code)) => {
             assert_eq!(err_code, LendingError::InvalidSigner as u32);
         }
-        _ => panic!("Unexpected error: {:?}", err),
+        _ => panic!("Expected LendingError::InvalidSigner, got: {:?}", err),
     };
 
     lending_market
