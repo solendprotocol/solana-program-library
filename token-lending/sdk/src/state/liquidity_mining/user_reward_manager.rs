@@ -220,10 +220,22 @@ impl UserRewardManager {
 
         let to_claim = user_reward.withdraw_earned_rewards()?;
 
-        if pool_reward.has_ended(clock) && user_reward.earned_rewards.try_floor_u64()? == 0 {
+        if (self.share == 0 || pool_reward.has_ended(clock))
+            && user_reward.earned_rewards.try_floor_u64()? == 0
+        {
             // This reward won't be used anymore as it ended and the user
             // claimed all there was to claim.
             // We can clean up this user reward.
+
+            // AUDIT:
+            // > UserRewards tracked inside UserRewardManager.rewards can only be removed when the
+            // > pool_reward period has ended and the earned_reward has been claimed.
+            // > So this means that users are still forced to wait for reward expiration even when
+            // > they haven't any share.
+            // > I think you should also make it possible to cleanup the UserRewardManager.rewards
+            // > when the UserRewardManager.share is set to 0 and
+            // > UserRewardManager.rewards[i].earned_rewards.floor() == 0
+
             // We're fine with swap remove bcs `user_reward_index` is meaningless.
             // SAFETY: We got the index from enumeration, so must exist.
             self.rewards.swap_remove(user_reward_index);
@@ -309,6 +321,9 @@ impl UserRewardManager {
 
     /// Should be updated before any interaction with rewards.
     ///
+    /// We expect the user share to be 0 if they are creating a new user manager.
+    /// The share is updated later.
+    ///
     /// # Assumption
     /// Invoker has checked that this [PoolRewardManager] matches the
     /// [UserRewardManager].
@@ -321,11 +336,12 @@ impl UserRewardManager {
         pool_reward_manager.update(clock)?;
 
         let curr_unix_timestamp_secs = clock.unix_timestamp as u64;
-
-        if matches!(
+        let is_creating_new_reward_manager = matches!(
             creating_new_reward_manager,
-            CreatingNewUserRewardManager::No
-        ) && curr_unix_timestamp_secs == self.last_update_time_secs
+            CreatingNewUserRewardManager::Yes
+        );
+
+        if !is_creating_new_reward_manager && curr_unix_timestamp_secs == self.last_update_time_secs
         {
             return Ok(());
         }
@@ -345,7 +361,8 @@ impl UserRewardManager {
                 .find(|(_, r)| r.pool_reward_index == pool_reward_index);
 
             let end_time_secs = pool_reward.start_time_secs + pool_reward.duration_secs as u64;
-            let has_ended_for_user = self.last_update_time_secs >= end_time_secs;
+            let has_ended_for_user = (!is_creating_new_reward_manager && self.share == 0)
+                || self.last_update_time_secs >= end_time_secs;
 
             match maybe_user_reward {
                 Some((user_reward_index, user_reward))
@@ -378,6 +395,9 @@ impl UserRewardManager {
                 None if pool_reward.start_time_secs > curr_unix_timestamp_secs => {
                     // reward period has not started yet
                 }
+                None if self.share == 0 && !is_creating_new_reward_manager => {
+                    // user has no share, nothing to accrue
+                }
                 None => {
                     // user did not yet start accruing rewards
 
@@ -391,10 +411,7 @@ impl UserRewardManager {
                                 .cumulative_rewards_per_share
                                 .try_mul(Decimal::from(self.share))?
                         } else {
-                            debug_assert!(matches!(
-                                creating_new_reward_manager,
-                                CreatingNewUserRewardManager::Yes
-                            ));
+                            debug_assert!(is_creating_new_reward_manager);
                             Decimal::zero()
                         },
                     };

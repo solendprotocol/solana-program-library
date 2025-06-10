@@ -21,6 +21,7 @@ use solana_program::{
 };
 use solend_sdk::state::{HasRewardEnded, Obligation, PositionKind};
 use solend_sdk::{error::LendingError, instruction::reward_vault_authority_seeds};
+use spl_associated_token_account::get_associated_token_address_with_program_id;
 
 use super::{
     check_and_unpack_pool_reward_accounts, unpack_token_account, Bumps,
@@ -39,7 +40,7 @@ struct ClaimUserReward<'a, 'info> {
     /// ✅ belongs to the token program
     /// ✅ is writable
     /// ✅ matches `reward_mint_info`
-    /// ✅ owned by the obligation owner
+    /// ✅ is obligation owner's ATA for the reward mint
     obligation_owner_token_account_info: &'a AccountInfo<'info>,
     /// ✅ belongs to this program
     /// ✅ unpacks
@@ -260,6 +261,22 @@ impl<'a, 'info> ClaimUserReward<'a, 'info> {
             return Err(LendingError::InvalidAccountInput.into());
         }
 
+        // AUDIT:
+        // > In ClaimUserReward, because this is a permissionless instruction, we recommend
+        // > validating that obligation_owner_token_account_info is an associated token account
+        // > (ATA), rather than only a token account owned by the obligation owner.
+        // > Allowing arbitrary token accounts would require indexing each one, adding unnecessary
+        // > complexity and risk.
+        let expected_ata = get_associated_token_address_with_program_id(
+            &obligation.owner,
+            &reward_mint_info.key,
+            &token_program_info.key,
+        );
+        if expected_ata != *obligation_owner_token_account_info.key {
+            msg!("Token account for collecting rewards must be ATA");
+            return Err(LendingError::InvalidAccountInput.into());
+        }
+
         if obligation_owner_token_account_info.owner != token_program_info.key {
             msg!("Obligation owner token account provided must be owned by the token program");
             return Err(LendingError::InvalidTokenOwner.into());
@@ -267,12 +284,6 @@ impl<'a, 'info> ClaimUserReward<'a, 'info> {
         let obligation_owner_token_account =
             unpack_token_account(&obligation_owner_token_account_info.data.borrow())?;
 
-        if obligation_owner_token_account.owner != obligation.owner {
-            msg!(
-                "Obligation owner token account owner does not match the obligation owner provided"
-            );
-            return Err(LendingError::InvalidAccountInput.into());
-        }
         if obligation_owner_token_account.mint != *reward_mint_info.key {
             msg!("Obligation owner token account mint does not match the reward mint provided");
             return Err(LendingError::InvalidAccountInput.into());

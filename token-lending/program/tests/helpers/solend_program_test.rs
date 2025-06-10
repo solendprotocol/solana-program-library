@@ -77,7 +77,7 @@ mod cu_budgets {
     pub(super) const ADD_POOL_REWARD: u32 = 80_017;
     pub(super) const EDIT_POOL_REWARD: u32 = 80_018;
     pub(super) const CLOSE_POOL_REWARD: u32 = 80_019;
-    pub(super) const CLAIM_POOL_REWARD: u32 = 100_020;
+    pub(super) const CLAIM_POOL_REWARD: u32 = 150_020;
 }
 
 /// This is at most how many bytes can an obligation grow.
@@ -444,6 +444,29 @@ impl SolendProgramTest {
             .unwrap();
 
         keypair.pubkey()
+    }
+
+    pub async fn create_associated_token_account(
+        &mut self,
+        owner: &Pubkey,
+        mint: &Pubkey,
+    ) -> Pubkey {
+        let instructions = [
+            spl_associated_token_account::instruction::create_associated_token_account(
+                &self.context.payer.pubkey(),
+                owner,
+                mint,
+                &spl_token::id(),
+            ),
+        ];
+
+        self.process_transaction(&instructions, None).await.unwrap();
+
+        spl_associated_token_account::get_associated_token_address_with_program_id(
+            owner,
+            mint,
+            &spl_token::id(),
+        )
     }
 
     pub async fn mint_to(&mut self, mint: &Pubkey, dst: &Pubkey, amount: u64) {
@@ -836,6 +859,30 @@ impl User {
         }
     }
 
+    pub async fn create_associated_token_account(
+        &mut self,
+        mint: &Pubkey,
+        test: &mut SolendProgramTest,
+    ) -> Info<Token> {
+        match self
+            .token_accounts
+            .iter()
+            .find(|ta| ta.account.mint == *mint)
+        {
+            None => {
+                let pubkey = test
+                    .create_associated_token_account(&self.keypair.pubkey(), mint)
+                    .await;
+                let account = test.load_account::<Token>(pubkey).await;
+
+                self.token_accounts.push(account.clone());
+
+                account
+            }
+            Some(t) => t.clone(),
+        }
+    }
+
     pub async fn transfer(
         &self,
         mint: &Pubkey,
@@ -1088,7 +1135,11 @@ impl Info<LendingMarket> {
                 reward_authority_bump,
                 position_kind,
                 obligation.pubkey,
-                obligation_owner.get_account(&reward.mint).unwrap(),
+                spl_associated_token_account::get_associated_token_address_with_program_id(
+                    &obligation_owner.keypair.pubkey(),
+                    &reward.mint,
+                    &spl_token::id(),
+                ),
                 reserve.pubkey,
                 reward.mint,
                 reward_authority_pda,

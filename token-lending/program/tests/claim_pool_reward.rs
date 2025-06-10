@@ -116,7 +116,8 @@ async fn test_(position_kind: PositionKind) {
         .await;
 
     // user must have a token account to deposit rewards into ahead of time
-    user.create_token_account(&reward.mint, &mut test).await;
+    user.create_associated_token_account(&reward.mint, &mut test)
+        .await;
 
     let balance_checker =
         BalanceChecker::start(&mut test, &[&TokenAccount(reward.vault.pubkey()), &user]).await;
@@ -453,7 +454,8 @@ async fn test_migrate_obligation() {
         .await;
 
     // user must have a token account to deposit rewards into ahead of time
-    user.create_token_account(&reward.mint, &mut test).await;
+    user.create_associated_token_account(&reward.mint, &mut test)
+        .await;
 
     let balance_checker = BalanceChecker::start(&mut test, &[&user]).await;
 
