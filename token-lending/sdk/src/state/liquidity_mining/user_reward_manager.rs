@@ -7,7 +7,7 @@ use crate::{
     math::{Decimal, TryAdd, TryMul, TrySub},
     state::{
         pack_decimal, unpack_decimal, PoolRewardEntry, PoolRewardId, PoolRewardManager,
-        PositionKind, MAX_REWARDS,
+        PositionKind, MAX_OBLIGATION_RESERVES, MAX_REWARDS,
     },
 };
 use arrayref::{array_mut_ref, array_ref, array_refs, mut_array_refs};
@@ -97,11 +97,14 @@ impl UserRewardManagers {
         &mut self,
         reserve: Pubkey,
         position_kind: PositionKind,
-    ) -> Option<&mut UserRewardManager> {
-        self.0.iter_mut().find(|user_reward_manager| {
-            user_reward_manager.reserve == reserve
-                && user_reward_manager.position_kind == position_kind
-        })
+    ) -> Option<(usize, &mut UserRewardManager)> {
+        self.0
+            .iter_mut()
+            .enumerate()
+            .find(|(_, user_reward_manager)| {
+                user_reward_manager.reserve == reserve
+                    && user_reward_manager.position_kind == position_kind
+            })
     }
 
     /// Updates the [UserRewardManager] for the given reserve.
@@ -123,7 +126,7 @@ impl UserRewardManagers {
         new_share: u64,
         clock: &Clock,
     ) -> Result<(), ProgramError> {
-        let user_reward_manager = if let Some(user_reward_manager) =
+        let (index, user_reward_manager) = if let Some((index, user_reward_manager)) =
             self.find_mut(reserve, position_kind)
         {
             user_reward_manager.update(
@@ -131,19 +134,46 @@ impl UserRewardManagers {
                 clock,
                 CreatingNewUserRewardManager::No,
             )?;
-            user_reward_manager
+
+            (index, user_reward_manager)
+        } else if self.len() >= MAX_OBLIGATION_RESERVES {
+            // AUDIT:
+            // > Right now the max number of UserRewardManagers is 10 and the max number of rewards
+            // > is 30, but that's not really enforced because you are using debug_asserts which are
+            // > ignored in release mode (see MAX_REWARDS and MAX_OBLIGATION_REWARDS).
+            // > It's only enforced by checking the final packed length is less than
+            // > Obligation::MAX_LEN, so for example you can have an Obligation with 134
+            // > UserRewardManagers, each tracking 1 reward.
+            msg!("User rewards full, claim rewards to make space.");
+            return Err(LendingError::ObligationReserveLimit.into());
         } else {
             let mut new_user_reward_manager = UserRewardManager::new(reserve, position_kind, clock);
             new_user_reward_manager.populate(pool_reward_manager, clock)?;
             self.0.push(new_user_reward_manager);
-            // SAFETY: we just pushed a new item to the vector so ok to unwrap
-            self.0.last_mut().unwrap()
+
+            // SAFETY: we just pushed a new item to the vector
+            (self.0.len() - 1, self.0.last_mut().unwrap())
         };
 
         user_reward_manager.set_share(pool_reward_manager, new_share);
 
+        // AUDIT:
+        // > We believe you should remove UserRewardManager entries when all the earned rewards are
+        // > claimed and the share is set to 0 (ie there is no corresponding Position in the
+        // > obligation)
+        if new_share == 0 && user_reward_manager.rewards.is_empty() {
+            self.0.swap_remove(index);
+        }
+
         Ok(())
     }
+}
+
+/// Whether the reward was removed from the user manager.
+#[allow(missing_docs)]
+pub enum HasRewardEnded {
+    No,
+    Yes,
 }
 
 impl UserRewardManager {
@@ -158,7 +188,7 @@ impl UserRewardManager {
         pool_reward_manager: &mut PoolRewardManager,
         vault: Pubkey,
         clock: &Clock,
-    ) -> Result<u64, ProgramError> {
+    ) -> Result<(HasRewardEnded, u64), ProgramError> {
         self.update(pool_reward_manager, clock, CreatingNewUserRewardManager::No)?;
 
         let (pool_reward_index, pool_reward) = pool_reward_manager
@@ -185,22 +215,36 @@ impl UserRewardManager {
             // User is not tracking this reward, nothing to claim.
             // Let's be graceful and make this a no-op.
             // Prevents failures when multiple parties crank rewards.
-            return Ok(0);
+            return Ok((HasRewardEnded::Yes, 0));
         };
 
         let to_claim = user_reward.withdraw_earned_rewards()?;
 
-        if pool_reward.has_ended(clock) && user_reward.earned_rewards.try_floor_u64()? == 0 {
+        if (self.share == 0 || pool_reward.has_ended(clock))
+            && user_reward.earned_rewards.try_floor_u64()? == 0
+        {
             // This reward won't be used anymore as it ended and the user
             // claimed all there was to claim.
             // We can clean up this user reward.
+
+            // AUDIT:
+            // > UserRewards tracked inside UserRewardManager.rewards can only be removed when the
+            // > pool_reward period has ended and the earned_reward has been claimed.
+            // > So this means that users are still forced to wait for reward expiration even when
+            // > they haven't any share.
+            // > I think you should also make it possible to cleanup the UserRewardManager.rewards
+            // > when the UserRewardManager.share is set to 0 and
+            // > UserRewardManager.rewards[i].earned_rewards.floor() == 0
+
             // We're fine with swap remove bcs `user_reward_index` is meaningless.
             // SAFETY: We got the index from enumeration, so must exist.
             self.rewards.swap_remove(user_reward_index);
             pool_reward.num_user_reward_managers -= 1;
-        }
 
-        Ok(to_claim)
+            Ok((HasRewardEnded::Yes, to_claim))
+        } else {
+            Ok((HasRewardEnded::No, to_claim))
+        }
     }
 }
 
@@ -277,6 +321,9 @@ impl UserRewardManager {
 
     /// Should be updated before any interaction with rewards.
     ///
+    /// We expect the user share to be 0 if they are creating a new user manager.
+    /// The share is updated later.
+    ///
     /// # Assumption
     /// Invoker has checked that this [PoolRewardManager] matches the
     /// [UserRewardManager].
@@ -289,11 +336,12 @@ impl UserRewardManager {
         pool_reward_manager.update(clock)?;
 
         let curr_unix_timestamp_secs = clock.unix_timestamp as u64;
-
-        if matches!(
+        let is_creating_new_reward_manager = matches!(
             creating_new_reward_manager,
-            CreatingNewUserRewardManager::No
-        ) && curr_unix_timestamp_secs == self.last_update_time_secs
+            CreatingNewUserRewardManager::Yes
+        );
+
+        if !is_creating_new_reward_manager && curr_unix_timestamp_secs == self.last_update_time_secs
         {
             return Ok(());
         }
@@ -313,7 +361,8 @@ impl UserRewardManager {
                 .find(|(_, r)| r.pool_reward_index == pool_reward_index);
 
             let end_time_secs = pool_reward.start_time_secs + pool_reward.duration_secs as u64;
-            let has_ended_for_user = self.last_update_time_secs >= end_time_secs;
+            let has_ended_for_user = (!is_creating_new_reward_manager && self.share == 0)
+                || self.last_update_time_secs >= end_time_secs;
 
             match maybe_user_reward {
                 Some((user_reward_index, user_reward))
@@ -346,6 +395,9 @@ impl UserRewardManager {
                 None if pool_reward.start_time_secs > curr_unix_timestamp_secs => {
                     // reward period has not started yet
                 }
+                None if self.share == 0 && !is_creating_new_reward_manager => {
+                    // user has no share, nothing to accrue
+                }
                 None => {
                     // user did not yet start accruing rewards
 
@@ -359,10 +411,7 @@ impl UserRewardManager {
                                 .cumulative_rewards_per_share
                                 .try_mul(Decimal::from(self.share))?
                         } else {
-                            debug_assert!(matches!(
-                                creating_new_reward_manager,
-                                CreatingNewUserRewardManager::Yes
-                            ));
+                            debug_assert!(is_creating_new_reward_manager);
                             Decimal::zero()
                         },
                     };
