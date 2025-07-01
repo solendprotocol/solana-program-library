@@ -39,6 +39,10 @@ We keep adding `(total_rewards * time_passed) / (total_time)` every time someone
 This value is used to transfer the unallocated rewards to the admin.
 However, this can be calculated dynamically which avoids storing an extra packed decimal (16 bytes) on each reserve's pool reward (30).
 
+In Suilend, we disable looped rewards.
+For example, if an obligation has reserve $USDC and $USDT, this obligation cannot claim rewards.
+This is not done in Save.
+
 ## New ixs
 
 There's a common concept of reward vault and reward vault authority across the ixs.
