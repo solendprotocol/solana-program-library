@@ -260,7 +260,7 @@ pub fn process_instruction(
             position_kind,
         } => {
             msg!("Instruction: Claim Reward");
-            liquidity_mining::claim_user_reward::process(
+            liquidity_mining::claim_pool_reward::process(
                 program_id,
                 reward_authority_bump,
                 position_kind,

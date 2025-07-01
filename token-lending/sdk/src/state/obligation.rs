@@ -15,6 +15,7 @@ use solana_program::{
 use std::{
     cmp::{min, Ordering},
     convert::{TryFrom, TryInto},
+    str::FromStr,
 };
 
 /// Max number of collateral and liquidity reserve accounts combined for an obligation
@@ -836,6 +837,18 @@ impl TryFrom<u8> for PositionKind {
             0 => Ok(PositionKind::Deposit),
             1 => Ok(PositionKind::Borrow),
             _ => Err(LendingError::InstructionUnpackError.into()),
+        }
+    }
+}
+
+impl FromStr for PositionKind {
+    type Err = LendingError;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s.to_lowercase().as_str() {
+            "deposit" => Ok(PositionKind::Deposit),
+            "borrow" => Ok(PositionKind::Borrow),
+            _ => Err(LendingError::InstructionUnpackError),
         }
     }
 }

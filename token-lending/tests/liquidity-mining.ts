@@ -14,20 +14,21 @@ describe("liquidity mining", () => {
   // Configure the client to use the local cluster.
   anchor.setProvider(anchor.AnchorProvider.env());
 
-  const TEST_RESERVE_FOR_UPGRADE =
-    "BgxfHJDzm44T7XG68MYKx7YisTjZu73tVovyZSjJMpmw";
-
-  it("Upgrades reserve to 2.1.0 via CLI", async () => {
-    // There's an ix that upgrades a reserve to 2.1.0.
+  it("Upgrades reserves to 2.1.0 via CLI", async () => {
+    // There's an ix that upgrades all program reserves to 2.1.0.
     // This ix is invocable via our CLI.
     // In this test case for comfort and more test coverage we invoke the CLI
     // command rather than crafting the ix ourselves.
+
+    // We check this reserve before & after the upgrade.
+    const SOME_TEST_RESERVE_TO_CHECK =
+      "BgxfHJDzm44T7XG68MYKx7YisTjZu73tVovyZSjJMpmw";
 
     const rpcUrl = anchor.getProvider().connection.rpcEndpoint;
 
     const reserveBefore = await anchor
       .getProvider()
-      .connection.getAccountInfo(new PublicKey(TEST_RESERVE_FOR_UPGRADE));
+      .connection.getAccountInfo(new PublicKey(SOME_TEST_RESERVE_TO_CHECK));
 
     expect(reserveBefore.data.length).to.eq(619); // old version data length
     const expectedRentBefore = await anchor
@@ -36,7 +37,7 @@ describe("liquidity mining", () => {
     // some reserves have more rent
     expect(reserveBefore.lamports).to.be.greaterThanOrEqual(expectedRentBefore);
 
-    const command = `cargo run --quiet --bin solend-cli -- --url ${rpcUrl} upgrade-reserve --reserve ${TEST_RESERVE_FOR_UPGRADE}`;
+    const command = `cargo run --quiet --bin solend-cli -- --url ${rpcUrl} migrate-all-reserves-for-liquidity-mining`;
     console.log(`\$ ${command}`);
     const cliProcess = exec(command);
 
@@ -58,7 +59,7 @@ describe("liquidity mining", () => {
 
     const reserveAfter = await anchor
       .getProvider()
-      .connection.getAccountInfo(new PublicKey(TEST_RESERVE_FOR_UPGRADE));
+      .connection.getAccountInfo(new PublicKey(SOME_TEST_RESERVE_TO_CHECK));
 
     expect(reserveAfter.data.length).to.eq(5451); // new version data length
     const expectedRentAfter = await anchor

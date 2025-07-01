@@ -39,6 +39,10 @@ We keep adding `(total_rewards * time_passed) / (total_time)` every time someone
 This value is used to transfer the unallocated rewards to the admin.
 However, this can be calculated dynamically which avoids storing an extra packed decimal (16 bytes) on each reserve's pool reward (30).
 
+In Suilend, we disable looped rewards.
+For example, if an obligation has reserve $USDC and $USDT, this obligation cannot claim rewards.
+This is not done in Save.
+
 ## New ixs
 
 There's a common concept of reward vault and reward vault authority across the ixs.
@@ -73,7 +77,7 @@ Users will still be able to claim rewards they accrued until this point.
 #### Cancel
 
 Cancelling a pool reward can be done by setting the end time to 0.
-Note that only rewards longer than [solend_sdk::MIN_REWARD_PERIOD_SECS] can be cancelled.
+Note that only rewards longer than `solend_sdk::MIN_REWARD_PERIOD_SECS` can be cancelled.
 In this case we transfer tokens from the reward vault to the lending market reward token account.
 
 #### Shorten

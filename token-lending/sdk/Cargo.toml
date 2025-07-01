@@ -1,6 +1,6 @@
 [package]
 name = "solend-sdk"
-version.workspace = true
+version = "2.1.0"
 description = "Solend Sdk"
 authors = ["Solend Maintainers <maintainers@solend.fi>"]
 repository = "https://github.com/solendprotocol/solana-program-library"

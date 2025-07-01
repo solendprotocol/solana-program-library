@@ -1,7 +1,15 @@
+mod lending_state;
+mod liquidity_mining;
+
+use std::path::PathBuf;
+use std::time::SystemTime;
+
 use lending_state::SolendState;
 
+use liquidity_mining::*;
 use serde_json::Value;
 use solana_account_decoder::UiAccountEncoding;
+use solana_clap_utils::input_validators::is_amount_or_all;
 use solana_client::rpc_config::{RpcProgramAccountsConfig, RpcSendTransactionConfig};
 use solana_client::{rpc_config::RpcAccountInfoConfig, rpc_filter::RpcFilterType};
 use solana_sdk::bs58;
@@ -11,7 +19,7 @@ use solend_program::{
     instruction::set_lending_market_owner_and_config,
     state::{validate_reserve_config, RateLimiterConfig},
 };
-use solend_sdk::instruction::upgrade_reserve_to_v2_1_0;
+use solend_sdk::state::PositionKind;
 use solend_sdk::{
     instruction::{
         liquidate_obligation_and_redeem_reserve_collateral, redeem_reserve_collateral,
@@ -20,8 +28,6 @@ use solend_sdk::{
     state::Obligation,
     state::ReserveType,
 };
-
-mod lending_state;
 
 use {
     clap::{
@@ -770,8 +776,23 @@ fn main() {
                 )
         )
         .subcommand(
-            SubCommand::with_name("upgrade-reserve")
-                .about("Migrate reserve to version 2.1.0")
+            SubCommand::with_name("migrate-all-reserves-for-liquidity-mining")
+                .about("Upgrade all reserves to version v2.1.0")
+        )
+        .subcommand(
+            SubCommand::with_name("find-obligations-to-fund-for-liquidity-mining")
+                .about("Finds obligations which need funding for migration to v2.1.0 and writes them to a CSV file")
+                .arg(Arg::with_name("output_csv")
+                    .long("output-csv")
+                    .validator(|s| PathBuf::from_str(&s).map(drop).map_err(|_| "Invalid output CSV path".to_string()))
+                    .value_name("PATH")
+                    .takes_value(true)
+                    .required(true)
+                    .help("Output CSV file to write obligations to"))
+        )
+        .subcommand(
+            SubCommand::with_name("crank-rewards")
+                .about("Cranks liquidity mining rewards for a given reserve")
                 .arg(
                     Arg::with_name("reserve")
                         .long("reserve")
@@ -780,6 +801,183 @@ fn main() {
                         .takes_value(true)
                         .required(true)
                         .help("Reserve address"),
+                )
+                .arg(Arg::with_name("position_kind")
+                    .long("position-kind")
+                    .validator(is_parsable::<PositionKind>)
+                    .value_name("POSITION_KIND")
+                    .takes_value(true)
+                    .required(true)
+                    .help("Either 'deposit' or 'borrow'"))
+        )
+        .subcommand(
+            SubCommand::with_name("add-pool-reward")
+                .about("Adds a new liquidity mining reward to a reserve")
+                .arg(
+                    Arg::with_name("reserve")
+                        .long("reserve")
+                        .validator(is_pubkey)
+                        .value_name("PUBKEY")
+                        .takes_value(true)
+                        .required(true)
+                        .help("Reserve address"),
+                )
+                .arg(Arg::with_name("position_kind")
+                    .long("position-kind")
+                    .validator(is_parsable::<PositionKind>)
+                    .value_name("POSITION_KIND")
+                    .takes_value(true)
+                    .required(true)
+                    .help("Either 'deposit' or 'borrow'"))
+                .arg(
+                    Arg::with_name("source")
+                        .long("source")
+                        .validator(is_pubkey)
+                        .value_name("PUBKEY")
+                        .takes_value(true)
+                        .required(true)
+                        .help("SPL Token account to deposit rewards from"),
+                )
+                .arg(
+                    Arg::with_name("amount")
+                        .long("amount")
+                        .validator(is_amount_or_all)
+                        .value_name("INTEGER_AMOUNT")
+                        .takes_value(true)
+                        .required(true)
+                        .help("Amount of rewards to distribute (can be ALL)"),
+                )
+                .arg(
+                    Arg::with_name("start_time_secs")
+                        .long("start-time-secs")
+                        .validator(is_parsable::<u64>)
+                        .value_name("INTEGER")
+                        .takes_value(true)
+                        .help("Start time in seconds since epoch, defaults to now"),
+                )
+                .arg(
+                    Arg::with_name("duration_secs")
+                        .long("duration-secs")
+                        .validator(is_parsable::<u32>)
+                        .value_name("INTEGER")
+                        .takes_value(true)
+                        .required(true)
+                        .help("Duration in seconds"),
+                )
+        )
+        .subcommand(
+            SubCommand::with_name("close-pool-reward")
+                .about("Closes a liquidity mining reward for a reserve")
+                .arg(
+                    Arg::with_name("reserve")
+                        .long("reserve")
+                        .validator(is_pubkey)
+                        .value_name("PUBKEY")
+                        .takes_value(true)
+                        .required(true)
+                        .help("Reserve address"),
+                )
+                .arg(
+                    Arg::with_name("position_kind")
+                    .long("position-kind")
+                    .validator(is_parsable::<PositionKind>)
+                    .value_name("POSITION_KIND")
+                    .takes_value(true)
+                    .required(true)
+                    .help("Either 'deposit' or 'borrow'")
+                )
+                .arg(
+                    Arg::with_name("pool_reward_index")
+                        .long("pool-reward-index")
+                        .validator(is_parsable::<u8>)
+                        .value_name("INTEGER")
+                        .takes_value(true)
+                        .required(true)
+                        .help("Index of the pool reward to close"),
+                )
+                .arg(
+                    Arg::with_name("destination")
+                        .long("destination")
+                        .validator(is_pubkey)
+                        .value_name("PUBKEY")
+                        .takes_value(true)
+                        .required(true)
+                        .help("SPL Token account to withdraw rewards to"),
+                )
+        )
+        .subcommand(
+            SubCommand::with_name("edit-pool-reward")
+                .about("Changes a liquidity mining reward for a reserve")
+                .arg(
+                    Arg::with_name("reserve")
+                        .long("reserve")
+                        .validator(is_pubkey)
+                        .value_name("PUBKEY")
+                        .takes_value(true)
+                        .required(true)
+                        .help("Reserve address"),
+                )
+                .arg(
+                    Arg::with_name("position_kind")
+                    .long("position-kind")
+                    .validator(is_parsable::<PositionKind>)
+                    .value_name("POSITION_KIND")
+                    .takes_value(true)
+                    .required(true)
+                    .help("Either 'deposit' or 'borrow'")
+                )
+                .arg(
+                    Arg::with_name("pool_reward_index")
+                        .long("pool-reward-index")
+                        .validator(is_parsable::<u8>)
+                        .value_name("INTEGER")
+                        .takes_value(true)
+                        .required(true)
+                        .help("Index of the pool reward to close"),
+                )
+                .arg(
+                    Arg::with_name("new_end_time_secs")
+                        .long("new-end-time-secs")
+                        .validator(is_parsable::<u64>)
+                        .value_name("INTEGER")
+                        .takes_value(true)
+                        .required(true)
+                        .help("New end time in seconds since epoch"),
+                )
+                .arg(
+                    Arg::with_name("token_account")
+                        .long("token-account")
+                        .validator(is_pubkey)
+                        .value_name("PUBKEY")
+                        .takes_value(true)
+                        .required(true)
+                        .help("SPL Token account to either credit or debit rewards from"),
+                )
+        )
+        .subcommand(
+            SubCommand::with_name("view-reserve-rewards")
+                .about("View liquidity mining rewards for a reserve")
+                .arg(
+                    Arg::with_name("reserve")
+                        .long("reserve")
+                        .validator(is_pubkey)
+                        .value_name("PUBKEY")
+                        .takes_value(true)
+                        .required(true)
+                        .help("Reserve address"),
+                )
+        )
+        .subcommand(
+            SubCommand::with_name("view-obligation-rewards")
+                .about("View liquidity mining rewards for an obligation")
+                .arg(
+                    Arg::with_name("obligation")
+                        .long("obligation")
+                        .validator(is_pubkey)
+                        .value_name("PUBKEY")
+                        .takes_value(true)
+                        .required(true)
+                        .help("Obligation address"),
                 )
         )
         .subcommand(
@@ -1338,10 +1536,96 @@ fn main() {
                 risk_authority_pubkey,
             )
         }
-        ("upgrade-reserve", Some(arg_matches)) => {
-            let reserve_pubkey = pubkey_of(arg_matches, "reserve").unwrap();
+        ("migrate-all-reserves-for-liquidity-mining", _) => {
+            command_migrate_all_reserves_for_liquidity_mining(&mut config)
+        }
+        ("find-obligations-to-fund-for-liquidity-mining", Some(arg_matches)) => {
+            let output_csv: PathBuf =
+                value_of(arg_matches, "output_csv").expect("Should include --output-csv file path");
+            command_find_obligations_to_fund_for_liquidity_mining(&mut config, &output_csv)
+        }
+        ("crank-rewards", Some(arg_matches)) => {
+            let reserve_pubkey =
+                pubkey_of(arg_matches, "reserve").expect("Should include --reserve");
+            let position_kind = value_of::<PositionKind>(arg_matches, "position-_ind")
+                .expect("Should include --position-kind");
+            command_crank_pool_rewards(&mut config, reserve_pubkey, position_kind)
+        }
+        ("add-pool-reward", Some(arg_matches)) => {
+            let reserve_pubkey =
+                pubkey_of(arg_matches, "reserve").expect("Should include --reserve");
+            let position_kind = value_of::<PositionKind>(arg_matches, "position_kind")
+                .expect("Should include --position-kind");
+            let source_reward_token_account_pubkey =
+                pubkey_of(arg_matches, "source").expect("Should include --source");
+            let start_time_secs = value_of(arg_matches, "start_time_secs").unwrap_or(
+                SystemTime::now()
+                    .duration_since(SystemTime::UNIX_EPOCH)
+                    .expect("System time before UNIX EPOCH")
+                    .as_secs(),
+            );
+            let duration_secs =
+                value_of(arg_matches, "duration_secs").expect("Should include --duration-secs");
+            let token_amount = value_of(arg_matches, "amount").expect("Should include --amount");
 
-            command_upgrade_reserve_to_v2_1_0(&mut config, reserve_pubkey)
+            command_add_pool_reward(
+                &mut config,
+                reserve_pubkey,
+                position_kind,
+                source_reward_token_account_pubkey,
+                start_time_secs,
+                duration_secs,
+                token_amount,
+            )
+        }
+        ("close-pool-reward", Some(arg_matches)) => {
+            let reserve_pubkey =
+                pubkey_of(arg_matches, "reserve").expect("Should include --reserve");
+            let position_kind = value_of::<PositionKind>(arg_matches, "position_kind")
+                .expect("Should include --position-kind");
+            let pool_reward_index = value_of::<u8>(arg_matches, "pool_reward_index")
+                .expect("Should include --pool-reward-index");
+            let destination_reward_token_account_pubkey =
+                pubkey_of(arg_matches, "destination").expect("Should include --destination");
+
+            command_close_pool_reward(
+                &mut config,
+                reserve_pubkey,
+                position_kind,
+                pool_reward_index as _,
+                destination_reward_token_account_pubkey,
+            )
+        }
+        ("edit-pool-reward", Some(arg_matches)) => {
+            let reserve_pubkey =
+                pubkey_of(arg_matches, "reserve").expect("Should include --reserve");
+            let position_kind = value_of::<PositionKind>(arg_matches, "position_kind")
+                .expect("Should include --position-kind");
+            let pool_reward_index = value_of::<u8>(arg_matches, "pool_reward_index")
+                .expect("Should include --pool-reward-index");
+            let new_end_time_secs = value_of(arg_matches, "new_end_time_secs")
+                .expect("Should include --new-end-time-secs");
+            let reward_token_account_pubkey =
+                pubkey_of(arg_matches, "token_account").expect("Should include --token-account");
+
+            command_edit_pool_reward(
+                &mut config,
+                reserve_pubkey,
+                position_kind,
+                pool_reward_index as _,
+                new_end_time_secs,
+                reward_token_account_pubkey,
+            )
+        }
+        ("view-obligation-rewards", Some(arg_matches)) => {
+            let obligation_pubkey =
+                pubkey_of(arg_matches, "obligation").expect("Should include --obligation");
+            command_view_obligation_rewards(&mut config, obligation_pubkey)
+        }
+        ("view-reserve-rewards", Some(arg_matches)) => {
+            let reserve_pubkey =
+                pubkey_of(arg_matches, "reserve").expect("Should include --reserve");
+            command_view_reserve_rewards(&mut config, reserve_pubkey)
         }
         ("update-reserve", Some(arg_matches)) => {
             let reserve_pubkey = pubkey_of(arg_matches, "reserve").unwrap();
@@ -1989,29 +2273,6 @@ fn command_set_lending_market_owner_and_config(
     );
 
     send_transaction(config, transaction)?;
-    Ok(())
-}
-
-fn command_upgrade_reserve_to_v2_1_0(config: &mut Config, reserve_pubkey: Pubkey) -> CommandResult {
-    let recent_blockhash = config.rpc_client.get_latest_blockhash()?;
-
-    let message = Message::new_with_blockhash(
-        &[
-            ComputeBudgetInstruction::set_compute_unit_price(30101),
-            upgrade_reserve_to_v2_1_0(
-                config.lending_program_id,
-                reserve_pubkey,
-                config.fee_payer.pubkey(),
-            ),
-        ],
-        Some(&config.fee_payer.pubkey()),
-        &recent_blockhash,
-    );
-
-    let transaction = Transaction::new(&vec![config.fee_payer.as_ref()], message, recent_blockhash);
-
-    send_transaction(config, transaction)?;
-
     Ok(())
 }
 
