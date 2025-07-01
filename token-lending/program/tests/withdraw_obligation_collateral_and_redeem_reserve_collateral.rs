@@ -7,6 +7,7 @@ use solend_program::math::TryDiv;
 mod helpers;
 
 use crate::solend_program_test::*;
+use pretty_assertions::assert_eq;
 use solend_sdk::math::Decimal;
 use solend_sdk::state::ObligationCollateral;
 use solend_sdk::state::ReserveCollateral;
@@ -126,11 +127,20 @@ async fn test_success() {
 
                 rate_limiter
             },
+            deposits_pool_reward_manager: Box::new(PoolRewardManager {
+                total_shares: usdc_reserve
+                    .account
+                    .deposits_pool_reward_manager
+                    .total_shares
+                    - withdraw_amount as u64,
+                ..*usdc_reserve.account.deposits_pool_reward_manager
+            }),
             ..usdc_reserve.account
         }
     );
 
-    let obligation_post = test.load_account::<Obligation>(obligation.pubkey).await;
+    let obligation_post = test.load_obligation(obligation.pubkey).await;
+    let deposit_reserve = usdc_reserve.pubkey;
     assert_eq!(
         obligation_post.account,
         Obligation {
@@ -139,13 +149,23 @@ async fn test_success() {
                 stale: true
             },
             deposits: [ObligationCollateral {
-                deposit_reserve: usdc_reserve.pubkey,
+                deposit_reserve,
                 deposited_amount: 200 * FRACTIONAL_TO_USDC,
                 market_value: Decimal::from(200u64),
                 ..obligation.account.deposits[0]
             }]
             .to_vec(),
             deposited_value: Decimal::from(200u64),
+            user_reward_managers: {
+                let mut og = obligation.account.user_reward_managers.clone();
+
+                og.iter_mut()
+                    .find(|m| m.reserve == deposit_reserve)
+                    .unwrap()
+                    .share = 200 * FRACTIONAL_TO_USDC;
+
+                og
+            },
             ..obligation.account
         }
     );

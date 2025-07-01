@@ -1,6 +1,7 @@
 #![cfg(feature = "test-bpf")]
 
 use crate::helpers::solend_program_test::*;
+use pretty_assertions::assert_eq;
 use solana_program::pubkey::Pubkey;
 use solana_sdk::signature::Signer;
 
@@ -77,7 +78,7 @@ async fn setup(
         .unwrap();
 
     // populate deposit value correctly.
-    let obligation = test.load_account::<Obligation>(obligation.pubkey).await;
+    let obligation = test.load_obligation(obligation.pubkey).await;
     lending_market
         .refresh_obligation(&mut test, &obligation)
         .await
@@ -86,7 +87,7 @@ async fn setup(
     let lending_market = test.load_account(lending_market.pubkey).await;
     let usdc_reserve = test.load_account(usdc_reserve.pubkey).await;
     let wsol_reserve = test.load_account(wsol_reserve.pubkey).await;
-    let obligation = test.load_account::<Obligation>(obligation.pubkey).await;
+    let obligation = test.load_obligation(obligation.pubkey).await;
 
     let host_fee_receiver = User::new_with_balances(&mut test, &[(&wsol_mint::id(), 0)]).await;
     (
@@ -216,7 +217,20 @@ async fn test_success() {
         usdc_reserve_post,
     );
 
-    let wsol_reserve_post = test.load_account::<Reserve>(wsol_reserve.pubkey).await;
+    let mut wsol_reserve_post = test.load_account::<Reserve>(wsol_reserve.pubkey).await;
+
+    {
+        // let's test liq. mining separately bcs of clock time
+
+        let borrows_manager = &wsol_reserve_post.account.borrows_pool_reward_manager;
+
+        assert_eq!(borrows_manager.total_shares, 4000000400);
+        assert_ne!(borrows_manager.last_update_time_secs, 0);
+
+        wsol_reserve_post.account.borrows_pool_reward_manager =
+            wsol_reserve.account.borrows_pool_reward_manager.clone();
+    }
+
     let expected_wsol_reserve_post = Reserve {
         last_update: LastUpdate {
             slot: 1000,
@@ -238,13 +252,9 @@ async fn test_success() {
         ..wsol_reserve.account
     };
 
-    assert_eq!(
-        wsol_reserve_post.account, expected_wsol_reserve_post,
-        "{:#?} {:#?}",
-        wsol_reserve_post, expected_wsol_reserve_post
-    );
+    assert_eq!(wsol_reserve_post.account, expected_wsol_reserve_post);
 
-    let obligation_post = test.load_account::<Obligation>(obligation.pubkey).await;
+    let obligation_post = test.load_obligation(obligation.pubkey).await;
     assert_eq!(
         obligation_post.account,
         Obligation {
@@ -271,10 +281,31 @@ async fn test_success() {
             unweighted_borrowed_value: borrow_value,
             allowed_borrow_value: Decimal::from(50u64),
             unhealthy_borrow_value: Decimal::from(55u64),
+            user_reward_managers: {
+                // clock value remains the same
+                let last_update_time_secs =
+                    obligation.account.user_reward_managers[0].last_update_time_secs;
+
+                vec![
+                    UserRewardManager {
+                        reserve: usdc_reserve.pubkey,
+                        position_kind: PositionKind::Deposit,
+                        share: 100000000,
+                        last_update_time_secs,
+                        rewards: Vec::new(),
+                    },
+                    UserRewardManager {
+                        reserve: wsol_reserve.pubkey,
+                        position_kind: PositionKind::Borrow,
+                        share: 4000000400,
+                        last_update_time_secs,
+                        rewards: Vec::new(),
+                    },
+                ]
+                .into()
+            },
             ..obligation.account
         },
-        "{:#?}",
-        obligation_post.account
     );
 }
 
@@ -379,7 +410,7 @@ async fn test_fail_borrow_over_reserve_borrow_limit() {
     assert_eq!(
         res,
         TransactionError::InstructionError(
-            1,
+            2, // ix 0 is CU budget, ix 1 is obligation realloc, ix 2 is borrow
             InstructionError::Custom(LendingError::InvalidAmount as u32)
         )
     );
@@ -450,7 +481,7 @@ async fn test_fail_reserve_borrow_rate_limit_exceeded() {
         assert_eq!(
             res,
             TransactionError::InstructionError(
-                1,
+                2, // ix 0 is CU budget, ix 1 is obligation realloc, ix 2 is borrow
                 InstructionError::Custom(LendingError::OutflowRateLimitExceeded as u32)
             )
         );
@@ -476,7 +507,7 @@ async fn test_fail_reserve_borrow_rate_limit_exceeded() {
     assert_eq!(
         res,
         TransactionError::InstructionError(
-            1,
+            2, // ix 0 is CU budget, ix 1 is obligation realloc, ix 2 is borrow
             InstructionError::Custom(LendingError::OutflowRateLimitExceeded as u32)
         )
     );

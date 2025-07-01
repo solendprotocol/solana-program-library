@@ -71,7 +71,7 @@ async fn test_success() {
         .await
         .unwrap();
 
-    let obligation = test.load_account(obligation.pubkey).await;
+    let obligation = test.load_obligation(obligation.pubkey).await;
     lending_market
         .borrow_obligation_liquidity(
             &mut test,
@@ -89,7 +89,7 @@ async fn test_success() {
         .await
         .unwrap();
 
-    let obligation = test.load_account(obligation.pubkey).await;
+    let obligation = test.load_obligation(obligation.pubkey).await;
     lending_market
         .withdraw_obligation_collateral_and_redeem_reserve_collateral(
             &mut test,

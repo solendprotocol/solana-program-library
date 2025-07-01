@@ -9,22 +9,35 @@ use solana_program::{
     entrypoint::ProgramResult,
     msg,
     program_error::ProgramError,
-    program_pack::{IsInitialized, Pack, Sealed},
+    program_pack::{IsInitialized, Sealed},
     pubkey::{Pubkey, PUBKEY_BYTES},
 };
 use std::{
     cmp::{min, Ordering},
     convert::{TryFrom, TryInto},
+    str::FromStr,
 };
 
 /// Max number of collateral and liquidity reserve accounts combined for an obligation
 pub const MAX_OBLIGATION_RESERVES: usize = 10;
 
 /// Lending market obligation state
+///
+/// # (Un)packing
+/// [Obligation] used to implement `Pack` in versions prior to 2.1.0.
+/// Now [Obligation] is dynamically sized based on the reserves in
+/// [Obligation::user_reward_managers].
+/// We manually implement packing and unpacking functions the the `Pack` trait
+/// instead.
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct Obligation {
-    /// Version of the struct
-    pub version: u8,
+    /// For uninitialized accounts, this will be equal to [AccountDiscriminator::Uninitialized].
+    /// Otherwise this is [AccountDiscriminator::Obligation].
+    ///
+    /// # Note
+    /// For accounts last used with version prior to @v2.1.0 this will be equal
+    /// to [PROGRAM_VERSION_2_0_2].
+    pub discriminator: AccountDiscriminator,
     /// Last update to collateral, liquidity, or their market values
     pub last_update: LastUpdate,
     /// Lending market address
@@ -63,6 +76,21 @@ pub struct Obligation {
     pub borrowing_isolated_asset: bool,
     /// Obligation can be marked as closeable
     pub closeable: bool,
+    /// Collects liquidity mining rewards for positions (collateral/borrows).
+    ///
+    /// # (Un)packing
+    /// If there are no rewards to be collected then the obligation is packed
+    /// as if there was no liquidity mining feature involved.
+    pub user_reward_managers: UserRewardManagers,
+}
+
+/// These are the two foundational user interactions in a borrow-lending protocol.
+#[derive(Debug, PartialEq, Eq, Clone, Copy)]
+pub enum PositionKind {
+    /// User is providing liquidity.
+    Deposit = 0,
+    /// User is owing liquidity.
+    Borrow = 1,
 }
 
 impl Obligation {
@@ -75,7 +103,7 @@ impl Obligation {
 
     /// Initialize an obligation
     pub fn init(&mut self, params: InitObligationParams) {
-        self.version = PROGRAM_VERSION;
+        self.discriminator = AccountDiscriminator::Obligation;
         self.last_update = LastUpdate::new(params.current_slot);
         self.lending_market = params.lending_market;
         self.owner = params.owner;
@@ -88,26 +116,40 @@ impl Obligation {
         self.borrowed_value.try_div(self.deposited_value)
     }
 
-    /// Repay liquidity and remove it from borrows if zeroed out
-    pub fn repay(&mut self, settle_amount: Decimal, liquidity_index: usize) -> ProgramResult {
+    /// Repay liquidity and remove it from borrows if zeroed out.
+    ///
+    /// Returns current liability shares.
+    pub fn repay(
+        &mut self,
+        settle_amount: Decimal,
+        liquidity_index: usize,
+    ) -> Result<u64, ProgramError> {
         let liquidity = &mut self.borrows[liquidity_index];
         if settle_amount == liquidity.borrowed_amount_wads {
             self.borrows.remove(liquidity_index);
+            Ok(0)
         } else {
             liquidity.repay(settle_amount)?;
+            liquidity.liability_shares()
         }
-        Ok(())
     }
 
-    /// Withdraw collateral and remove it from deposits if zeroed out
-    pub fn withdraw(&mut self, withdraw_amount: u64, collateral_index: usize) -> ProgramResult {
+    /// Withdraw collateral and remove it from deposits if zeroed out.
+    ///
+    /// Returns the new deposited amount.
+    pub fn withdraw(
+        &mut self,
+        withdraw_amount: u64,
+        collateral_index: usize,
+    ) -> Result<u64, ProgramError> {
         let collateral = &mut self.deposits[collateral_index];
         if withdraw_amount == collateral.deposited_amount {
             self.deposits.remove(collateral_index);
+            Ok(0)
         } else {
             collateral.withdraw(withdraw_amount)?;
+            Ok(collateral.deposited_amount)
         }
-        Ok(())
     }
 
     /// calculate the maximum amount of collateral that can be borrowed
@@ -286,6 +328,28 @@ impl Obligation {
             .iter()
             .position(|liquidity| liquidity.borrow_reserve == borrow_reserve)
     }
+
+    /// Find whether the reserve is a deposit or borrow
+    pub fn find_position_kind(&self, reserve: Pubkey) -> Result<PositionKind, ProgramError> {
+        if self
+            .deposits
+            .iter()
+            .any(|collateral| collateral.deposit_reserve == reserve)
+        {
+            return Ok(PositionKind::Deposit);
+        }
+
+        if self
+            .borrows
+            .iter()
+            .any(|liquidity| liquidity.borrow_reserve == reserve)
+        {
+            return Ok(PositionKind::Borrow);
+        }
+
+        msg!("Reserve not found in obligation");
+        Err(LendingError::InvalidAccountInput.into())
+    }
 }
 
 /// Initialize an obligation
@@ -305,7 +369,7 @@ pub struct InitObligationParams {
 impl Sealed for Obligation {}
 impl IsInitialized for Obligation {
     fn is_initialized(&self) -> bool {
-        self.version != UNINITIALIZED_VERSION
+        !matches!(self.discriminator, AccountDiscriminator::Uninitialized)
     }
 }
 
@@ -410,20 +474,91 @@ impl ObligationLiquidity {
 
         Ok(())
     }
+
+    /// Calculates shares for liquidity mining.
+    pub fn liability_shares(&self) -> Result<u64, ProgramError> {
+        self.borrowed_amount_wads
+            .try_div(self.cumulative_borrow_rate_wads)?
+            .try_floor_u64()
+    }
 }
 
 const OBLIGATION_COLLATERAL_LEN: usize = 88; // 32 + 8 + 16 + 32
 const OBLIGATION_LIQUIDITY_LEN: usize = 112; // 32 + 16 + 16 + 16 + 32
-const OBLIGATION_LEN: usize = 1300; // 1 + 8 + 1 + 32 + 32 + 16 + 16 + 16 + 16 + 64 + 1 + 1 + (88 * 1) + (112 * 9)
-                                    // @TODO: break this up by obligation / collateral / liquidity https://git.io/JOCca
-impl Pack for Obligation {
-    const LEN: usize = OBLIGATION_LEN;
+/// This is the size of the account _before_ LM feature was added.
+const OBLIGATION_LEN_V2_0_2: usize = 1300; // 1 + 8 + 1 + 32 + 32 + 16 + 16 + 16 + 16 + 64 + 1 + 1 + (88 * 1) + (112 * 9)
+                                           // @TODO: break this up by obligation / collateral / liquidity https://git.io/JOCca
+impl Obligation {
+    /// Obligation with no Liquidity Mining Rewards
+    pub const MIN_LEN: usize = OBLIGATION_LEN_V2_0_2;
 
-    fn pack_into_slice(&self, dst: &mut [u8]) {
-        let output = array_mut_ref![dst, 0, OBLIGATION_LEN];
+    /// Maximum account size for obligation.
+    /// Scenario in which all reserves have all associated rewards filled.
+    ///
+    /// - [Self::user_reward_managers] vec length in u8
+    /// - [Self::user_reward_managers] vector
+    pub const MAX_LEN: usize =
+        Self::MIN_LEN + 1 + MAX_OBLIGATION_RESERVES * UserRewardManager::MAX_LEN;
+
+    /// How many bytes are needed to pack this [Obligation].
+    pub fn get_packed_len(&self) -> usize {
+        if self.user_reward_managers.is_empty() {
+            return OBLIGATION_LEN_V2_0_2;
+        }
+
+        let mut size = OBLIGATION_LEN_V2_0_2 + 1;
+
+        for reward_manager in self.user_reward_managers.iter() {
+            size += reward_manager.get_packed_len();
+        }
+
+        size
+    }
+
+    /// Unpacks from slice but returns an error if the account is already
+    /// initialized.
+    pub fn unpack_uninitialized(input: &[u8]) -> Result<Self, ProgramError> {
+        let account = Self::unpack_unchecked(input)?;
+        if account.is_initialized() {
+            Err(LendingError::AlreadyInitialized.into())
+        } else {
+            Ok(account)
+        }
+    }
+
+    /// Unpack from slice and check if initialized
+    pub fn unpack(input: &[u8]) -> Result<Self, ProgramError> {
+        let value = Self::unpack_unchecked(input)?;
+        if value.is_initialized() {
+            Ok(value)
+        } else {
+            Err(ProgramError::UninitializedAccount)
+        }
+    }
+
+    /// Unpack from slice without checking if initialized
+    pub fn unpack_unchecked(input: &[u8]) -> Result<Self, ProgramError> {
+        if !(Self::MIN_LEN..=Self::MAX_LEN).contains(&input.len()) {
+            return Err(ProgramError::InvalidAccountData);
+        }
+        Self::unpack_from_slice(input)
+    }
+
+    /// Pack into slice
+    pub fn pack(src: Self, dst: &mut [u8]) -> Result<(), ProgramError> {
+        if !(Self::MIN_LEN..=Self::MAX_LEN).contains(&dst.len()) {
+            return Err(ProgramError::InvalidAccountData);
+        }
+        src.pack_into_slice(dst);
+        Ok(())
+    }
+
+    /// Since @v2.1.0 we pack vec of user reward managers
+    pub fn pack_into_slice(&self, dst: &mut [u8]) {
+        let output = array_mut_ref![dst, 0, OBLIGATION_LEN_V2_0_2];
         #[allow(clippy::ptr_offset_with_cast)]
         let (
-            version,
+            discriminator,
             last_update_slot,
             last_update_stale,
             lending_market,
@@ -464,7 +599,7 @@ impl Pack for Obligation {
         ];
 
         // obligation
-        *version = self.version.to_le_bytes();
+        discriminator[0] = self.discriminator as _;
         *last_update_slot = self.last_update.slot.to_le_bytes();
         pack_bool(self.last_update.stale, last_update_stale);
         lending_market.copy_from_slice(self.lending_market.as_ref());
@@ -525,14 +660,37 @@ impl Pack for Obligation {
             pack_decimal(liquidity.market_value, market_value);
             offset += OBLIGATION_LIQUIDITY_LEN;
         }
+
+        if !self.user_reward_managers.is_empty() {
+            // if the underlying buffer doesn't have enough space then we panic
+
+            debug_assert!(MAX_OBLIGATION_RESERVES >= self.user_reward_managers.len());
+            debug_assert!(u8::MAX > MAX_OBLIGATION_RESERVES as _);
+            let user_reward_managers_len = self.user_reward_managers.len() as u8;
+            dst[OBLIGATION_LEN_V2_0_2] = user_reward_managers_len;
+
+            let mut offset = OBLIGATION_LEN_V2_0_2 + 1;
+            for user_reward_manager in self.user_reward_managers.iter() {
+                user_reward_manager.pack_into_slice(&mut dst[offset..]);
+                offset += user_reward_manager.get_packed_len();
+            }
+        } else if dst.len() > OBLIGATION_LEN_V2_0_2 {
+            // set the length to 0 if obligation was resized before
+
+            dst[OBLIGATION_LEN_V2_0_2] = 0;
+        };
+
+        // Any data after offset is garbage, but we don't zero it out bcs
+        // it costs CU and we'd have to do it bit by bit to avoid stack overflows.
     }
 
-    /// Unpacks a byte buffer into an [ObligationInfo](struct.ObligationInfo.html).
-    fn unpack_from_slice(src: &[u8]) -> Result<Self, ProgramError> {
-        let input = array_ref![src, 0, OBLIGATION_LEN];
+    /// Unpacks a byte buffer into an [Obligation].
+    /// Since @v2.1.0 we unpack vector of user reward managers
+    pub fn unpack_from_slice(src: &[u8]) -> Result<Self, ProgramError> {
+        let input = array_ref![src, 0, OBLIGATION_LEN_V2_0_2];
         #[allow(clippy::ptr_offset_with_cast)]
         let (
-            version,
+            discriminator,
             last_update_slot,
             last_update_stale,
             lending_market,
@@ -572,11 +730,21 @@ impl Pack for Obligation {
             OBLIGATION_COLLATERAL_LEN + (OBLIGATION_LIQUIDITY_LEN * (MAX_OBLIGATION_RESERVES - 1))
         ];
 
-        let version = u8::from_le_bytes(*version);
-        if version > PROGRAM_VERSION {
-            msg!("Obligation version does not match lending program version");
-            return Err(ProgramError::InvalidAccountData);
-        }
+        let discriminator = match AccountDiscriminator::try_from(discriminator) {
+            Ok(d @ AccountDiscriminator::Uninitialized) => d, // yet to be set
+            Ok(d @ AccountDiscriminator::Obligation) => d,    // migrated to v2.1.0
+            Ok(_) => {
+                msg!("Obligation discriminator does not match");
+                return Err(LendingError::InvalidAccountDiscriminator.into());
+            }
+            Err(LendingError::AccountNotMigrated) => {
+                // We're migrating the account from v2.0.2 to v2.1.0.
+                debug_assert_eq!(OBLIGATION_LEN_V2_0_2, input.len());
+
+                AccountDiscriminator::Obligation
+            }
+            Err(e) => return Err(e.into()),
+        };
 
         let deposits_len = u8::from_le_bytes(*deposits_len);
         let borrows_len = u8::from_le_bytes(*borrows_len);
@@ -621,8 +789,24 @@ impl Pack for Obligation {
             offset += OBLIGATION_LIQUIDITY_LEN;
         }
 
+        let user_reward_managers = match src.get(OBLIGATION_LEN_V2_0_2) {
+            Some(len @ 1..) => {
+                let mut user_reward_managers = Vec::with_capacity(*len as _);
+
+                let mut offset = OBLIGATION_LEN_V2_0_2 + 1;
+                for _ in 0..*len {
+                    let user_reward_manager = UserRewardManager::unpack_from_slice(&src[offset..])?;
+                    offset += user_reward_manager.get_packed_len();
+                    user_reward_managers.push(user_reward_manager);
+                }
+
+                user_reward_managers
+            }
+            _ => Vec::new(),
+        };
+
         Ok(Self {
-            version,
+            discriminator,
             last_update: LastUpdate {
                 slot: u64::from_le_bytes(*last_update_slot),
                 stale: unpack_bool(last_update_stale)?,
@@ -640,7 +824,32 @@ impl Pack for Obligation {
             super_unhealthy_borrow_value: unpack_decimal(super_unhealthy_borrow_value),
             borrowing_isolated_asset: unpack_bool(borrowing_isolated_asset)?,
             closeable: unpack_bool(closeable)?,
+            user_reward_managers: user_reward_managers.into(),
         })
+    }
+}
+
+impl TryFrom<u8> for PositionKind {
+    type Error = ProgramError;
+
+    fn try_from(value: u8) -> Result<Self, Self::Error> {
+        match value {
+            0 => Ok(PositionKind::Deposit),
+            1 => Ok(PositionKind::Borrow),
+            _ => Err(LendingError::InstructionUnpackError.into()),
+        }
+    }
+}
+
+impl FromStr for PositionKind {
+    type Err = LendingError;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s.to_lowercase().as_str() {
+            "deposit" => Ok(PositionKind::Deposit),
+            "borrow" => Ok(PositionKind::Borrow),
+            _ => Err(LendingError::InstructionUnpackError),
+        }
     }
 }
 
@@ -658,12 +867,10 @@ mod test {
         Decimal::from_scaled_val(rand::thread_rng().gen())
     }
 
-    #[test]
-    fn pack_and_unpack_obligation() {
-        let mut rng = rand::thread_rng();
-        for _ in 0..100 {
-            let obligation = Obligation {
-                version: PROGRAM_VERSION,
+    impl Obligation {
+        fn new_rand(rng: &mut impl Rng) -> Self {
+            Self {
+                discriminator: AccountDiscriminator::Obligation,
                 last_update: LastUpdate {
                     slot: rng.gen(),
                     stale: rng.gen(),
@@ -691,11 +898,43 @@ mod test {
                 super_unhealthy_borrow_value: rand_decimal(),
                 borrowing_isolated_asset: rng.gen(),
                 closeable: rng.gen(),
-            };
+                user_reward_managers: {
+                    let user_reward_managers_len = rng.gen_range(0..=MAX_OBLIGATION_RESERVES);
+                    std::iter::repeat_with(|| UserRewardManager::new_rand(rng))
+                        .take(user_reward_managers_len)
+                        .collect::<Vec<_>>()
+                        .into()
+                },
+            }
+        }
+    }
 
-            let mut packed = [0u8; OBLIGATION_LEN];
+    #[test]
+    fn pack_and_unpack_obligation_v2_1_0() {
+        let mut rng = rand::thread_rng();
+        for _ in 0..100 {
+            let obligation = Obligation::new_rand(&mut rng);
+
+            let mut packed = [0u8; Obligation::MAX_LEN];
             Obligation::pack(obligation.clone(), &mut packed).unwrap();
             let unpacked = Obligation::unpack(&packed).unwrap();
+            assert_eq!(obligation, unpacked);
+        }
+    }
+
+    #[test]
+    fn pack_and_unpack_obligation_v2_0_2() {
+        let mut rng = rand::thread_rng();
+        for _ in 0..100 {
+            let obligation = Obligation::new_rand(&mut rng);
+
+            let mut packed = [0u8; Obligation::MAX_LEN];
+            Obligation::pack(obligation.clone(), &mut packed).unwrap();
+            // this is what version looked like before the upgrade to v2.1.0
+            packed[0] = PROGRAM_VERSION_2_0_2;
+
+            let unpacked = Obligation::unpack(&packed).unwrap();
+            // upgraded
             assert_eq!(obligation, unpacked);
         }
     }
@@ -748,8 +987,9 @@ mod test {
         fn repay_partial_amounts()(amount in 1..=u64::MAX)(
             repay_amount in Just(WAD as u128 * amount as u128),
             borrowed_amount in (WAD as u128 * amount as u128 + 1)..=MAX_BORROWED,
-        ) -> (u128, u128) {
-            (repay_amount, borrowed_amount)
+            cumulative_borrow_rate in (WAD as u128)..=(WAD as u128 * MAX_COMPOUNDED_INTEREST as u128),
+        ) -> (u128, u128, u128) {
+            (repay_amount, borrowed_amount, cumulative_borrow_rate)
         }
     }
 
@@ -765,19 +1005,22 @@ mod test {
     proptest! {
         #[test]
         fn repay_partial(
-            (repay_amount, borrowed_amount) in repay_partial_amounts(),
+            (repay_amount, borrowed_amount, cumulative_borrow_rate) in repay_partial_amounts(),
         ) {
             let borrowed_amount_wads = Decimal::from_scaled_val(borrowed_amount);
             let repay_amount_wads = Decimal::from_scaled_val(repay_amount);
+            let cumulative_borrow_rate_wads = Decimal::from_scaled_val(cumulative_borrow_rate);
             let mut obligation = Obligation {
                 borrows: vec![ObligationLiquidity {
                     borrowed_amount_wads,
+                    cumulative_borrow_rate_wads,
                     ..ObligationLiquidity::default()
                 }],
                 ..Obligation::default()
             };
 
-            obligation.repay(repay_amount_wads, 0)?;
+            let liability_shares = obligation.repay(repay_amount_wads, 0)?;
+            assert_ne!(liability_shares, 0);
             assert!(obligation.borrows[0].borrowed_amount_wads < borrowed_amount_wads);
             assert!(obligation.borrows[0].borrowed_amount_wads > Decimal::zero());
         }
@@ -788,9 +1031,11 @@ mod test {
         ) {
             let borrowed_amount_wads = Decimal::from_scaled_val(borrowed_amount);
             let repay_amount_wads = Decimal::from_scaled_val(repay_amount);
+            let cumulative_borrow_rate_wads = Decimal::one();
             let mut obligation = Obligation {
                 borrows: vec![ObligationLiquidity {
                     borrowed_amount_wads,
+                    cumulative_borrow_rate_wads,
                     ..ObligationLiquidity::default()
                 }],
                 ..Obligation::default()

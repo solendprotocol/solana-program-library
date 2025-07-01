@@ -13,7 +13,9 @@ use solana_sdk::transaction::TransactionError;
 use solend_program::error::LendingError;
 use solend_program::instruction::init_obligation;
 use solend_program::math::Decimal;
-use solend_program::state::{LastUpdate, LendingMarket, Obligation, PROGRAM_VERSION};
+use solend_program::state::{
+    discriminator::AccountDiscriminator, LastUpdate, LendingMarket, Obligation,
+};
 
 async fn setup() -> (SolendProgramTest, Info<LendingMarket>, User) {
     let (test, lending_market, _, _, _, user) =
@@ -34,7 +36,7 @@ async fn test_success() {
     assert_eq!(
         obligation.account,
         Obligation {
-            version: PROGRAM_VERSION,
+            discriminator: AccountDiscriminator::Obligation,
             last_update: LastUpdate {
                 slot: 1000,
                 stale: true
@@ -52,6 +54,7 @@ async fn test_success() {
             super_unhealthy_borrow_value: Decimal::zero(),
             borrowing_isolated_asset: false,
             closeable: false,
+            user_reward_managers: Default::default(),
         }
     );
 }

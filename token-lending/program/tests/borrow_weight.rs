@@ -37,7 +37,7 @@ async fn test_refresh_obligation() {
         .await
         .unwrap();
 
-    let obligation_post = test.load_account::<Obligation>(obligation.pubkey).await;
+    let obligation_post = test.load_obligation(obligation.pubkey).await;
 
     // obligation has borrowed 10 sol and sol = $10 but since borrow weight == 2, the
     // borrowed_value is 200 instead of 100.
@@ -134,7 +134,7 @@ async fn test_borrow() {
             .await
             .unwrap();
 
-        let obligation_post = test.load_account::<Obligation>(obligation.pubkey).await;
+        let obligation_post = test.load_obligation(obligation.pubkey).await;
         // - usdc ltv is 0.5,
         // - sol borrow weight is 2
         // max you can borrow is 100 * 0.5 / 2 = 2.5 SOL
@@ -176,7 +176,7 @@ async fn test_borrow() {
 
     test.advance_clock_by_slots(1).await;
 
-    let obligation = test.load_account::<Obligation>(obligation.pubkey).await;
+    let obligation = test.load_obligation(obligation.pubkey).await;
 
     // max withdraw
     {
@@ -302,7 +302,7 @@ async fn test_liquidation() {
             .await
             .unwrap();
 
-        let obligation_post = test.load_account::<Obligation>(obligation.pubkey).await;
+        let obligation_post = test.load_obligation(obligation.pubkey).await;
         // - usdc ltv is 0.5,
         // - sol borrow weight is 1
         // max you can borrow is 100 * 0.5 = 5 SOL
@@ -340,7 +340,7 @@ async fn test_liquidation() {
         assert_eq!(
             res,
             TransactionError::InstructionError(
-                1,
+                2,
                 InstructionError::Custom(LendingError::ObligationHealthy as u32)
             )
         );

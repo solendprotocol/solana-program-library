@@ -57,6 +57,36 @@ use std::{
 use super::mock_pyth::{init, set_price};
 use super::mock_pyth_pull::{init as init_pull, set_price as set_price_pull};
 
+mod cu_budgets {
+    pub(super) const INIT_OBLIGATION: u32 = 10_001;
+    pub(super) const DEPOSIT_OBLIGATION_COLLATERAL: u32 = 70_002;
+    pub(super) const REFRESH_RESERVE: u32 = 2_000_003;
+    pub(super) const REFRESH_OBLIGATION: u32 = 1_000_004;
+    pub(super) const BORROW_OBLIGATION_LIQUIDITY: u32 = 180_005;
+    pub(super) const REPAY_OBLIGATION_LIQUIDITY: u32 = 70_006;
+    pub(super) const REDEEM_FEES: u32 = 80_007;
+    pub(super) const LIQUIDATE_OBLIGATION_AND_REDEEM_RESERVE_COLLATERAL: u32 = 250_008;
+    pub(super) const WITHDRAW_OBLIGATION_COLLATERAL_AND_REDEEM_RESERVE_COLLATERAL: u32 = 200_009;
+    pub(super) const WITHDRAW_OBLIGATION_COLLATERAL: u32 = 130_010;
+    pub(super) const INIT_RESERVE: u32 = 90_011;
+    pub(super) const DEPOSIT: u32 = 70_012;
+    pub(super) const DONATE_TO_RESERVE: u32 = 50_013;
+    pub(super) const UPDATE_RESERVE_CONFIG: u32 = 30_014;
+    pub(super) const DEPOSIT_RESERVE_LIQUIDITY_AND_OBLIGATION_COLLATERAL: u32 = 130_015;
+    pub(super) const REDEEM: u32 = 90_016;
+    pub(super) const ADD_POOL_REWARD: u32 = 80_017;
+    pub(super) const EDIT_POOL_REWARD: u32 = 80_018;
+    pub(super) const CLOSE_POOL_REWARD: u32 = 80_019;
+    pub(super) const CLAIM_POOL_REWARD: u32 = 200_020;
+}
+
+/// This is at most how many bytes can an obligation grow.
+/// An obligation grows dynamically as needed when new rewards are being tracked.
+/// These tests don't need to care about correctly transferring just the amount
+/// needed, we'll just transfer lamports to cover the rent of the largest
+/// possible obligation there can be.
+const OBLIGATION_EXTRA_SIZE: usize = Obligation::MAX_LEN - Obligation::MIN_LEN;
+
 pub struct SolendProgramTest {
     pub context: ProgramTestContext,
     rent: Rent,
@@ -78,6 +108,11 @@ pub struct Oracle {
 pub struct Info<T> {
     pub pubkey: Pubkey,
     pub account: T,
+}
+
+pub struct LiqMiningReward {
+    pub mint: Pubkey,
+    pub vault: Keypair,
 }
 
 impl SolendProgramTest {
@@ -254,6 +289,21 @@ impl SolendProgramTest {
         }
     }
 
+    pub async fn load_obligation(&mut self, acc_pk: Pubkey) -> Info<Obligation> {
+        let acc = self
+            .context
+            .banks_client
+            .get_account(acc_pk)
+            .await
+            .unwrap()
+            .unwrap();
+
+        Info {
+            pubkey: acc_pk,
+            account: Obligation::unpack(&acc.data).unwrap(),
+        }
+    }
+
     pub async fn load_zeroable_account<T: Pod + Copy>(&mut self, acc_pk: Pubkey) -> Info<T> {
         let acc = self
             .context
@@ -286,6 +336,16 @@ impl SolendProgramTest {
     pub async fn get_clock(&mut self) -> Clock {
         self.get_bincode_account::<Clock>(&sysvar::clock::id())
             .await
+    }
+
+    /// Returns the new clock unix timestamp
+    pub async fn advance_clock_by_slots_and_secs(&mut self, slots: u64, secs: u64) -> u64 {
+        self.advance_clock_by_slots(slots).await;
+        let mut clock = self.get_clock().await;
+        clock.unix_timestamp += secs as i64;
+        self.context.set_sysvar(&clock);
+
+        clock.unix_timestamp as u64
     }
 
     /// Advances clock by x slots. note that transactions don't automatically increment the slot
@@ -323,6 +383,12 @@ impl SolendProgramTest {
             .unwrap();
 
         keypair.pubkey()
+    }
+
+    pub async fn create_mint_as_test_authority(&mut self) -> Pubkey {
+        let mint = self.create_mint(&self.authority.pubkey()).await;
+        self.mints.insert(mint, None);
+        mint
     }
 
     pub async fn create_mint(&mut self, mint_authority: &Pubkey) -> Pubkey {
@@ -378,6 +444,29 @@ impl SolendProgramTest {
             .unwrap();
 
         keypair.pubkey()
+    }
+
+    pub async fn create_associated_token_account(
+        &mut self,
+        owner: &Pubkey,
+        mint: &Pubkey,
+    ) -> Pubkey {
+        let instructions = [
+            spl_associated_token_account::instruction::create_associated_token_account(
+                &self.context.payer.pubkey(),
+                owner,
+                mint,
+                &spl_token::id(),
+            ),
+        ];
+
+        self.process_transaction(&instructions, None).await.unwrap();
+
+        spl_associated_token_account::get_associated_token_address_with_program_id(
+            owner,
+            mint,
+            &spl_token::id(),
+        )
     }
 
     pub async fn mint_to(&mut self, mint: &Pubkey, dst: &Pubkey, amount: u64) {
@@ -656,7 +745,7 @@ impl SolendProgramTest {
         let res = self
             .process_transaction(
                 &[
-                    ComputeBudgetInstruction::set_compute_unit_limit(80_000),
+                    ComputeBudgetInstruction::set_compute_unit_limit(cu_budgets::INIT_RESERVE),
                     init_reserve(
                         solend_program::id(),
                         liquidity_amount,
@@ -770,6 +859,30 @@ impl User {
         }
     }
 
+    pub async fn create_associated_token_account(
+        &mut self,
+        mint: &Pubkey,
+        test: &mut SolendProgramTest,
+    ) -> Info<Token> {
+        match self
+            .token_accounts
+            .iter()
+            .find(|ta| ta.account.mint == *mint)
+        {
+            None => {
+                let pubkey = test
+                    .create_associated_token_account(&self.keypair.pubkey(), mint)
+                    .await;
+                let account = test.load_account::<Token>(pubkey).await;
+
+                self.token_accounts.push(account.clone());
+
+                account
+            }
+            Some(t) => t.clone(),
+        }
+    }
+
     pub async fn transfer(
         &self,
         mint: &Pubkey,
@@ -842,7 +955,7 @@ impl Info<LendingMarket> {
         liquidity_amount: u64,
     ) -> Result<(), BanksClientError> {
         let instructions = [
-            ComputeBudgetInstruction::set_compute_unit_limit(50_000),
+            ComputeBudgetInstruction::set_compute_unit_limit(cu_budgets::DEPOSIT),
             deposit_reserve_liquidity(
                 solend_program::id(),
                 liquidity_amount,
@@ -862,6 +975,188 @@ impl Info<LendingMarket> {
             .await
     }
 
+    pub async fn add_pool_reward(
+        &self,
+        test: &mut SolendProgramTest,
+        reserve: &Info<Reserve>,
+        lending_market_owner: &mut User,
+        reward: &LiqMiningReward,
+        position_kind: PositionKind,
+        start_time_secs: u64,
+        end_time_secs: u64,
+        reward_amount: u64,
+    ) -> Result<(), BanksClientError> {
+        let token_account = lending_market_owner
+            .create_token_account(&reward.mint, test)
+            .await;
+        test.mint_to(&reward.mint, &token_account.pubkey, reward_amount)
+            .await;
+
+        let (reward_authority_pda, reward_authority_bump) = find_reward_vault_authority(
+            &solend_program::id(),
+            &self.pubkey,
+            &reward.vault.pubkey(),
+        );
+
+        let instructions = [
+            ComputeBudgetInstruction::set_compute_unit_limit(cu_budgets::ADD_POOL_REWARD),
+            system_instruction::create_account(
+                &test.context.payer.pubkey(),
+                &reward.vault.pubkey(),
+                test.rent.minimum_balance(Token::LEN),
+                spl_token::state::Account::LEN as u64,
+                &spl_token::id(),
+            ),
+            add_pool_reward(
+                solend_program::id(),
+                reward_authority_bump,
+                position_kind,
+                start_time_secs,
+                end_time_secs,
+                reward_amount,
+                reserve.pubkey,
+                reward.mint,
+                token_account.pubkey,
+                reward_authority_pda,
+                reward.vault.pubkey(),
+                self.pubkey,
+                lending_market_owner.keypair.pubkey(),
+            ),
+        ];
+
+        test.process_transaction(
+            &instructions,
+            Some(&[&lending_market_owner.keypair, &reward.vault]),
+        )
+        .await
+    }
+
+    pub async fn edit_pool_reward(
+        &self,
+        test: &mut SolendProgramTest,
+        reserve: &Info<Reserve>,
+        lending_market_owner: &mut User,
+        reward: &LiqMiningReward,
+        position_kind: PositionKind,
+        pool_reward_index: u64,
+        new_end_time_secs: u64,
+    ) -> Result<(), BanksClientError> {
+        let (reward_authority_pda, reward_authority_bump) = find_reward_vault_authority(
+            &solend_program::id(),
+            &self.pubkey,
+            &reward.vault.pubkey(),
+        );
+
+        let instructions = [
+            ComputeBudgetInstruction::set_compute_unit_limit(cu_budgets::EDIT_POOL_REWARD),
+            edit_pool_reward(
+                solend_program::id(),
+                reward_authority_bump,
+                position_kind,
+                pool_reward_index,
+                new_end_time_secs,
+                reserve.pubkey,
+                reward.mint,
+                lending_market_owner.get_account(&reward.mint).unwrap(),
+                reward_authority_pda,
+                reward.vault.pubkey(),
+                self.pubkey,
+                lending_market_owner.keypair.pubkey(),
+            ),
+        ];
+
+        test.process_transaction(&instructions, Some(&[&lending_market_owner.keypair]))
+            .await
+    }
+
+    pub async fn close_pool_reward(
+        &self,
+        test: &mut SolendProgramTest,
+        reserve: &Info<Reserve>,
+        lending_market_owner: &mut User,
+        reward: &LiqMiningReward,
+        position_kind: PositionKind,
+        pool_reward_index: u64,
+    ) -> Result<(), BanksClientError> {
+        let (reward_authority_pda, reward_authority_bump) = find_reward_vault_authority(
+            &solend_program::id(),
+            &self.pubkey,
+            &reward.vault.pubkey(),
+        );
+
+        let instructions = [
+            ComputeBudgetInstruction::set_compute_unit_limit(cu_budgets::CLOSE_POOL_REWARD),
+            close_pool_reward(
+                solend_program::id(),
+                reward_authority_bump,
+                position_kind,
+                pool_reward_index,
+                reserve.pubkey,
+                reward.mint,
+                lending_market_owner.get_account(&reward.mint).unwrap(),
+                reward_authority_pda,
+                reward.vault.pubkey(),
+                self.pubkey,
+                lending_market_owner.keypair.pubkey(),
+            ),
+        ];
+
+        test.process_transaction(&instructions, Some(&[&lending_market_owner.keypair]))
+            .await
+    }
+
+    pub async fn claim_pool_reward(
+        &self,
+        test: &mut SolendProgramTest,
+        obligation: &Info<Obligation>,
+        reserve: &Info<Reserve>,
+        obligation_owner: &User,
+        reward: &LiqMiningReward,
+        position_kind: PositionKind,
+        signer: Option<&User>,
+    ) -> Result<(), BanksClientError> {
+        let (reward_authority_pda, reward_authority_bump) = find_reward_vault_authority(
+            &solend_program::id(),
+            &self.pubkey,
+            &reward.vault.pubkey(),
+        );
+
+        let mut instructions = if matches!(position_kind, PositionKind::Borrow) {
+            self.build_refresh_instructions(test, obligation, None)
+                .await
+        } else {
+            vec![]
+        };
+
+        instructions.extend_from_slice(&[
+            ComputeBudgetInstruction::set_compute_unit_limit(cu_budgets::CLAIM_POOL_REWARD),
+            claim_pool_reward(
+                solend_program::id(),
+                reward_authority_bump,
+                position_kind,
+                obligation.pubkey,
+                spl_associated_token_account::get_associated_token_address_with_program_id(
+                    &obligation_owner.keypair.pubkey(),
+                    &reward.mint,
+                    &spl_token::id(),
+                ),
+                reserve.pubkey,
+                reward.mint,
+                reward_authority_pda,
+                reward.vault.pubkey(),
+                self.pubkey,
+                signer.map(|s| s.keypair.pubkey()),
+            ),
+        ]);
+
+        if let Some(signer) = signer {
+            test.process_transaction(&instructions, Some(&[&signer.keypair]))
+                .await
+        } else {
+            test.process_transaction(&instructions, None).await
+        }
+    }
+
     pub async fn donate_to_reserve(
         &self,
         test: &mut SolendProgramTest,
@@ -870,7 +1165,7 @@ impl Info<LendingMarket> {
         liquidity_amount: u64,
     ) -> Result<(), BanksClientError> {
         let instructions = [
-            ComputeBudgetInstruction::set_compute_unit_limit(50_000),
+            ComputeBudgetInstruction::set_compute_unit_limit(cu_budgets::DONATE_TO_RESERVE),
             donate_to_reserve(
                 solend_program::id(),
                 liquidity_amount,
@@ -904,7 +1199,7 @@ impl Info<LendingMarket> {
         let oracle = oracle.unwrap_or(&default_oracle);
 
         let instructions = [
-            ComputeBudgetInstruction::set_compute_unit_limit(30_000),
+            ComputeBudgetInstruction::set_compute_unit_limit(cu_budgets::UPDATE_RESERVE_CONFIG),
             update_reserve_config(
                 solend_program::id(),
                 config,
@@ -931,7 +1226,14 @@ impl Info<LendingMarket> {
         liquidity_amount: u64,
     ) -> Result<(), BanksClientError> {
         let instructions = [
-            ComputeBudgetInstruction::set_compute_unit_limit(70_000),
+            ComputeBudgetInstruction::set_compute_unit_limit(
+                cu_budgets::DEPOSIT_RESERVE_LIQUIDITY_AND_OBLIGATION_COLLATERAL,
+            ),
+            system_instruction::transfer(
+                &test.context.payer.pubkey(),
+                &obligation.pubkey,
+                Rent::minimum_balance(&Rent::default(), OBLIGATION_EXTRA_SIZE),
+            ),
             deposit_reserve_liquidity_and_obligation_collateral(
                 solend_program::id(),
                 liquidity_amount,
@@ -964,7 +1266,7 @@ impl Info<LendingMarket> {
         collateral_amount: u64,
     ) -> Result<(), BanksClientError> {
         let instructions = [
-            ComputeBudgetInstruction::set_compute_unit_limit(60_000),
+            ComputeBudgetInstruction::set_compute_unit_limit(cu_budgets::REDEEM),
             refresh_reserve(
                 solend_program::id(),
                 reserve.pubkey,
@@ -998,12 +1300,12 @@ impl Info<LendingMarket> {
         user: &User,
     ) -> Result<Info<Obligation>, BanksClientError> {
         let instructions = [
-            ComputeBudgetInstruction::set_compute_unit_limit(10_000),
+            ComputeBudgetInstruction::set_compute_unit_limit(cu_budgets::INIT_OBLIGATION),
             system_instruction::create_account(
                 &test.context.payer.pubkey(),
                 &obligation_keypair.pubkey(),
-                Rent::minimum_balance(&Rent::default(), Obligation::LEN),
-                Obligation::LEN as u64,
+                Rent::minimum_balance(&Rent::default(), Obligation::MIN_LEN),
+                Obligation::MIN_LEN as u64,
                 &solend_program::id(),
             ),
             init_obligation(
@@ -1018,9 +1320,7 @@ impl Info<LendingMarket> {
             .process_transaction(&instructions, Some(&[&obligation_keypair, &user.keypair]))
             .await
         {
-            Ok(()) => Ok(test
-                .load_account::<Obligation>(obligation_keypair.pubkey())
-                .await),
+            Ok(()) => Ok(test.load_obligation(obligation_keypair.pubkey()).await),
             Err(e) => Err(e),
         }
     }
@@ -1034,7 +1334,14 @@ impl Info<LendingMarket> {
         collateral_amount: u64,
     ) -> Result<(), BanksClientError> {
         let instructions = [
-            ComputeBudgetInstruction::set_compute_unit_limit(38_000),
+            ComputeBudgetInstruction::set_compute_unit_limit(
+                cu_budgets::DEPOSIT_OBLIGATION_COLLATERAL,
+            ),
+            system_instruction::transfer(
+                &test.context.payer.pubkey(),
+                &obligation.pubkey,
+                Rent::minimum_balance(&Rent::default(), OBLIGATION_EXTRA_SIZE),
+            ),
             deposit_obligation_collateral(
                 solend_program::id(),
                 collateral_amount,
@@ -1060,7 +1367,7 @@ impl Info<LendingMarket> {
     ) -> Result<(), BanksClientError> {
         test.process_transaction(
             &[
-                ComputeBudgetInstruction::set_compute_unit_limit(2_000_000),
+                ComputeBudgetInstruction::set_compute_unit_limit(cu_budgets::REFRESH_RESERVE),
                 refresh_reserve(
                     solend_program::id(),
                     reserve.pubkey,
@@ -1080,7 +1387,7 @@ impl Info<LendingMarket> {
         obligation: &Info<Obligation>,
         extra_reserve: Option<&Info<Reserve>>,
     ) -> Vec<Instruction> {
-        let obligation = test.load_account::<Obligation>(obligation.pubkey).await;
+        let obligation = test.load_obligation(obligation.pubkey).await;
         let reserve_pubkeys: Vec<Pubkey> = {
             let mut r = HashSet::new();
             r.extend(
@@ -1130,6 +1437,12 @@ impl Info<LendingMarket> {
             r
         };
 
+        instructions.push(system_instruction::transfer(
+            &test.context.payer.pubkey(),
+            &obligation.pubkey,
+            Rent::minimum_balance(&Rent::default(), OBLIGATION_EXTRA_SIZE),
+        ));
+
         instructions.push(refresh_obligation(
             solend_program::id(),
             obligation.pubkey,
@@ -1159,7 +1472,9 @@ impl Info<LendingMarket> {
             Err(e) => return Err(e),
         };
 
-        let mut instructions = vec![ComputeBudgetInstruction::set_compute_unit_limit(1_000_000)];
+        let mut instructions = vec![ComputeBudgetInstruction::set_compute_unit_limit(
+            cu_budgets::REFRESH_OBLIGATION,
+        )];
         instructions.push(refresh_reserve_instructions.last().unwrap().clone());
 
         test.process_transaction(&instructions, None).await
@@ -1174,14 +1489,23 @@ impl Info<LendingMarket> {
         host_fee_receiver_pubkey: Option<Pubkey>,
         liquidity_amount: u64,
     ) -> Result<(), BanksClientError> {
-        let obligation = test.load_account::<Obligation>(obligation.pubkey).await;
+        let obligation = test.load_obligation(obligation.pubkey).await;
 
         let refresh_ixs = self
             .build_refresh_instructions(test, &obligation, Some(borrow_reserve))
             .await;
         test.process_transaction(&refresh_ixs, None).await.unwrap();
 
-        let mut instructions = vec![ComputeBudgetInstruction::set_compute_unit_limit(100_000)];
+        let mut instructions = vec![
+            ComputeBudgetInstruction::set_compute_unit_limit(
+                cu_budgets::BORROW_OBLIGATION_LIQUIDITY,
+            ),
+            system_instruction::transfer(
+                &test.context.payer.pubkey(),
+                &obligation.pubkey,
+                Rent::minimum_balance(&Rent::default(), OBLIGATION_EXTRA_SIZE),
+            ),
+        ];
         instructions.push(borrow_obligation_liquidity(
             solend_program::id(),
             liquidity_amount,
@@ -1215,7 +1539,9 @@ impl Info<LendingMarket> {
         liquidity_amount: u64,
     ) -> Result<(), BanksClientError> {
         let instructions = [
-            ComputeBudgetInstruction::set_compute_unit_limit(35_000),
+            ComputeBudgetInstruction::set_compute_unit_limit(
+                cu_budgets::REPAY_OBLIGATION_LIQUIDITY,
+            ),
             repay_obligation_liquidity(
                 solend_program::id(),
                 liquidity_amount,
@@ -1239,7 +1565,7 @@ impl Info<LendingMarket> {
         reserve: &Info<Reserve>,
     ) -> Result<(), BanksClientError> {
         let instructions = [
-            ComputeBudgetInstruction::set_compute_unit_limit(50_000),
+            ComputeBudgetInstruction::set_compute_unit_limit(cu_budgets::REDEEM_FEES),
             refresh_reserve(
                 solend_program::id(),
                 reserve.pubkey,
@@ -1275,7 +1601,14 @@ impl Info<LendingMarket> {
 
         test.process_transaction(
             &[
-                ComputeBudgetInstruction::set_compute_unit_limit(110_000),
+                ComputeBudgetInstruction::set_compute_unit_limit(
+                    cu_budgets::LIQUIDATE_OBLIGATION_AND_REDEEM_RESERVE_COLLATERAL,
+                ),
+                system_instruction::transfer(
+                    &test.context.payer.pubkey(),
+                    &obligation.pubkey,
+                    Rent::minimum_balance(&Rent::default(), OBLIGATION_EXTRA_SIZE),
+                ),
                 liquidate_obligation_and_redeem_reserve_collateral(
                     solend_program::id(),
                     liquidity_amount,
@@ -1315,6 +1648,11 @@ impl Info<LendingMarket> {
             .build_refresh_instructions(test, obligation, None)
             .await;
 
+        instructions.push(system_instruction::transfer(
+            &test.context.payer.pubkey(),
+            &obligation.pubkey,
+            Rent::minimum_balance(&Rent::default(), OBLIGATION_EXTRA_SIZE),
+        ));
         instructions.push(liquidate_obligation(
             solend_program::id(),
             liquidity_amount,
@@ -1343,7 +1681,7 @@ impl Info<LendingMarket> {
         user: &User,
         collateral_amount: u64,
     ) -> Result<(), BanksClientError> {
-        let obligation = test.load_account::<Obligation>(obligation.pubkey).await;
+        let obligation = test.load_obligation(obligation.pubkey).await;
 
         if !obligation.account.borrows.is_empty() {
             let refresh_ixs = self
@@ -1354,7 +1692,9 @@ impl Info<LendingMarket> {
 
         test.process_transaction(
             &[
-                ComputeBudgetInstruction::set_compute_unit_limit(120_000),
+                ComputeBudgetInstruction::set_compute_unit_limit(
+                    cu_budgets::WITHDRAW_OBLIGATION_COLLATERAL_AND_REDEEM_RESERVE_COLLATERAL,
+                ),
                 withdraw_obligation_collateral_and_redeem_reserve_collateral(
                     solend_program::id(),
                     collateral_amount,
@@ -1398,7 +1738,9 @@ impl Info<LendingMarket> {
 
         test.process_transaction(
             &[
-                ComputeBudgetInstruction::set_compute_unit_limit(100_000),
+                ComputeBudgetInstruction::set_compute_unit_limit(
+                    cu_budgets::WITHDRAW_OBLIGATION_COLLATERAL,
+                ),
                 withdraw_obligation_collateral(
                     solend_program::id(),
                     collateral_amount,
@@ -1453,7 +1795,7 @@ impl Info<LendingMarket> {
         reserve: &Info<Reserve>,
         liquidity_amount: u64,
     ) -> Result<(), BanksClientError> {
-        let obligation = test.load_account::<Obligation>(obligation.pubkey).await;
+        let obligation = test.load_obligation(obligation.pubkey).await;
 
         let mut instructions = self
             .build_refresh_instructions(test, &obligation, None)
@@ -1817,7 +2159,7 @@ pub async fn scenario_1(
         .unwrap();
 
     // borrow 10 SOL against 100k cUSDC.
-    let obligation = test.load_account::<Obligation>(obligation.pubkey).await;
+    let obligation = test.load_obligation(obligation.pubkey).await;
     lending_market
         .borrow_obligation_liquidity(
             &mut test,
@@ -1842,7 +2184,7 @@ pub async fn scenario_1(
         .unwrap();
 
     // populate deposit value correctly.
-    let obligation = test.load_account::<Obligation>(obligation.pubkey).await;
+    let obligation = test.load_obligation(obligation.pubkey).await;
     lending_market
         .refresh_obligation(&mut test, &obligation)
         .await
@@ -1851,7 +2193,7 @@ pub async fn scenario_1(
     let lending_market = test.load_account(lending_market.pubkey).await;
     let usdc_reserve = test.load_account(usdc_reserve.pubkey).await;
     let wsol_reserve = test.load_account(wsol_reserve.pubkey).await;
-    let obligation = test.load_account::<Obligation>(obligation.pubkey).await;
+    let obligation = test.load_obligation(obligation.pubkey).await;
 
     (
         test,
@@ -2040,7 +2382,7 @@ pub async fn custom_scenario(
             .await
             .unwrap();
 
-        *obligation = test.load_account::<Obligation>(obligation.pubkey).await;
+        *obligation = test.load_obligation(obligation.pubkey).await;
     }
 
     // load accounts into reserve

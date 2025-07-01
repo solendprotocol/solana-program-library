@@ -30,11 +30,13 @@ use solana_sdk::signature::Keypair;
 use solend_program::math::Decimal;
 use solend_program::state::LendingMarket;
 use solend_program::state::Obligation;
+use solend_program::state::PoolRewardManager;
 use solend_program::state::Reserve;
 use solend_program::state::ReserveCollateral;
 use solend_program::state::ReserveLiquidity;
 use solend_program::state::LIQUIDATION_CLOSE_FACTOR;
 
+use pretty_assertions::assert_eq;
 use std::collections::HashSet;
 
 #[tokio::test]
@@ -166,9 +168,18 @@ async fn test_success_new() {
     assert_eq!(lending_market_post.account, lending_market.account);
 
     let usdc_reserve_post = test.load_account::<Reserve>(usdc_reserve.pubkey).await;
+    let expected_usdc_reserve_post_total_shares = usdc_reserve
+        .account
+        .deposits_pool_reward_manager
+        .total_shares
+        - expected_usdc_withdrawn * FRACTIONAL_TO_USDC;
     assert_eq!(
         usdc_reserve_post.account,
         Reserve {
+            last_update: LastUpdate {
+                stale: true,
+                ..usdc_reserve.account.last_update
+            },
             liquidity: ReserveLiquidity {
                 available_amount: usdc_reserve.account.liquidity.available_amount
                     - expected_usdc_withdrawn * FRACTIONAL_TO_USDC,
@@ -180,14 +191,23 @@ async fn test_success_new() {
                 ..usdc_reserve.account.collateral
             },
             attributed_borrow_value: Decimal::from(55000u64),
+            deposits_pool_reward_manager: Box::new(PoolRewardManager {
+                total_shares: expected_usdc_reserve_post_total_shares,
+                ..*usdc_reserve.account.deposits_pool_reward_manager.clone()
+            }),
             ..usdc_reserve.account
         }
     );
 
+    let expected_wsol_reserve_post_total_shares = 8000000000;
     let wsol_reserve_post = test.load_account::<Reserve>(wsol_reserve.pubkey).await;
     assert_eq!(
         wsol_reserve_post.account,
         Reserve {
+            last_update: LastUpdate {
+                stale: true,
+                ..wsol_reserve.account.last_update
+            },
             liquidity: ReserveLiquidity {
                 available_amount: wsol_reserve.account.liquidity.available_amount
                     + expected_borrow_repaid * LAMPORTS_TO_SOL,
@@ -201,11 +221,27 @@ async fn test_success_new() {
                 smoothed_market_price: Decimal::from(5500u64),
                 ..wsol_reserve.account.liquidity
             },
+            borrows_pool_reward_manager: Box::new(PoolRewardManager {
+                total_shares: {
+                    assert_eq!(
+                        wsol_reserve
+                            .account
+                            .borrows_pool_reward_manager
+                            .total_shares,
+                        10000000000
+                    );
+
+                    expected_wsol_reserve_post_total_shares
+                },
+                ..*wsol_reserve.account.borrows_pool_reward_manager.clone()
+            }),
             ..wsol_reserve.account
         }
     );
 
-    let obligation_post = test.load_account::<Obligation>(obligation.pubkey).await;
+    let deposit_reserve = usdc_reserve.pubkey;
+    let borrow_reserve = wsol_reserve.pubkey;
+    let obligation_post = test.load_obligation(obligation.pubkey).await;
     assert_eq!(
         obligation_post.account,
         Obligation {
@@ -214,7 +250,7 @@ async fn test_success_new() {
                 stale: true
             },
             deposits: [ObligationCollateral {
-                deposit_reserve: usdc_reserve.pubkey,
+                deposit_reserve,
                 deposited_amount: (100_000 - expected_usdc_withdrawn) * FRACTIONAL_TO_USDC,
                 market_value: Decimal::from(100_000u64), // old value
                 attributed_borrow_value: obligation_post.account.deposits[0]
@@ -222,7 +258,7 @@ async fn test_success_new() {
             }]
             .to_vec(),
             borrows: [ObligationLiquidity {
-                borrow_reserve: wsol_reserve.pubkey,
+                borrow_reserve,
                 cumulative_borrow_rate_wads: Decimal::one(),
                 borrowed_amount_wads: Decimal::from(10 * LAMPORTS_TO_SOL)
                     .try_sub(Decimal::from(expected_borrow_repaid * LAMPORTS_TO_SOL))
@@ -236,6 +272,21 @@ async fn test_success_new() {
             borrowed_value_upper_bound: Decimal::from(55_000u64),
             allowed_borrow_value: Decimal::from(50_000u64),
             unhealthy_borrow_value: Decimal::from(55_000u64),
+            user_reward_managers: {
+                let mut og = obligation.account.user_reward_managers.clone();
+
+                og.iter_mut()
+                    .find(|m| m.reserve == deposit_reserve)
+                    .unwrap()
+                    .share = expected_usdc_reserve_post_total_shares;
+
+                og.iter_mut()
+                    .find(|m| m.reserve == borrow_reserve)
+                    .unwrap()
+                    .share = expected_wsol_reserve_post_total_shares;
+
+                og
+            },
             ..obligation.account
         }
     );
@@ -322,7 +373,7 @@ async fn test_whitelisting_liquidator() {
     assert_eq!(
         err,
         TransactionError::InstructionError(
-            1,
+            2,
             InstructionError::Custom(LendingError::NotWhitelistedLiquidator as u32)
         )
     );
@@ -382,7 +433,7 @@ async fn test_success_insufficient_liquidity() {
             .await
             .unwrap();
 
-        let obligation = test.load_account::<Obligation>(obligation.pubkey).await;
+        let obligation = test.load_obligation(obligation.pubkey).await;
         lending_market
             .borrow_obligation_liquidity(
                 &mut test,
@@ -649,7 +700,7 @@ async fn test_liquidity_ordering() {
     assert_eq!(
         err,
         TransactionError::InstructionError(
-            1,
+            2,
             InstructionError::Custom(LendingError::InvalidAccountInput as u32)
         )
     );

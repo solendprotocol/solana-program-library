@@ -130,7 +130,7 @@ async fn test_mark_obligation_as_closeable_success() {
         .await
         .unwrap();
 
-    let obligation_post = test.load_account::<Obligation>(obligations[0].pubkey).await;
+    let obligation_post = test.load_obligation(obligations[0].pubkey).await;
     assert_eq!(
         obligation_post.account,
         Obligation {

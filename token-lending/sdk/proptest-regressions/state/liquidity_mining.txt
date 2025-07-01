@@ -1,0 +1,7 @@
+# Seeds for failure cases proptest has generated in the past. It is
+# automatically read and these particular cases re-run before any
+# novel cases are generated.
+#
+# It is recommended to check this file in to source control so that
+# everyone who runs the test benefits from these saved cases.
+cc 6a1836cf0547a44279bf151c5fb919eb5549fa1f5b07782ac9da2a3ddbdd73ec # shrinks to rng_seed = 1807223968525307359, user_count = 2, reward_period = 19190, total_rewards = 1000000

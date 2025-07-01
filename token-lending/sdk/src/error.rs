@@ -209,6 +209,26 @@ pub enum LendingError {
     /// Borrow Attribution Limit Not Exceeded
     #[error("Borrow Attribution Limit Not Exceeded")]
     BorrowAttributionLimitNotExceeded,
+    /// Pool rewards have a hard coded minimum length in seconds.
+    #[error("Pool reward too short")]
+    PoolRewardPeriodTooShort,
+
+    // 60
+    /// Cannot close token account
+    #[error("Cannot close token account")]
+    CloseTokenAccountFailed,
+    /// Not an account discriminator
+    #[error("Given leading byte does not match any account discriminator")]
+    InvalidAccountDiscriminator,
+    /// Trying to use an account that hasn't been migrated
+    #[error("Trying to use an account that hasn't been migrated")]
+    AccountNotMigrated,
+    /// There's no pool reward that matches the given parameters
+    #[error("There's no pool reward that matches the given parameters")]
+    NoPoolRewardMatches,
+    /// There's no vacant slot for a pool reward
+    #[error("There's no vacant slot for a pool reward")]
+    NoVacantEntryForPoolReward,
 }
 
 impl From<LendingError> for ProgramError {

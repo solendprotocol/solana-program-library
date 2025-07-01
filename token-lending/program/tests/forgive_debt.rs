@@ -10,6 +10,7 @@ use solana_sdk::instruction::Instruction;
 use solana_sdk::pubkey::Pubkey;
 use solana_sdk::signer::Signer;
 
+use pretty_assertions::assert_eq;
 use std::collections::HashSet;
 
 use solend_sdk::instruction::LendingInstruction;
@@ -123,7 +124,7 @@ async fn test_forgive_debt_success_easy() {
     assert_eq!(
         err,
         TransactionError::InstructionError(
-            3,
+            4,
             InstructionError::Custom(LendingError::InvalidAccountInput as u32)
         )
     );
@@ -167,7 +168,7 @@ async fn test_forgive_debt_success_easy() {
         .await
         .unwrap();
 
-    let obligation_post = test.load_account::<Obligation>(obligations[0].pubkey).await;
+    let obligation_post = test.load_obligation(obligations[0].pubkey).await;
     assert_eq!(
         obligation_post.account,
         Obligation {
@@ -184,6 +185,7 @@ async fn test_forgive_debt_success_easy() {
             allowed_borrow_value: Decimal::zero(),
             unhealthy_borrow_value: Decimal::zero(),
             super_unhealthy_borrow_value: Decimal::zero(),
+            user_reward_managers: obligation_post.account.user_reward_managers.clone(),
             ..obligations[0].account
         }
     );
@@ -203,6 +205,10 @@ async fn test_forgive_debt_success_easy() {
                     + wsol_reserve.account.liquidity.available_amount,
                 ..wsol_reserve.account.liquidity
             },
+            borrows_pool_reward_manager: Box::new(PoolRewardManager {
+                total_shares: 0, // liquidated everything
+                ..*wsol_reserve.account.borrows_pool_reward_manager.clone()
+            }),
             ..wsol_reserve.account.clone()
         }
     );
@@ -310,7 +316,7 @@ async fn test_forgive_debt_fail_invalid_signer() {
     assert_eq!(
         err,
         TransactionError::InstructionError(
-            3,
+            4,
             InstructionError::Custom(LendingError::InvalidMarketOwner as u32)
         )
     );

@@ -1,14 +1,132 @@
-anchor_version = "0.13.2"
+[toolchain]
+package_manager = "yarn"
+anchor_version = "0.28.0"
+
+[features]
+resolution = true
+skip-lint = false
 
 [workspace]
-members = [
-    "token-lending/program",
-    "token-lending/brick",
-]
+members = ["token-lending/program", "token-lending/brick"]
 
 [provider]
 cluster = "mainnet"
 wallet = "~/.config/solana/id.json"
 
+[scripts]
+test = "yarn run ts-mocha -p ./tsconfig.json -t 1000000 token-lending/tests/**/*.ts"
+
 [programs.mainnet]
 spl_token_lending = "So1endDq2YkqhipRh3WViPa8hdiSpxWy6z3Z6tMCpAo"
+
+[programs.localnet]
+solend_program = "So1endDq2YkqhipRh3WViPa8hdiSpxWy6z3Z6tMCpAo"
+
+[test.validator]
+# we use some mainnet accounts for tests 
+url = "https://api.mainnet-beta.solana.com"
+
+[[test.validator.clone]]
+# Solend Main Pool - (USDC) Reserve State
+address = "BgxfHJDzm44T7XG68MYKx7YisTjZu73tVovyZSjJMpmw"
+# What follows is a list of some more reserves to clone to test batch upgrade
+[[test.validator.clone]]
+address = "46t9bCbiBwiVsjQPz2CLYcMULCtsZTBbwqLdAz7s2xXy"
+[[test.validator.clone]]
+address = "6RLEnWjEUR8MTTn8MtFXmw1Fz1JWjUVcC1bQFPqDXbgy"
+[[test.validator.clone]]
+address = "4o8bqVMVrjwbUEU69axoQB7LFDHHt58d2XMtPXFJ8tK1"
+[[test.validator.clone]]
+address = "3xLmLkoKSKddqg7ejPNq679ApQNnm2dn3VVvtV7isSDo"
+[[test.validator.clone]]
+address = "44JpnzauMCjmwHBN1VJe4rFVjidozsAeGMR5srzuWp55"
+[[test.validator.clone]]
+address = "4YA39gkfuskkp3ir1NZ9jySkHYocSnZoPY2oT64BRmb5"
+[[test.validator.clone]]
+address = "3NdKfP3qLSzxqQTkJpYL2gGBza1esdyakRrAyMLt64R2"
+[[test.validator.clone]]
+address = "59KjpUPKXsoYZUNdc8g2Yi32uAw9Brm6g8bQCfFVomyJ"
+[[test.validator.clone]]
+address = "5noExw6LxoDaoAbcaFj5YZbBhpXoMqazzZuBrAUeFiUj"
+[[test.validator.clone]]
+address = "5eLCVf61tRmv4V6WASMfR7X4skqXpEakqyaLMFrQETSB"
+[[test.validator.clone]]
+address = "rKBpHeyPyn9YU4VNtxaX6Tu618Y2R4sWybxUpea5ph4"
+[[test.validator.clone]]
+address = "5yq5AJTJMoRQvGFbA2h6wKRQMV7Z6CjfbZCa3cAJS2r5"
+[[test.validator.clone]]
+address = "gY2sQUkxEQPDcn2s72KBKmw9q343QpVhxU5WLu2sxjr"
+[[test.validator.clone]]
+address = "6TsJpaAbwJMTFZdAEHcVb86zQaLoNmbabYX1kkW1NAj7"
+[[test.validator.clone]]
+address = "6JLJ3eq8sHDjUBLy4zjvLjvyMjrqnUDizQEdcZqgaYrG"
+[[test.validator.clone]]
+address = "4kgzahtogzibeopWQBrKcCYPiavEAaV9sJjuZy9dUuic"
+[[test.validator.clone]]
+address = "6uhoHHFPQbRpssDphCjxU6hMmXp3GLS2qAZmCExZkwap"
+[[test.validator.clone]]
+address = "13Ts1ERfwAM11MVQAU3zCz49fGkWmdZbfXuTGyKz6ENy"
+[[test.validator.clone]]
+address = "14aRZgQAQtGRES3mNTFvEVEfEqtnKJa73ryENDAvJFaQ"
+[[test.validator.clone]]
+address = "6e8zg2Y9skA5AMm7J62GJQ8Ui4reuzEytBS74zHV8S7A"
+[[test.validator.clone]]
+address = "6QNF4ovs4vWqjjvNUNoJLhXCW34iEm2QGipRKJdk725n"
+[[test.validator.clone]]
+address = "yjuWAA6XXhEwxWuzbPfDPnYiohCLFqAfgCDA4EdHHDm"
+[[test.validator.clone]]
+address = "XK8FEMEziMX9W46ivFmjddjvW3aY8dkVvucEGLmrt5D"
+[[test.validator.clone]]
+address = "2WBEmjZbUMXZbs9ucG3B7254y2C34d72uv2qHjvR1T4n"
+[[test.validator.clone]]
+address = "yxW7QwpJzKxfNo2QkbcmgjpgFxEL4UGbUivkFWtkmd3"
+[[test.validator.clone]]
+address = "66RtjhW1bMXTJ2ZL8TMowUTAtraHiksKGGQSArGRZKAZ"
+[[test.validator.clone]]
+address = "3Cv8evqFV1MWirL1ohv2VsdTAmpDvNWy4veGjYDFrWn2"
+[[test.validator.clone]]
+address = "5rDqwn1GMMrSkjvZS1G7BZ2tR5Q4JS13wnSHn11La9a9"
+[[test.validator.clone]]
+address = "4ERjFetPd5DQDK8N9wL4i36ozs4zeW1MeGbPbKw9QMsy"
+[[test.validator.clone]]
+address = "5hevPuvhqmXdQcuiB2mqekxQcqL9kVix8D5ckRGyA8yk"
+[[test.validator.clone]]
+address = "62M3oYeJ2agvuHsgHfzJuiWsTbEewZCFJbMHXKDkKMqL"
+[[test.validator.clone]]
+address = "6DF8vRKZKdAK2rdirJTwG3TWogjgByqcEi5WbnwXb3YZ"
+[[test.validator.clone]]
+address = "3mSMHPvNewL8RTwAcA6GTCLjS19J3NK2huJxgA553oHy"
+[[test.validator.clone]]
+address = "75EgKN1rrVssMQr6KjvR5w6Gnth8FkqECgZ6Q4mDDCx6"
+[[test.validator.clone]]
+address = "2tSNdecgEHEidEemg9vCbgFPzg6nyok97xJc1Lse3mG8"
+[[test.validator.clone]]
+address = "3Hr5qshXDQgbL1za6Sayug61Hwt5rjnV7dbyE9NUQDaZ"
+[[test.validator.clone]]
+address = "2v3Y19ahC3dtV6CnrmT5vZfpJy7HkyFoxkRgTeuk6cC4"
+[[test.validator.clone]]
+address = "53oro4QCCqqtDgfs1qfeH5LyvfdSexjXXaT14drTJ2Xj"
+[[test.validator.clone]]
+address = "7kL41rV8tgRBticXUyp3LfCV7eBGKUrAwL2e7GJB5ooP"
+[[test.validator.clone]]
+address = "7t3QnGAqse8zvAohJJX7robsBviyP5Bg7xNBxi7HSPNy"
+[[test.validator.clone]]
+address = "7vcWs9Gut1HE8o24cfuYkjuFCdBMEkBALqqvLDnQsBQT"
+[[test.validator.clone]]
+address = "2j8XVnUFk6Hxm75QdJn6MDyxVE9QCbCe5BauGg82ANZU"
+[[test.validator.clone]]
+address = "81EGVb5RD8yft1N3SGxitn2QnvJg7Pbq5k4CiXkf3f5A"
+[[test.validator.clone]]
+address = "7UgZy6RzhfSG66qrdD7Q5LHrVJRm7bUqhRHPh9siBqQQ"
+[[test.validator.clone]]
+address = "3kWqRMVepJ5HSmXF16bBWQYQ5C7YNGvJJqCPt3A7zKWH"
+[[test.validator.clone]]
+address = "8NVfgFqWPiy7B4o4yQQ8XSTwSihidtdftA1wzeePnCeJ"
+[[test.validator.clone]]
+address = "3738W1f4ygKayow8TrFGuDbhFovQ3QhM2MPY8AF375ki"
+[[test.validator.clone]]
+address = "7ssc2gVnucKKwsh6DS4HYHUWAigJomW6v37T65SXJVEr"
+[[test.validator.clone]]
+address = "2wDArvF5bAdLmmm4QZNVFJDrML6CCBbfbCeCLEb7c6QN"
+[[test.validator.clone]]
+address = "41SrrxMb1yzivSbUNjLShRV5yZf7S7YdQ1Emg2AxCviu"
