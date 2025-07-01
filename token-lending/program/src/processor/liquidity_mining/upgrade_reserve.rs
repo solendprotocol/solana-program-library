@@ -11,7 +11,7 @@ use solana_program::{
     sysvar::Sysvar,
 };
 use solend_sdk::state::discriminator::AccountDiscriminator;
-use solend_sdk::state::RESERVE_LEN_V2_0_2;
+use solend_sdk::state::{PROGRAM_VERSION_2_0_2, RESERVE_LEN_V2_0_2};
 use solend_sdk::{error::LendingError, state::Reserve};
 
 struct UpgradeReserveAccounts<'a, 'info> {
@@ -118,6 +118,20 @@ impl<'a, 'info> UpgradeReserveAccounts<'a, 'info> {
 
         if reserve_info.data_len() != RESERVE_LEN_V2_0_2 {
             msg!("Reserve provided must be sized as v2.0.2");
+            return Err(LendingError::InvalidAccountInput.into());
+        }
+
+        // AUDIT:
+        // > UpgradeReserve should verify that a Reserve was previously stored in the account before
+        // > performing the upgrade.
+        // > This doesn’t appear to be exploitable—it would just allow an attacker to create
+        // > a valid-looking Reserve filled with zeros—but it’s worth addressing.
+        // > Anybody can create an account owned by solend with size == RESERVE_LEN_V2_0_2 by
+        // > calling system_instruction::create_account, so you can't only rely on checking the
+        // > account length && ownership.
+        // > Asserting that the first byte is equal to the expected old version would fix it.
+        if reserve_info.data.borrow()[0] != PROGRAM_VERSION_2_0_2 {
+            msg!("Reserve provided must be a v2.0.2 reserve");
             return Err(LendingError::InvalidAccountInput.into());
         }
 

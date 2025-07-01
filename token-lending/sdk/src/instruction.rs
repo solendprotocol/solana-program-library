@@ -2284,19 +2284,26 @@ pub fn claim_pool_reward(
     reward_vault_authority: Pubkey,
     reward_vault: Pubkey,
     lending_market: Pubkey,
+    payer: Option<Pubkey>,
 ) -> Instruction {
+    let mut accounts = vec![
+        AccountMeta::new(obligation, false),
+        AccountMeta::new(obligation_owner_token_account_for_reward, false),
+        AccountMeta::new(reserve, false),
+        AccountMeta::new_readonly(reward_mint, false),
+        AccountMeta::new_readonly(reward_vault_authority, false),
+        AccountMeta::new(reward_vault, false),
+        AccountMeta::new_readonly(lending_market, false),
+        AccountMeta::new_readonly(spl_token::id(), false),
+    ];
+
+    if let Some(payer) = payer {
+        accounts.push(AccountMeta::new(payer, true));
+    }
+
     Instruction {
         program_id,
-        accounts: vec![
-            AccountMeta::new(obligation, false),
-            AccountMeta::new(obligation_owner_token_account_for_reward, false),
-            AccountMeta::new(reserve, false),
-            AccountMeta::new_readonly(reward_mint, false),
-            AccountMeta::new_readonly(reward_vault_authority, false),
-            AccountMeta::new(reward_vault, false),
-            AccountMeta::new_readonly(lending_market, false),
-            AccountMeta::new_readonly(spl_token::id(), false),
-        ],
+        accounts,
         data: LendingInstruction::ClaimReward {
             reward_authority_bump,
             position_kind,

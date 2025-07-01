@@ -77,7 +77,7 @@ mod cu_budgets {
     pub(super) const ADD_POOL_REWARD: u32 = 80_017;
     pub(super) const EDIT_POOL_REWARD: u32 = 80_018;
     pub(super) const CLOSE_POOL_REWARD: u32 = 80_019;
-    pub(super) const CLAIM_POOL_REWARD: u32 = 80_020;
+    pub(super) const CLAIM_POOL_REWARD: u32 = 200_020;
 }
 
 /// This is at most how many bytes can an obligation grow.
@@ -444,6 +444,29 @@ impl SolendProgramTest {
             .unwrap();
 
         keypair.pubkey()
+    }
+
+    pub async fn create_associated_token_account(
+        &mut self,
+        owner: &Pubkey,
+        mint: &Pubkey,
+    ) -> Pubkey {
+        let instructions = [
+            spl_associated_token_account::instruction::create_associated_token_account(
+                &self.context.payer.pubkey(),
+                owner,
+                mint,
+                &spl_token::id(),
+            ),
+        ];
+
+        self.process_transaction(&instructions, None).await.unwrap();
+
+        spl_associated_token_account::get_associated_token_address_with_program_id(
+            owner,
+            mint,
+            &spl_token::id(),
+        )
     }
 
     pub async fn mint_to(&mut self, mint: &Pubkey, dst: &Pubkey, amount: u64) {
@@ -836,6 +859,30 @@ impl User {
         }
     }
 
+    pub async fn create_associated_token_account(
+        &mut self,
+        mint: &Pubkey,
+        test: &mut SolendProgramTest,
+    ) -> Info<Token> {
+        match self
+            .token_accounts
+            .iter()
+            .find(|ta| ta.account.mint == *mint)
+        {
+            None => {
+                let pubkey = test
+                    .create_associated_token_account(&self.keypair.pubkey(), mint)
+                    .await;
+                let account = test.load_account::<Token>(pubkey).await;
+
+                self.token_accounts.push(account.clone());
+
+                account
+            }
+            Some(t) => t.clone(),
+        }
+    }
+
     pub async fn transfer(
         &self,
         mint: &Pubkey,
@@ -1066,6 +1113,7 @@ impl Info<LendingMarket> {
         obligation_owner: &User,
         reward: &LiqMiningReward,
         position_kind: PositionKind,
+        signer: Option<&User>,
     ) -> Result<(), BanksClientError> {
         let (reward_authority_pda, reward_authority_bump) = find_reward_vault_authority(
             &solend_program::id(),
@@ -1073,23 +1121,40 @@ impl Info<LendingMarket> {
             &reward.vault.pubkey(),
         );
 
-        let instructions = [
+        let mut instructions = if matches!(position_kind, PositionKind::Borrow) {
+            self.build_refresh_instructions(test, obligation, None)
+                .await
+        } else {
+            vec![]
+        };
+
+        instructions.extend_from_slice(&[
             ComputeBudgetInstruction::set_compute_unit_limit(cu_budgets::CLAIM_POOL_REWARD),
             claim_pool_reward(
                 solend_program::id(),
                 reward_authority_bump,
                 position_kind,
                 obligation.pubkey,
-                obligation_owner.get_account(&reward.mint).unwrap(),
+                spl_associated_token_account::get_associated_token_address_with_program_id(
+                    &obligation_owner.keypair.pubkey(),
+                    &reward.mint,
+                    &spl_token::id(),
+                ),
                 reserve.pubkey,
                 reward.mint,
                 reward_authority_pda,
                 reward.vault.pubkey(),
                 self.pubkey,
+                signer.map(|s| s.keypair.pubkey()),
             ),
-        ];
+        ]);
 
-        test.process_transaction(&instructions, None).await
+        if let Some(signer) = signer {
+            test.process_transaction(&instructions, Some(&[&signer.keypair]))
+                .await
+        } else {
+            test.process_transaction(&instructions, None).await
+        }
     }
 
     pub async fn donate_to_reserve(
