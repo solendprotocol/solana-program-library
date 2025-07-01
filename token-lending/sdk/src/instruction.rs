@@ -2272,6 +2272,9 @@ pub fn close_pool_reward(
 ///   `[writable]` Reward vault token account.
 ///   `[]` Lending market account.
 ///   `[]` Token program.
+///
+/// If payer is not provided then this is a permission-less claim.
+/// The ix will fail if the reward has not ended yet.
 #[allow(clippy::too_many_arguments)]
 pub fn claim_pool_reward(
     program_id: Pubkey,

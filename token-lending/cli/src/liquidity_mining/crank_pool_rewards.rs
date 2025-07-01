@@ -151,6 +151,7 @@ pub(crate) fn command(
                 reward_vault_authority,
                 pool_reward.vault,
                 reserve.lending_market,
+                None, // no payer => permissionless claim
             );
 
             std::iter::once(create_ata_ix).chain(std::iter::once(claim_ix))
