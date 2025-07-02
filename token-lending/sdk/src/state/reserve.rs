@@ -36,7 +36,7 @@ pub const MAX_BONUS_PCT: u8 = 25;
 pub const MAX_PROTOCOL_LIQUIDATION_FEE_DECA_BPS: u8 = 50;
 
 /// Upper bound on scaled price offset
-pub const MAX_SCALED_PRICE_OFFSET_BPS: i64 = 2000;
+pub const MAX_SCALED_PRICE_OFFSET_BPS: i64 = 5000;
 
 /// Lower bound on scaled price offset
 pub const MIN_SCALED_PRICE_OFFSET_BPS: i64 = -2000;
@@ -2380,7 +2380,7 @@ mod test {
             }),
             Just(ReserveConfigTestCase {
                 config: ReserveConfig {
-                    scaled_price_offset_bps: 2001,
+                    scaled_price_offset_bps: 5001,
                     ..ReserveConfig::default()
                 },
                 result: Err(LendingError::InvalidConfig.into()),
