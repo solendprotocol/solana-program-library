@@ -205,6 +205,7 @@ impl Pack for RateLimiter {
 }
 
 #[cfg(test)]
+/// generate a random rate limiter for testing
 pub fn rand_rate_limiter() -> RateLimiter {
     use rand::Rng;
     let mut rng = rand::thread_rng();
