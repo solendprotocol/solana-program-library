@@ -4,8 +4,7 @@ use crate::{
     math::{Decimal, Rate, TryAdd, TryDiv, TryMul, TrySub},
 };
 use arrayref::{array_mut_ref, array_ref, array_refs, mut_array_refs};
-use num_derive::FromPrimitive;
-use num_traits::FromPrimitive;
+use num_traits::FromPrimitive as _;
 use solana_program::{
     clock::Slot,
     entrypoint::ProgramResult,
@@ -971,7 +970,7 @@ pub struct ReserveConfig {
     pub fee_receiver: Pubkey,
     /// Cut of the liquidation bonus that the protocol receives, in deca bps
     pub protocol_liquidation_fee: u8,
-    /// Protocol take rate is the amount borrowed interest protocol recieves, as a percentage  
+    /// Protocol take rate is the amount borrowed interest protocol recieves, as a percentage
     pub protocol_take_rate: u8,
     /// Added borrow weight in basis points. THIS FIELD SHOULD NEVER BE USED DIRECTLY. Always use
     /// borrow_weight()
@@ -1094,7 +1093,8 @@ pub fn validate_reserve_config(config: ReserveConfig) -> ProgramResult {
     Ok(())
 }
 
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, FromPrimitive)]
+#[allow(non_local_definitions)]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, num_derive::FromPrimitive)]
 /// Asset Type of the reserve
 pub enum ReserveType {
     #[default]

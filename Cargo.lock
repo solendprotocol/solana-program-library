@@ -5477,7 +5477,7 @@ dependencies = [
  "borsh 0.10.3",
  "bytemuck",
  "log",
- "num-derive 0.3.3",
+ "num-derive 0.4.2",
  "num-traits",
  "proptest",
  "rand 0.8.5",

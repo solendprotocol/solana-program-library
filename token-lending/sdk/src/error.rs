@@ -1,13 +1,13 @@
 //! Error types
 
-use num_derive::FromPrimitive;
+// use num_derive::FromPrimitive;
 use num_traits::FromPrimitive;
 use solana_program::{decode_error::DecodeError, program_error::ProgramError};
 use solana_program::{msg, program_error::PrintProgramError};
 use thiserror::Error;
 
 /// Errors that may be returned by the TokenLending program.
-#[derive(Clone, Debug, Eq, Error, FromPrimitive, PartialEq)]
+#[derive(Clone, Debug, Eq, Error, PartialEq)]
 pub enum LendingError {
     // 0
     /// Invalid instruction data passed in.
