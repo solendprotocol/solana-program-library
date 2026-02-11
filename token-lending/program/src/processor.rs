@@ -577,10 +577,16 @@ fn _refresh_reserve<'a>(
                     return Err(LendingError::InvalidAccountInput.into());
                 }
 
-                Some(get_single_price_unchecked(
-                    extra_oracle_account_info,
-                    clock,
-                )?)
+                // SECURITY FIX: Use checked price to enforce staleness and
+                // confidence validation on the extra oracle, preventing
+                // price manipulation attacks.
+                {
+                    let (price, _ema_price) = oracles::get_single_price(
+                        extra_oracle_account_info,
+                        clock,
+                    )?;
+                    Some(price)
+                }
             }
             None => {
                 msg!("Reserve extra oracle account info missing");
