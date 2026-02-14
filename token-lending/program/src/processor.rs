@@ -1762,38 +1762,53 @@ fn get_pyth_product_quote_currency(pyth_product: &pyth::Product) -> Result<[u8; 
     const LEN: usize = 14;
     const KEY: &[u8; LEN] = b"quote_currency";
 
-    let mut start = 0;
-    while start < pyth::PROD_ATTR_SIZE {
-        let mut length = pyth_product.attr[start] as usize;
-        start += 1;
+    // Pyth product attributes are encoded as repeating:
+    //   [key_len: u8][key_bytes...][val_len: u8][val_bytes...]
+    // packed into `pyth::PROD_ATTR_SIZE` bytes.
+    //
+    // This parser must never panic even if the account data is malformed.
+    let mut i: usize = 0;
+    while i < pyth::PROD_ATTR_SIZE {
+        // key_len
+        let key_len = pyth_product.attr[i] as usize;
+        i = i.checked_add(1).ok_or(LendingError::MathOverflow)?;
 
-        if length == LEN {
-            let mut end = start + length;
-            if end > pyth::PROD_ATTR_SIZE {
-                msg!("Pyth product attribute key length too long");
-                return Err(LendingError::InvalidOracleConfig.into());
-            }
-
-            let key = &pyth_product.attr[start..end];
-            if key == KEY {
-                start += length;
-                length = pyth_product.attr[start] as usize;
-                start += 1;
-
-                end = start + length;
-                if length > 32 || end > pyth::PROD_ATTR_SIZE {
-                    msg!("Pyth product quote currency value too long");
-                    return Err(LendingError::InvalidOracleConfig.into());
-                }
-
-                let mut value = [0u8; 32];
-                value[0..length].copy_from_slice(&pyth_product.attr[start..end]);
-                return Ok(value);
-            }
+        // Convention: a 0-length key can be treated as end-of-list padding.
+        if key_len == 0 {
+            break;
         }
 
-        start += length;
-        start += 1 + pyth_product.attr[start] as usize;
+        // key bytes
+        let key_end = i.checked_add(key_len).ok_or(LendingError::MathOverflow)?;
+        if key_end > pyth::PROD_ATTR_SIZE {
+            msg!("Pyth product attribute key length too long");
+            return Err(LendingError::InvalidOracleConfig.into());
+        }
+        let key = &pyth_product.attr[i..key_end];
+        i = key_end;
+
+        // val_len
+        if i >= pyth::PROD_ATTR_SIZE {
+            msg!("Pyth product attribute value length missing");
+            return Err(LendingError::InvalidOracleConfig.into());
+        }
+        let val_len = pyth_product.attr[i] as usize;
+        i = i.checked_add(1).ok_or(LendingError::MathOverflow)?;
+
+        // val bytes
+        let val_end = i.checked_add(val_len).ok_or(LendingError::MathOverflow)?;
+        if val_len > 32 || val_end > pyth::PROD_ATTR_SIZE {
+            msg!("Pyth product attribute value too long");
+            return Err(LendingError::InvalidOracleConfig.into());
+        }
+
+        if key_len == LEN && key == KEY {
+            let mut value = [0u8; 32];
+            value[0..val_len].copy_from_slice(&pyth_product.attr[i..val_end]);
+            return Ok(value);
+        }
+
+        i = val_end;
     }
 
     msg!("Pyth product quote currency not found");
@@ -2037,5 +2052,38 @@ impl PrintProgramError for LendingError {
         E: 'static + std::error::Error + DecodeError<E> + PrintProgramError + FromPrimitive,
     {
         msg!(&self.to_string());
+    }
+}
+
+#[cfg(test)]
+mod pyth_attr_parser_tests {
+    use super::*;
+
+    #[test]
+    fn quote_currency_parser_does_not_panic_on_malformed_attr() {
+        // Craft attributes that would cause an out-of-bounds read in the previous
+        // implementation:
+        // - First key length 255 (skip a big chunk)
+        // - Then value length 0 (so we land at index 257)
+        // - Then key length 206, so `i + key_len == PROD_ATTR_SIZE` and a naive
+        //   parser would try to read the next length at exactly PROD_ATTR_SIZE.
+        let mut product = pyth::Product {
+            magic: pyth::MAGIC,
+            ver: pyth::VERSION_2,
+            atype: pyth::AccountType::Product as u32,
+            size: pyth::PROD_ACCT_SIZE as u32,
+            px_acc: pyth::AccKey { val: [0u8; 32] },
+            attr: [0u8; pyth::PROD_ATTR_SIZE],
+        };
+
+        product.attr[0] = 255;
+        product.attr[256] = 0;
+        product.attr[257] = 206;
+
+        let res = std::panic::catch_unwind(|| get_pyth_product_quote_currency(&product));
+        assert!(res.is_ok(), "parser panicked on malformed input");
+
+        let parsed = res.unwrap();
+        assert!(parsed.is_err());
     }
 }
